@@ -51,7 +51,7 @@ namespace PrintTrackerApp
             _runStopwatch = new Stopwatch();
 
             _notifyIcon = new System.Windows.Forms.NotifyIcon();
-            _notifyIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            _notifyIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName);
             _notifyIcon.Visible = true;
 
             _printJobs = new ObservableCollection<PrintJobInfo>();
