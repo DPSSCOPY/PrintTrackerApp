@@ -1,0 +1,156 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using PrintTrackerApp.Models;
+
+namespace PrintTrackerApp.Services
+{
+    public static class CsvLogger
+    {
+        public static void ExportJobsToCsv(IEnumerable<PrintJobInfo> jobs, string folderPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(folderPath))
+                    return;
+
+                if (!Directory.Exists(folderPath))
+                    Directory.CreateDirectory(folderPath);
+
+                string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
+                string filePath = Path.Combine(folderPath, $"PrintLog_{dateStr}.csv");
+
+                // Get today's jobs only, or we can just write everything that is in memory.
+                // Assuming _printJobs usually holds recent/today's jobs. Let's write them all to today's file.
+                // It's safer to filter by Timestamp starting with today's date, but for simplicity we write all provided.
+                
+                // Overwrite the file to ensure updates (like Copies and Status) are reflected
+                using (var writer = new StreamWriter(filePath, append: false, Encoding.UTF8))
+                {
+                    // Write header
+                    writer.WriteLine("Time,Document Name,Hold Print Name,User ID,Pages,Copies,User,Printer Name,Status");
+
+                    // Write rows (oldest first or newest first? The list is newest first, so let's reverse to append order)
+                    foreach (var job in jobs.Reverse())
+                    {
+                        string time = EscapeCsv(job.Timestamp);
+                        string docName = EscapeCsv(job.DocumentName);
+                        string webFileName = EscapeCsv(job.WebFileName);
+                        string userId = EscapeCsv(job.RicohUserId);
+                        string pages = job.TotalPages.ToString();
+                        string copies = job.Copies.ToString();
+                        string user = EscapeCsv(job.Owner);
+                        string printer = EscapeCsv(job.PrinterName);
+                        string status = EscapeCsv(job.Status);
+
+                        writer.WriteLine($"{time},{docName},{webFileName},{userId},{pages},{copies},{user},{printer},{status}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Error logging to CSV: " + ex.Message);
+            }
+        }
+
+        private static string EscapeCsv(string field)
+        {
+            if (string.IsNullOrEmpty(field)) return "";
+            if (field.Contains(",") || field.Contains("\"") || field.Contains("\n") || field.Contains("\r"))
+            {
+                return "\"" + field.Replace("\"", "\"\"") + "\"";
+            }
+            return field;
+        }
+
+        public static List<PrintJobInfo> LoadJobsFromCsv(string folderPath)
+        {
+            var jobs = new List<PrintJobInfo>();
+            try
+            {
+                if (string.IsNullOrWhiteSpace(folderPath))
+                    return jobs;
+
+                string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
+                string filePath = Path.Combine(folderPath, $"PrintLog_{dateStr}.csv");
+
+                if (!File.Exists(filePath))
+                    return jobs;
+
+                using (var reader = new StreamReader(filePath, Encoding.UTF8))
+                {
+                    string header = reader.ReadLine(); // skip header
+                    while (!reader.EndOfStream)
+                    {
+                        var line = reader.ReadLine();
+                        if (string.IsNullOrWhiteSpace(line)) continue;
+                        
+                        var parts = ParseCsvLine(line);
+                        if (parts.Count >= 9)
+                        {
+                            jobs.Add(new PrintJobInfo
+                            {
+                                Timestamp = parts[0],
+                                DocumentName = parts[1],
+                                WebFileName = parts[2],
+                                RicohUserId = parts[3],
+                                TotalPages = int.TryParse(parts[4], out int p) ? p : 1,
+                                Copies = int.TryParse(parts[5], out int c) ? c : 1,
+                                Owner = parts[6],
+                                PrinterName = parts[7],
+                                Status = parts[8],
+                                JobId = Guid.NewGuid().ToString(),
+                                WebJobId = -1
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Error loading CSV: " + ex.Message);
+            }
+            
+            // Reverse so newest jobs are at the top, like the DataGrid expects
+            jobs.Reverse();
+            return jobs;
+        }
+
+        private static List<string> ParseCsvLine(string line)
+        {
+            var result = new List<string>();
+            bool inQuotes = false;
+            var currentField = new StringBuilder();
+
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+                if (c == '"')
+                {
+                    if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
+                    {
+                        currentField.Append('"');
+                        i++; // skip escaped quote
+                    }
+                    else
+                    {
+                        inQuotes = !inQuotes;
+                    }
+                }
+                else if (c == ',' && !inQuotes)
+                {
+                    result.Add(currentField.ToString());
+                    currentField.Clear();
+                }
+                else
+                {
+                    currentField.Append(c);
+                }
+            }
+            result.Add(currentField.ToString());
+            return result;
+        }
+    }
+}

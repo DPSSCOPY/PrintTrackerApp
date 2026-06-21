@@ -1,0 +1,19 @@
+<Window x:Class="PrintTrackerApp.WebMonitorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Mini Browser - Web Image Monitor" Height="600" Width="800">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal" Background="#E2E8F0" Margin="5">
+            <TextBlock Text="Web Image Monitor Scraper" VerticalAlignment="Center" FontWeight="Bold" Margin="5"/>
+            <!-- Add manual login trigger button or URL navigation button if needed -->
+            <Button x:Name="BtnRefresh" Content="Refresh Page" Margin="10,0,0,0" Padding="10,2" Click="BtnRefresh_Click"/>
+        </StackPanel>
+
+        <wv2:WebView2 x:Name="webView" Grid.Row="1" />
+    </Grid>
+</Window>
