@@ -1204,39 +1204,13 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             }
         }
     
-        private async void BtnUpdate_Click(object sender, RoutedEventArgs e)
+        private void BtnUpdate_Click(object sender, RoutedEventArgs e)
         {
-            var btn = sender as System.Windows.Controls.Button;
-            if (btn == null) return;
-
-            if (borderUpdateBadge.Visibility == Visibility.Visible)
-            {
-                System.Windows.MessageBox.Show("Downloading new version... (Mock)", "Update Available", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
-            btn.Content = "✨ Checking...";
-            btn.IsEnabled = false;
-
-            await System.Threading.Tasks.Task.Delay(1500);
-
-            // Mock update check (random 50% chance to find update for demo purposes)
-            bool hasUpdate = new Random().Next(0, 2) == 0;
-
-            if (hasUpdate)
-            {
-                borderUpdateBadge.Visibility = Visibility.Visible;
-                txtUpdateBadge.Text = "1";
-                btn.Content = "✨ Update Available";
-            }
-            else
-            {
-                borderUpdateBadge.Visibility = Visibility.Collapsed;
-                btn.Content = "✨ Check Update";
-                System.Windows.MessageBox.Show("Application is up to date.", "Update", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-
-            btn.IsEnabled = true;
+            // Enable reporting so it shows a message even if there is no update
+            AutoUpdater.ReportErrors = true;
+            
+            // Start the update check
+            AutoUpdater.Start("https://raw.githubusercontent.com/DPSSCOPY/PrintTrackerApp/main/AutoUpdater.xml");
         }
 
         protected override void OnClosed(EventArgs e)
