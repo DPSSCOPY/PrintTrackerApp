@@ -11,6 +11,7 @@ using System.Windows.Threading;
 using System.Diagnostics;
 using PrintTrackerApp.Models;
 using PrintTrackerApp.Services;
+using AutoUpdaterDotNET;
 
 namespace PrintTrackerApp
 {
@@ -117,6 +118,8 @@ namespace PrintTrackerApp
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            AutoUpdater.Start("https://raw.githubusercontent.com/DPSSCOPY/PrintTrackerApp/main/AutoUpdater.xml");
+
             // Load today's history from CSV
             var loadedJobs = CsvLogger.LoadJobsFromCsv(_appSettings.CsvExportPath);
             foreach (var job in loadedJobs)
