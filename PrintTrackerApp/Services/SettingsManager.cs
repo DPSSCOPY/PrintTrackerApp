@@ -33,8 +33,8 @@ namespace PrintTrackerApp.Services
 
         // Telegram Notification Settings
         public string TelegramBotUrl { get; set; } = "https://api.telegram.org/bot";
-        public string TelegramBotToken { get; set; } = "8944748256:AAGzDOsuZKu6WT-diIp-7SSgtPHxNOld6-Y";
-        public string TelegramChatId { get; set; } = "231401089";
+        public string TelegramBotToken { get; set; } = "";
+        public string TelegramChatId { get; set; } = "";
         public string DailyReportTime { get; set; } = "17:00";
         public bool NotifySentToPrinter { get; set; } = true;
         public bool NotifyStoringCompleted { get; set; } = true;
