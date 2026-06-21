@@ -18,13 +18,41 @@ namespace PrintTrackerApp
                 RefreshIntervalSeconds = settings.RefreshIntervalSeconds,
                 SourceFolderPath = settings.SourceFolderPath,
                 FoxitWindowStyle = settings.FoxitWindowStyle,
-                DelayBetweenPrints = settings.DelayBetweenPrints
+                DelayBetweenPrints = settings.DelayBetweenPrints,
+                EnablePriority1 = settings.EnablePriority1,
+                Priority1Prefixes = settings.Priority1Prefixes,
+                EnablePriority2 = settings.EnablePriority2,
+                Priority2Prefixes = settings.Priority2Prefixes,
+                EnablePriority3 = settings.EnablePriority3,
+                Priority3Prefixes = settings.Priority3Prefixes,
+                TelegramBotUrl = settings.TelegramBotUrl,
+                TelegramBotToken = settings.TelegramBotToken,
+                TelegramChatId = settings.TelegramChatId,
+                DailyReportTime = settings.DailyReportTime,
+                NotifySentToPrinter = settings.NotifySentToPrinter,
+                NotifyStoringCompleted = settings.NotifyStoringCompleted,
+                NotifyPrintCompleted = settings.NotifyPrintCompleted
             };
 
             txtPrinterIp.Text = CurrentSettings.PrinterIp;
             txtPrinterName.Text = CurrentSettings.PrinterName;
             txtCsvPath.Text = CurrentSettings.CsvExportPath;
             txtSourcePath.Text = CurrentSettings.SourceFolderPath;
+
+            chkPriority1.IsChecked = CurrentSettings.EnablePriority1;
+            txtPriority1.Text = CurrentSettings.Priority1Prefixes;
+            chkPriority2.IsChecked = CurrentSettings.EnablePriority2;
+            txtPriority2.Text = CurrentSettings.Priority2Prefixes;
+            chkPriority3.IsChecked = CurrentSettings.EnablePriority3;
+            txtPriority3.Text = CurrentSettings.Priority3Prefixes;
+
+            txtTelegramBotUrl.Text = CurrentSettings.TelegramBotUrl;
+            txtTelegramToken.Text = CurrentSettings.TelegramBotToken;
+            txtTelegramChatId.Text = CurrentSettings.TelegramChatId;
+            txtDailyReportTime.Text = CurrentSettings.DailyReportTime;
+            chkNotifySentToPrinter.IsChecked = CurrentSettings.NotifySentToPrinter;
+            chkNotifyStoringCompleted.IsChecked = CurrentSettings.NotifyStoringCompleted;
+            chkNotifyPrintCompleted.IsChecked = CurrentSettings.NotifyPrintCompleted;
 
             foreach (System.Windows.Controls.ComboBoxItem item in cmbRefreshInterval.Items)
             {
@@ -87,6 +115,21 @@ namespace PrintTrackerApp
             CurrentSettings.CsvExportPath = txtCsvPath.Text.Trim();
             CurrentSettings.SourceFolderPath = txtSourcePath.Text.Trim();
             
+            CurrentSettings.EnablePriority1 = chkPriority1.IsChecked ?? false;
+            CurrentSettings.Priority1Prefixes = txtPriority1.Text.Trim();
+            CurrentSettings.EnablePriority2 = chkPriority2.IsChecked ?? false;
+            CurrentSettings.Priority2Prefixes = txtPriority2.Text.Trim();
+            CurrentSettings.EnablePriority3 = chkPriority3.IsChecked ?? false;
+            CurrentSettings.Priority3Prefixes = txtPriority3.Text.Trim();
+            
+            CurrentSettings.TelegramBotUrl = txtTelegramBotUrl.Text.Trim();
+            CurrentSettings.TelegramBotToken = txtTelegramToken.Text.Trim();
+            CurrentSettings.TelegramChatId = txtTelegramChatId.Text.Trim();
+            CurrentSettings.DailyReportTime = txtDailyReportTime.Text.Trim();
+            CurrentSettings.NotifySentToPrinter = chkNotifySentToPrinter.IsChecked ?? true;
+            CurrentSettings.NotifyStoringCompleted = chkNotifyStoringCompleted.IsChecked ?? true;
+            CurrentSettings.NotifyPrintCompleted = chkNotifyPrintCompleted.IsChecked ?? true;
+            
             if (cmbRefreshInterval.SelectedItem is System.Windows.Controls.ComboBoxItem selectedItem && int.TryParse(selectedItem.Tag?.ToString(), out int interval))
             {
                 CurrentSettings.RefreshIntervalSeconds = interval;
@@ -107,7 +150,71 @@ namespace PrintTrackerApp
 
         private void BtnCancel_Click(object sender, RoutedEventArgs e)
         {
-            this.DialogResult = false;
+            this.Close();
+        }
+
+        private async void BtnTestTelegram_Click(object sender, RoutedEventArgs e)
+        {
+            btnTestTelegram.IsEnabled = false;
+            string botUrl = string.IsNullOrWhiteSpace(txtTelegramBotUrl.Text) ? "https://api.telegram.org/bot" : txtTelegramBotUrl.Text.Trim();
+            string botToken = txtTelegramToken.Text.Trim();
+            string chatIdsStr = txtTelegramChatId.Text.Trim();
+
+            if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(chatIdsStr))
+            {
+                System.Windows.MessageBox.Show("Please enter both Bot Token and Chat ID.", "Missing Info", MessageBoxButton.OK, MessageBoxImage.Warning);
+                btnTestTelegram.IsEnabled = true;
+                return;
+            }
+
+            try
+            {
+                using (var client = new System.Net.Http.HttpClient())
+                {
+                    string url = $"{botUrl}{botToken}/sendMessage";
+                    var chatIds = chatIdsStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                    bool success = false;
+
+                    foreach (var chatId in chatIds)
+                    {
+                        string trimmedId = chatId.Trim();
+                        if (string.IsNullOrEmpty(trimmedId)) continue;
+
+                        var payload = new
+                        {
+                            chat_id = trimmedId,
+                            text = "👋 *Test Message* \nThis is a test message from Print Tracker App Settings. If you receive this, your setup is correct!",
+                            parse_mode = "Markdown"
+                        };
+                        
+                        string json = System.Text.Json.JsonSerializer.Serialize(payload);
+                        var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                        var response = await client.PostAsync(url, content);
+                        
+                        if (response.IsSuccessStatusCode)
+                        {
+                            success = true;
+                        }
+                    }
+
+                    if (success)
+                    {
+                        System.Windows.MessageBox.Show("Test message sent successfully!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        System.Windows.MessageBox.Show("Failed to send test message. Please verify your Bot Token and Chat ID.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Error sending message: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                btnTestTelegram.IsEnabled = true;
+            }
         }
     }
 }

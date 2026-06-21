@@ -1,7 +1,7 @@
 <Window x:Class="PrintTrackerApp.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Ricoh Print Tracker &amp; Auto Print - Ver1.0.0" Height="700" Width="850" MinWidth="850" MinHeight="700" Background="#F0F4F8" Loaded="Window_Loaded"
+        Title="Ricoh Print Tracker &amp; Auto Print - Ver1.0.0" Height="700" Width="850" MinWidth="380" MinHeight="500" Background="#F0F4F8" Loaded="Window_Loaded" SizeChanged="Window_SizeChanged"
         Icon="icon.png" ShowInTaskbar="True">
     <Window.Resources>
         <Style TargetType="Button" x:Key="ModernButton">
@@ -164,6 +164,9 @@
     </Window.Resources>
 
     <Grid>
+        <Grid.LayoutTransform>
+            <ScaleTransform x:Name="uiScale" ScaleX="1" ScaleY="1"/>
+        </Grid.LayoutTransform>
         <TabControl Margin="10" Background="Transparent" BorderThickness="0">
         
         <!-- TAB 1: Tracking Print -->
@@ -179,82 +182,59 @@
                     <Border.Effect>
                         <DropShadowEffect Color="Gray" Opacity="0.2" BlurRadius="5" ShadowDepth="1"/>
                     </Border.Effect>
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Top Left: Printer Status -->
-                        <StackPanel Orientation="Horizontal" Grid.Row="0" Grid.Column="0" Margin="0,0,0,15">
+                    <StackPanel Orientation="Vertical">
+                        <WrapPanel Orientation="Horizontal" Margin="0,0,0,15">
                             <TextBlock Text="Printer Status:" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center" Foreground="#374151"/>
-                            <TextBlock x:Name="txtPrinterStatus" Text="Checking..." FontSize="15" FontWeight="Bold" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="txtPrinterStatus" Text="Checking..." FontSize="15" FontWeight="Bold" Margin="10,0,15,0" VerticalAlignment="Center"/>
                             
-                            <TextBlock Text="Total Pages:" FontWeight="SemiBold" FontSize="15" Margin="30,0,0,0" VerticalAlignment="Center" Foreground="#374151"/>
-                            <TextBlock x:Name="txtPageCount" Text="..." FontSize="15" FontWeight="Bold" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="#111827"/>
-                        </StackPanel>
-
-                        <!-- Top Right: Refresh Button -->
-                        <Button Content="Refresh Status" Grid.Row="0" Grid.Column="1" Style="{StaticResource SecondaryButton}" Margin="0,0,0,15" Click="BtnRefresh_Click"/>
-
-                        <!-- Bottom Left: Settings & Notifications -->
-                        <StackPanel Orientation="Horizontal" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center">
-                            <Button Content="Settings ⚙️" Style="{StaticResource SecondaryButton}" Margin="0,0,15,0" Click="BtnSettings_Click" ToolTip="Configure Printer IP and Folder"/>
+                            <TextBlock Text="Total Pages:" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,0" VerticalAlignment="Center" Foreground="#374151"/>
+                            <TextBlock x:Name="txtPageCount" Text="..." FontSize="15" FontWeight="Bold" Margin="10,0,15,0" VerticalAlignment="Center" Foreground="#111827"/>
                             
-                            <Button Width="40" Height="34" Cursor="Hand" Background="Transparent" BorderThickness="0" Click="BtnNotifications_Click" ToolTip="View Notifications">
+                            <Button Content="Refresh Status" Style="{StaticResource SecondaryButton}" Margin="0,5,0,0" Click="BtnRefresh_Click"/>
+                        </WrapPanel>
+
+                        <WrapPanel Orientation="Horizontal">
+                            <Button Content="Settings ⚙️" Style="{StaticResource SecondaryButton}" Margin="0,0,15,10" Click="BtnSettings_Click" ToolTip="Configure Printer IP and Folder"/>
+                            
+                            <Button Width="40" Height="34" Cursor="Hand" Background="Transparent" BorderThickness="0" Margin="0,0,15,10" Click="BtnNotifications_Click" ToolTip="View Notifications">
                                 <Grid>
                                     <TextBlock Text="🔔" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     <Ellipse x:Name="elNewNotification" Width="10" Height="10" Fill="Red" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,2,0" Visibility="Collapsed"/>
                                 </Grid>
                             </Button>
-                        </StackPanel>
-                        
-                        <!-- Bottom Right: Action Buttons -->
-                        <StackPanel Orientation="Horizontal" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Right">
-                            <Button Content="Open Web Monitor" Style="{StaticResource ModernButton}" Margin="0,0,10,0" Click="BtnOpenWebMonitor_Click"/>
-                            <Button Content="Test Print Log" Style="{StaticResource SecondaryButton}" Click="BtnTest_Click"/>
-                        </StackPanel>
-                    </Grid>
+
+                            <Button Content="Open Web Monitor" Style="{StaticResource ModernButton}" Margin="0,0,10,10" Click="BtnOpenWebMonitor_Click"/>
+                            <Button Content="Test Print Log" Style="{StaticResource SecondaryButton}" Margin="0,0,0,10" Click="BtnTest_Click"/>
+                        </WrapPanel>
+                    </StackPanel>
                 </Border>
 
                 <!-- Folder Print Verification Panel -->
                 <Border Grid.Row="1" Background="#E0F2FE" CornerRadius="8" Padding="15" Margin="0,0,0,10" BorderBrush="#BAE6FD" BorderThickness="1">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        
-                        <StackPanel Orientation="Vertical" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,20,0">
+                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel Orientation="Vertical" Margin="0,0,20,10" MinWidth="150">
                             <TextBlock Text="Folder Print Verification" FontWeight="Bold" FontSize="14" Foreground="#0369A1"/>
-                            <TextBlock x:Name="txtFolderPath" Text="Select a folder in Settings" FontSize="11" Foreground="#0284C7" Margin="0,2,0,0" MaxWidth="300" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="txtFolderPath" Text="Select a folder in Settings" FontSize="11" Foreground="#0284C7" Margin="0,2,0,0" MaxWidth="300" TextWrapping="Wrap"/>
                         </StackPanel>
 
-                        <StackPanel Orientation="Horizontal" Grid.Column="1" VerticalAlignment="Center">
-                            <TextBlock Text="Files Waiting in Folder:" FontWeight="SemiBold" FontSize="14" Foreground="#0F172A" VerticalAlignment="Center"/>
-                            <Border Background="#EF4444" CornerRadius="12" MinWidth="24" Height="24" Margin="10,0,0,0" Padding="5,0">
+                        <WrapPanel Orientation="Horizontal" Margin="0,0,20,10">
+                            <TextBlock Text="Files Waiting:" FontWeight="SemiBold" FontSize="14" Foreground="#0F172A" VerticalAlignment="Center"/>
+                            <Border Background="#EF4444" CornerRadius="12" MinWidth="24" Height="24" Margin="10,0,15,0" Padding="5,0">
                                 <TextBlock x:Name="txtPendingCount" Text="0" Foreground="White" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             
-                            <TextBlock Text="Total Printed Today:" FontWeight="SemiBold" FontSize="14" Foreground="#0F172A" VerticalAlignment="Center" Margin="30,0,0,0"/>
+                            <TextBlock Text="Total Printed Today:" FontWeight="SemiBold" FontSize="14" Foreground="#0F172A" VerticalAlignment="Center"/>
                             <Border Background="#10B981" CornerRadius="12" MinWidth="24" Height="24" Margin="10,0,0,0" Padding="5,0">
                                 <TextBlock x:Name="txtCompletedCount" Text="0" Foreground="White" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                        </StackPanel>
+                        </WrapPanel>
 
-                        <StackPanel Orientation="Horizontal" Grid.Column="2" VerticalAlignment="Center">
-                            <Button Content="Open Folder" Style="{StaticResource SecondaryButton}" Click="BtnOpenSourceFolder_Click"/>
-                        </StackPanel>
-                    </Grid>
+                        <Button Content="Open Folder" Style="{StaticResource SecondaryButton}" Margin="0,0,0,10" Click="BtnOpenSourceFolder_Click"/>
+                    </WrapPanel>
                 </Border>
 
                 <DataGrid x:Name="dgPrintJobs" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" 
-                          Background="White" RowHeight="35" HeadersVisibility="Column">
+                          Background="White" RowHeight="35" HeadersVisibility="Column" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Time" Binding="{Binding Timestamp}" Width="150" IsReadOnly="True"/>
                         <DataGridTextColumn Header="Document Name" Binding="{Binding DocumentName}" Width="*" IsReadOnly="True"/>
@@ -344,18 +324,11 @@
                         </StackPanel>
                     </Border>
 
-                    <Grid Grid.Row="5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="10"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="10"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Button x:Name="btnStartAutoPrint" Content="START AUTO PRINT" Grid.Column="0" Style="{StaticResource ModernButton}" Height="40" Click="BtnStartAutoPrint_Click"/>
-                        <Button x:Name="btnPauseAutoPrint" Content="PAUSE" Grid.Column="2" Style="{StaticResource SecondaryButton}" Height="40" IsEnabled="False" Click="BtnPauseAutoPrint_Click"/>
-                        <Button x:Name="btnStopAutoPrint" Content="STOP AUTO PRINT" Grid.Column="4" Style="{StaticResource DangerButton}" Height="40" IsEnabled="False" Click="BtnStopAutoPrint_Click"/>
-                    </Grid>
+                    <WrapPanel Grid.Row="5" HorizontalAlignment="Center">
+                        <Button x:Name="btnStartAutoPrint" Content="START AUTO PRINT" Style="{StaticResource ModernButton}" Height="40" MinWidth="150" Margin="5" Click="BtnStartAutoPrint_Click"/>
+                        <Button x:Name="btnPauseAutoPrint" Content="PAUSE" Style="{StaticResource SecondaryButton}" Height="40" MinWidth="100" Margin="5" IsEnabled="False" Click="BtnPauseAutoPrint_Click"/>
+                        <Button x:Name="btnStopAutoPrint" Content="STOP AUTO PRINT" Style="{StaticResource DangerButton}" Height="40" MinWidth="150" Margin="5" IsEnabled="False" Click="BtnStopAutoPrint_Click"/>
+                    </WrapPanel>
                     
                     <!-- Manual Testing Panel -->
                     <Expander Header="🛠️ Manual Testing &amp; Debugging Tools" Grid.Row="6" Margin="0,15,0,0" IsExpanded="False" Foreground="#374151" FontWeight="SemiBold">
@@ -384,7 +357,23 @@
         </TabControl>
 
         <!-- Top Right Overlays -->
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,20,0">
+        <WrapPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,20,0" MaxWidth="300">
+            
+            <StackPanel x:Name="pnlTopControls" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0" Visibility="Collapsed">
+                <Button x:Name="btnTopPause" Width="45" Height="45" Margin="0,0,5,0" Style="{StaticResource SecondaryButton}" Click="BtnPauseAutoPrint_Click" ToolTip="Pause/Resume Auto Print">
+                    <StackPanel>
+                        <TextBlock x:Name="txtTopPauseIcon" Text="⏸" FontSize="16" Foreground="#D97706" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="txtTopPauseText" Text="Pause" FontSize="9" Foreground="#D97706" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="btnTopStop" Width="45" Height="45" Margin="0,0,0,0" Style="{StaticResource SecondaryButton}" Click="BtnStopAutoPrint_Click" ToolTip="Stop Auto Print">
+                    <StackPanel>
+                        <TextBlock Text="⏹" FontSize="16" Foreground="#DC2626" HorizontalAlignment="Center"/>
+                        <TextBlock Text="Stop" FontSize="9" Foreground="#DC2626" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+
             <!-- Running Timer Overlay -->
             <Border x:Name="borderRunTimer" Background="#1F2937" CornerRadius="6" Padding="12,5" Visibility="Collapsed" Margin="0,0,10,0">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -404,6 +393,6 @@
                     <TextBlock x:Name="txtUpdateBadge" Text="1" Foreground="White" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="4,0,4,1"/>
                 </Border>
             </Grid>
-        </StackPanel>
+        </WrapPanel>
     </Grid>
 </Window>

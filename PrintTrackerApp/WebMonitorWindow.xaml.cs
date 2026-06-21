@@ -14,6 +14,7 @@ namespace PrintTrackerApp
         private const string Password = "";
         private string _printerIp;
         private readonly DispatcherTimer _pollTimer;
+        private int _emptyResultCount = 0;
 
         public event EventHandler<string>? OnScrapedStatusReceived;
 
@@ -163,10 +164,22 @@ namespace PrintTrackerApp
                     
                     if (!string.IsNullOrEmpty(result) && result != "null" && result != "\"\"")
                     {
+                        _emptyResultCount = 0; // Reset counter when we get valid data
                         result = result.Trim('\"');
                         if (!string.IsNullOrEmpty(result))
                         {
                             OnScrapedStatusReceived?.Invoke(this, result);
+                        }
+                    }
+                    else
+                    {
+                        // If we get empty result continuously (e.g. Session timeout, error page), try to auto-reload
+                        _emptyResultCount++;
+                        if (_emptyResultCount >= 10) 
+                        {
+                            _emptyResultCount = 0;
+                            Debug.WriteLine("Web Monitor seems stuck or logged out. Auto-reloading...");
+                            webView.CoreWebView2.Navigate($"http://{_printerIp}/");
                         }
                     }
                 }
@@ -230,7 +243,9 @@ namespace PrintTrackerApp
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
             e.Cancel = true;
-            this.Hide(); // Hide instead of close so we keep background session
+            this.Left = -10000;
+            this.Top = -10000;
+            this.ShowInTaskbar = false; // Move off-screen instead of Hide() to prevent background throttling
         }
     }
 }

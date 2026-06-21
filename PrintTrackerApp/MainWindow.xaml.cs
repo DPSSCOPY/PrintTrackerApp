@@ -28,6 +28,10 @@ namespace PrintTrackerApp
         private string _currentDate = DateTime.Now.ToString("yyyy-MM-dd");
         private System.Windows.Forms.NotifyIcon _notifyIcon;
         private bool _hasStartedPrinting = false;
+        private bool _alertedSentToPrinter = false;
+        private bool _alertedStoringCompleted = false;
+        private bool _alertedPrintCompleted = false;
+        private string _lastReportDate = "";
 
         private readonly AutoPrintService _autoPrintService;
         
@@ -40,6 +44,7 @@ namespace PrintTrackerApp
             _autoPrintService.StatusChanged += AutoPrintService_StatusChanged;
             _autoPrintService.FileProcessingStarted += AutoPrintService_FileProcessingStarted;
             _autoPrintService.QueueEmpty += AutoPrintService_QueueEmpty;
+            _autoPrintService.PauseRequested += AutoPrintService_PauseRequested;
             _autoPrintService.OnRequestUniqueUserId = GenerateUniqueUserId;
             
             InitializeComponent();
@@ -67,9 +72,14 @@ namespace PrintTrackerApp
             };
             _statusTimer.Tick += StatusTimer_Tick;
 
-            // Initialize background Web Monitor
+            // Initialize background Web Monitor Off-Screen to prevent Chromium background throttling
             _webMonitorWindow = new WebMonitorWindow(_appSettings.PrinterIp, _appSettings.RefreshIntervalSeconds);
             _webMonitorWindow.OnScrapedStatusReceived += WebMonitor_OnScrapedStatusReceived;
+            _webMonitorWindow.WindowStartupLocation = WindowStartupLocation.Manual;
+            _webMonitorWindow.Left = -10000;
+            _webMonitorWindow.Top = -10000;
+            _webMonitorWindow.ShowInTaskbar = false;
+            _webMonitorWindow.Show(); // Show it immediately so it renders off-screen
         }
 
         private string GenerateUniqueUserId(string baseUserId, string holdName)
@@ -162,6 +172,19 @@ namespace PrintTrackerApp
             _statusTimer.Start();
         }
 
+        private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (uiScale != null)
+            {
+                // Base width is 850.
+                // Scale down slightly to decrease text and button size (minimum 0.7 scale)
+                // When scaled down, virtual width increases, allowing WrapPanels to still wrap.
+                double scale = Math.Max(0.7, Math.Min(1.0, e.NewSize.Width / 850.0));
+                uiScale.ScaleX = scale;
+                uiScale.ScaleY = scale;
+            }
+        }
+
         private void SpoolerMonitor_OnJobCreated(object? sender, PrintJobInfo job)
         {
             Dispatcher.Invoke(() =>
@@ -225,7 +248,61 @@ namespace PrintTrackerApp
             }
 
             UpdateVerificationPanel();
-        
+            CheckAndSendDailyReport();
+        }
+
+        private void CheckAndSendDailyReport()
+        {
+            if (string.IsNullOrWhiteSpace(_appSettings.DailyReportTime)) return;
+
+            string nowTime = DateTime.Now.ToString("HH:mm");
+            string today = DateTime.Now.ToString("yyyy-MM-dd");
+
+            if (nowTime == _appSettings.DailyReportTime && _lastReportDate != today)
+            {
+                int GetPdfCount(string folder)
+                {
+                    try { return System.IO.Directory.Exists(folder) ? System.IO.Directory.GetFiles(folder, "*.pdf").Length : 0; }
+                    catch { return 0; }
+                }
+
+                int sourceCount = GetPdfCount(_appSettings.SourceFolderPath);
+                int totalCount = sourceCount;
+                
+                System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                sb.AppendLine($"📊 *Daily Print Report* ({today})");
+                sb.AppendLine($"📂 Source: {sourceCount}");
+
+                try
+                {
+                    var subDirs = System.IO.Directory.GetDirectories(_appSettings.SourceFolderPath);
+                    foreach (var dir in subDirs)
+                    {
+                        string dirName = System.IO.Path.GetFileName(dir);
+                        int count = GetPdfCount(dir);
+                        totalCount += count;
+                        
+                        string icon = "📁";
+                        string lowerName = dirName.ToLower();
+                        if (lowerName.Contains("sent")) icon = "📤";
+                        else if (lowerName.Contains("print complete")) icon = "✅";
+                        else if (lowerName.Contains("print") || lowerName.Contains("process")) icon = "⚙️";
+                        else if (lowerName.Contains("stor")) icon = "🗃️";
+                        else if (lowerName.Contains("sort")) icon = "🗂️";
+                        
+                        sb.AppendLine($"{icon} {dirName}: {count}");
+                    }
+                }
+                catch { }
+
+                if (totalCount > 0)
+                {
+                    string csvPath = System.IO.Path.Combine(_appSettings.CsvExportPath, $"PrintLog_{today}.csv");
+                    _ = SendTelegramMessageWithDocumentAsync(sb.ToString().TrimEnd(), csvPath);
+                }
+                
+                _lastReportDate = today;
+            }
         }
 
         private void UpdateVerificationPanel()
@@ -248,29 +325,18 @@ namespace PrintTrackerApp
                     int currentCount = files.Length;
                     txtPendingCount.Text = currentCount.ToString();
 
-                    if (currentCount > 0)
+                    if (currentCount > 0 && _autoPrintService != null && _autoPrintService.IsRunning)
                     {
-                        _hasStartedPrinting = true;
-                    }
-                    else if (currentCount == 0 && _hasStartedPrinting)
-                    {
-                        // Transitioned from >0 to 0
-                        _hasStartedPrinting = false;
-                        
-                        // Add notification history
-                        var notification = new AppNotification
+                        if (!_hasStartedPrinting)
                         {
-                            Title = "All Files Printed",
-                            Message = "All files in your folder have been successfully printed and moved to Complete Print."
-                        };
-                        _appSettings.Notifications.Insert(0, notification);
-                        SettingsManager.SaveSettings(_appSettings);
-                        elNewNotification.Visibility = Visibility.Visible;
-
-                        // Show Popup
-                        var popup = new NotificationPopupWindow(notification.Message);
-                        popup.Show();
+                            _hasStartedPrinting = true;
+                            _alertedSentToPrinter = false;
+                            _alertedStoringCompleted = false;
+                            _alertedPrintCompleted = false;
+                        }
                     }
+                    
+                    CheckBatchStatus();
                 }
                 catch
                 {
@@ -388,7 +454,7 @@ namespace PrintTrackerApp
                         
                         // 2. If not found by exact Job ID, but it's a "Complete" job, it might be a Hold Print that just got printed!
                         // When a Hold Print is printed, the printer creates a NEW Job ID. We must find the original "Storing Complete" job.
-                        if (matchedJob == null && (status.Contains("Complete") || status.Contains("Printed")))
+                        if (matchedJob == null && (status.Contains("Complete", StringComparison.OrdinalIgnoreCase) || status.Contains("Printed", StringComparison.OrdinalIgnoreCase) || status.Contains("Processing", StringComparison.OrdinalIgnoreCase)))
                         {
                             // Prioritize finding an UNCLAIMED job first
                             matchedJob = _printJobs.LastOrDefault(j => 
@@ -405,6 +471,7 @@ namespace PrintTrackerApp
                                     string.Equals(j.RicohUserId?.Trim(), userId?.Trim(), StringComparison.OrdinalIgnoreCase) && 
                                     (string.Equals(j.WebFileName?.Trim(), webFileName?.Trim(), StringComparison.OrdinalIgnoreCase) || IsFileNameMatch(j.WebFileName ?? "", webFileName) || IsFileNameMatch(j.DocumentName ?? "", webFileName)) && 
                                     j.Status != "Print Complete" && j.Status != "Successfully Printed" &&
+                                    jobId > j.WebJobId &&
                                     IsTimeMatch(j.Timestamp, createdAt));
                             }
                         }
@@ -426,8 +493,8 @@ namespace PrintTrackerApp
                             }
                             
                             // 3. Fallback: Take the OLDEST unlinked job (FIFO)
-                            // ONLY DO THIS IF IT'S A NEW JOB (jobId > _maxScrapedId), to prevent linking an old unrelated PC job during first batch
-                            if (matchedJob == null && jobId > _maxScrapedId) 
+                            // Allow a buffer of 50 to catch out-of-order pagination from Web Monitor
+                            if (matchedJob == null && jobId >= _maxScrapedId - 50) 
                             {
                                 matchedJob = _printJobs.LastOrDefault(j => j.WebJobId == -1);
                             }
@@ -551,6 +618,9 @@ namespace PrintTrackerApp
 
         private void BtnOpenWebMonitor_Click(object sender, RoutedEventArgs e)
         {
+            _webMonitorWindow.Left = SystemParameters.WorkArea.Width / 2 - _webMonitorWindow.Width / 2;
+            _webMonitorWindow.Top = SystemParameters.WorkArea.Height / 2 - _webMonitorWindow.Height / 2;
+            _webMonitorWindow.ShowInTaskbar = true;
             _webMonitorWindow.Show();
             _webMonitorWindow.Activate();
         }
@@ -569,6 +639,9 @@ namespace PrintTrackerApp
                 string oldPath = _appSettings.CsvExportPath;
                 _appSettings = sw.CurrentSettings;
                 SettingsManager.SaveSettings(_appSettings);
+                
+                // Reset daily report tracking so it can trigger immediately if the new time matches current time
+                _lastReportDate = "";
 
                 txtFolderPath.Text = string.IsNullOrWhiteSpace(_appSettings.SourceFolderPath) ? "Not configured" : _appSettings.SourceFolderPath;
                 UpdateVerificationPanel();
@@ -581,7 +654,7 @@ namespace PrintTrackerApp
 
                 if (needRestart)
                 {
-                    System.Windows.MessageBox.Show("Settings saved. Please restart the application for the IP/Printer Name changes to take effect.", "Restart Required", MessageBoxButton.OK, MessageBoxImage.Information);
+                    CustomAlertWindow.ShowMessage("Restart Required", "Settings saved. Please restart the application for the IP/Printer Name changes to take effect.", AlertType.Information);
                 }
             }
         }
@@ -597,9 +670,29 @@ namespace PrintTrackerApp
             {
                 targetSubFolder = "Print Complete";
             }
-            else if (status.Contains("Sorting Complete", StringComparison.OrdinalIgnoreCase) || status.Contains("Storing Complete", StringComparison.OrdinalIgnoreCase))
+            else if (status.Contains("Sorting", StringComparison.OrdinalIgnoreCase))
             {
                 targetSubFolder = "Sorting Complete";
+            }
+            else if (status.Contains("Storing Failed", StringComparison.OrdinalIgnoreCase))
+            {
+                targetSubFolder = "Storing Failed";
+            }
+            else if (status.Contains("Storing", StringComparison.OrdinalIgnoreCase))
+            {
+                targetSubFolder = "Storing Complete";
+            }
+            else if (status.Contains("Power Failed", StringComparison.OrdinalIgnoreCase) || status.Contains("Power Fail", StringComparison.OrdinalIgnoreCase))
+            {
+                targetSubFolder = "Power Failed";
+            }
+            else if (status.Contains("Processing", StringComparison.OrdinalIgnoreCase))
+            {
+                targetSubFolder = "Processing";
+            }
+            else if (status.Contains("Printing", StringComparison.OrdinalIgnoreCase))
+            {
+                targetSubFolder = "Printing";
             }
             else if (status.Contains("Sent to Printer", StringComparison.OrdinalIgnoreCase))
             {
@@ -636,10 +729,8 @@ namespace PrintTrackerApp
                 try
                 {
                     System.IO.File.Move(fileToMove, destFile);
-                    if (targetSubFolder == "Print Complete")
-                    {
-                        CheckIfAllJobsComplete();
-                    }
+
+                    CheckBatchStatus();
                 }
                 catch (Exception ex)
                 {
@@ -649,19 +740,21 @@ namespace PrintTrackerApp
             else if (targetSubFolder == "Print Complete")
             {
                  // Check anyway if they all finished
-                 CheckIfAllJobsComplete();
+                 CheckBatchStatus();
             }
         }
 
         private string? FindPhysicalFileForJob(PrintJobInfo job)
         {
-            string[] searchFolders = { 
-                _appSettings.SourceFolderPath,
-                System.IO.Path.Combine(_appSettings.SourceFolderPath, "Sent to Printer"),
-                System.IO.Path.Combine(_appSettings.SourceFolderPath, "Sorting Complete"),
-                System.IO.Path.Combine(_appSettings.SourceFolderPath, "Storing Complete"),
-                System.IO.Path.Combine(_appSettings.SourceFolderPath, "Printing")
-            };
+            if (string.IsNullOrWhiteSpace(_appSettings.SourceFolderPath) || !System.IO.Directory.Exists(_appSettings.SourceFolderPath))
+                return null;
+
+            var searchFolders = new List<string> { _appSettings.SourceFolderPath };
+            try
+            {
+                searchFolders.AddRange(System.IO.Directory.GetDirectories(_appSettings.SourceFolderPath));
+            }
+            catch { }
 
             // Only use exact match by document name to prevent moving unrelated files
             foreach (var folder in searchFolders)
@@ -683,40 +776,162 @@ namespace PrintTrackerApp
             return null;
         }
 
-        private void CheckIfAllJobsComplete()
+        private void CheckBatchStatus()
         {
             Dispatcher.Invoke(() =>
             {
                 if (string.IsNullOrWhiteSpace(_appSettings.SourceFolderPath) || !System.IO.Directory.Exists(_appSettings.SourceFolderPath))
                     return;
 
-                string[] activeFolders = { 
-                    _appSettings.SourceFolderPath,
-                    System.IO.Path.Combine(_appSettings.SourceFolderPath, "Sent to Printer"),
-                    System.IO.Path.Combine(_appSettings.SourceFolderPath, "Sorting Complete"),
-                    System.IO.Path.Combine(_appSettings.SourceFolderPath, "Storing Complete"),
-                    System.IO.Path.Combine(_appSettings.SourceFolderPath, "Printing")
-                };
-
-                int activeFilesCount = 0;
-                foreach (var folder in activeFolders)
+                int GetPdfCount(string folder)
                 {
-                    if (System.IO.Directory.Exists(folder))
+                    try { return System.IO.Directory.Exists(folder) ? System.IO.Directory.GetFiles(folder, "*.pdf").Length : 0; }
+                    catch { return 0; }
+                }
+
+                int sourceCount = GetPdfCount(_appSettings.SourceFolderPath);
+                int sentToPrinterCount = GetPdfCount(System.IO.Path.Combine(_appSettings.SourceFolderPath, "Sent to Printer"));
+                int sortingCount = GetPdfCount(System.IO.Path.Combine(_appSettings.SourceFolderPath, "Sorting Complete"));
+                int storingCount = GetPdfCount(System.IO.Path.Combine(_appSettings.SourceFolderPath, "Storing Complete"));
+                int printingCount = GetPdfCount(System.IO.Path.Combine(_appSettings.SourceFolderPath, "Printing"));
+                int processingCount = GetPdfCount(System.IO.Path.Combine(_appSettings.SourceFolderPath, "Processing"));
+
+                if (sourceCount > 0)
+                {
+                    _alertedSentToPrinter = false;
+                    _alertedStoringCompleted = false;
+                }
+
+                if (sourceCount == 0 && !_alertedSentToPrinter && _hasStartedPrinting)
+                {
+                    _alertedSentToPrinter = true;
+                    CustomAlertWindow.ShowMessage("Sent to Printer", "All files have been successfully sent to the printer.", AlertType.SentToPrinter);
+                    
+                    var notification = new AppNotification
                     {
-                        // In root folder, only count pdfs
-                        activeFilesCount += System.IO.Directory.GetFiles(folder, "*.pdf").Length;
+                        Title = "Sent to Printer",
+                        Message = "All files in your folder have been successfully sent to the printer."
+                    };
+                    _appSettings.Notifications.Insert(0, notification);
+                    SettingsManager.SaveSettings(_appSettings);
+                    elNewNotification.Visibility = Visibility.Visible;
+                    
+                    if (_appSettings.NotifySentToPrinter)
+                    {
+                        _ = SendTelegramMessageAsync("📤 *ឯកសារត្រូវបានបញ្ជូនទៅម៉ាស៊ីនព្រីនរួចរាល់!* (Sent to Printer)");
                     }
                 }
 
-                if (activeFilesCount == 0 && _printJobs.Count > 0)
+                if (sourceCount == 0 && sentToPrinterCount == 0 && printingCount == 0 && processingCount == 0 && !_alertedStoringCompleted && _alertedSentToPrinter && _hasStartedPrinting)
+                {
+                    _alertedStoringCompleted = true;
+                    CustomAlertWindow.ShowMessage("Storing Completed", "All files have been processed and stored in the printer.", AlertType.StoringCompleted);
+                    
+                    if (_appSettings.NotifyStoringCompleted)
+                    {
+                        _ = SendTelegramMessageAsync("🗃️ *ឯកសារបានដំណើរការរក្សាទុកចប់សព្វគ្រប់!* (Storing Completed)");
+                    }
+                }
+
+                if (sourceCount == 0 && sentToPrinterCount == 0 && sortingCount == 0 && storingCount == 0 && printingCount == 0 && processingCount == 0 && _printJobs.Count > 0 && !_alertedPrintCompleted && _alertedSentToPrinter && _alertedStoringCompleted)
                 {
                     // Everything is complete!
-                    System.Windows.MessageBox.Show("All print jobs are completed!", "Print Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                    _hasStartedPrinting = false;
+                    _alertedPrintCompleted = true;
+                    CustomAlertWindow.ShowMessage("Print Complete", "All print jobs are completed!", AlertType.PrintCompleted);
                     
-                    // Clear the print jobs so it doesn't pop up again until new jobs arrive
-                    _printJobs.Clear();
+                    if (_appSettings.NotifyPrintCompleted)
+                    {
+                        _ = SendTelegramMessageAsync("✅ *ការព្រីនត្រូវបានបញ្ចាំងរួចរាល់!* (Print Complete)");
+                    }
+                    
+                    _alertedSentToPrinter = false;
+                    _alertedStoringCompleted = false;
                 }
             });
+        }
+
+        private async Task SendTelegramMessageAsync(string message)
+        {
+            if (string.IsNullOrWhiteSpace(_appSettings.TelegramBotToken) || string.IsNullOrWhiteSpace(_appSettings.TelegramChatId))
+                return;
+
+            try
+            {
+                using (var client = new System.Net.Http.HttpClient())
+                {
+                    string baseUrl = string.IsNullOrWhiteSpace(_appSettings.TelegramBotUrl) ? "https://api.telegram.org/bot" : _appSettings.TelegramBotUrl;
+                    string url = $"{baseUrl}{_appSettings.TelegramBotToken}/sendMessage";
+                    
+                    var chatIds = _appSettings.TelegramChatId.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var chatId in chatIds)
+                    {
+                        string trimmedId = chatId.Trim();
+                        if (string.IsNullOrEmpty(trimmedId)) continue;
+
+                        var payload = new
+                        {
+                            chat_id = trimmedId,
+                            text = message,
+                            parse_mode = "Markdown"
+                        };
+                        
+                        string json = System.Text.Json.JsonSerializer.Serialize(payload);
+                        var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                        await client.PostAsync(url, content);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to send Telegram message: {ex.Message}");
+            }
+        }
+
+        private async Task SendTelegramMessageWithDocumentAsync(string message, string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(_appSettings.TelegramBotToken) || string.IsNullOrWhiteSpace(_appSettings.TelegramChatId))
+                return;
+
+            if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
+            {
+                await SendTelegramMessageAsync(message);
+                return;
+            }
+
+            try
+            {
+                using (var client = new System.Net.Http.HttpClient())
+                {
+                    string baseUrl = string.IsNullOrWhiteSpace(_appSettings.TelegramBotUrl) ? "https://api.telegram.org/bot" : _appSettings.TelegramBotUrl;
+                    string url = $"{baseUrl}{_appSettings.TelegramBotToken}/sendDocument";
+                    
+                    var chatIds = _appSettings.TelegramChatId.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var chatId in chatIds)
+                    {
+                        string trimmedId = chatId.Trim();
+                        if (string.IsNullOrEmpty(trimmedId)) continue;
+
+                        using (var form = new System.Net.Http.MultipartFormDataContent())
+                        {
+                            form.Add(new System.Net.Http.StringContent(trimmedId), "chat_id");
+                            form.Add(new System.Net.Http.StringContent(message), "caption");
+                            form.Add(new System.Net.Http.StringContent("Markdown"), "parse_mode");
+
+                            var fileContent = new System.Net.Http.ByteArrayContent(System.IO.File.ReadAllBytes(filePath));
+                            fileContent.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse("text/csv");
+                            form.Add(fileContent, "document", System.IO.Path.GetFileName(filePath));
+
+                            await client.PostAsync(url, form);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to send Telegram document: {ex.Message}");
+                await SendTelegramMessageAsync(message);
+            }
         }
         private void BtnTest_Click(object sender, RoutedEventArgs e)
         {
@@ -779,14 +994,24 @@ namespace PrintTrackerApp
             _appSettings.SourceFolderPath = txtWatchFolder.Text;
             _appSettings.FoxitPath = txtFoxitPath.Text;
             SettingsManager.SaveSettings(_appSettings);
-            System.Windows.MessageBox.Show("Settings saved successfully.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+            CustomAlertWindow.ShowMessage("Success", "Settings saved successfully.", AlertType.Information);
         }
 
         private void BtnStartAutoPrint_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(txtWatchFolder.Text) || !Directory.Exists(txtWatchFolder.Text))
             {
-                System.Windows.MessageBox.Show("Please select a valid folder to watch.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                CustomAlertWindow.ShowMessage("Error", "Please select a valid folder to watch.", AlertType.Error);
+                return;
+            }
+
+            var files = System.IO.Directory.GetFiles(txtWatchFolder.Text, "*.pdf")
+                                 .Where(f => !f.Contains("Complete Print", StringComparison.OrdinalIgnoreCase))
+                                 .ToList();
+
+            if (files.Count == 0)
+            {
+                CustomAlertWindow.ShowMessage("No Files", "មិនមានឯកសារត្រូវព្រីននៅក្នុង Folder ទេ! សូមដាក់ឯកសារជាមុនសិន។", AlertType.Warning);
                 return;
             }
 
@@ -795,9 +1020,9 @@ namespace PrintTrackerApp
             // Ensure settings are saved before starting
             BtnSaveSettings_Click(null, null);
 
-            _autoPrintService.Start(txtWatchFolder.Text, _appSettings.FoxitPath, _appSettings.HoldPrintUserId, _appSettings.AutoPrintCopies, _appSettings.FoxitWindowStyle, _appSettings.DelayBetweenPrints);
+            _autoPrintService.Start(_appSettings);
             
-            _runStopwatch.Restart();
+            _runStopwatch.Start();
             _runTimer.Start();
             borderRunTimer.Visibility = Visibility.Visible;
             
@@ -844,7 +1069,7 @@ namespace PrintTrackerApp
                 _runTimer.Stop();
                 _autoPrintService.Stop();
                 UpdateStatusUI();
-                System.Windows.MessageBox.Show("Auto Print has finished processing all files in the folder and is now stopped.", "Auto Stop", MessageBoxButton.OK, MessageBoxImage.Information);
+                CustomAlertWindow.ShowMessage("Auto Stop", "Auto Print has finished processing all files in the folder and is now stopped.", AlertType.Information);
             });
         }
 
@@ -874,6 +1099,18 @@ namespace PrintTrackerApp
             });
         }
 
+        private void AutoPrintService_PauseRequested(object? sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (_autoPrintService.IsRunning && _autoPrintService.IsPaused)
+                {
+                    _runStopwatch.Stop();
+                    UpdateStatusUI();
+                }
+            });
+        }
+
         private void UpdateStatusUI()
         {
             bool isRunning = _autoPrintService != null && _autoPrintService.IsRunning;
@@ -883,17 +1120,37 @@ namespace PrintTrackerApp
             btnStopAutoPrint.IsEnabled = isRunning;
             btnPauseAutoPrint.IsEnabled = isRunning;
             
+            pnlTopControls.Visibility = isRunning ? Visibility.Visible : Visibility.Collapsed;
+            
             if (isPaused)
             {
                 btnPauseAutoPrint.Content = "RESUME";
                 btnPauseAutoPrint.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#F59E0B")); // Amber
                 btnPauseAutoPrint.Foreground = System.Windows.Media.Brushes.White;
+                
+                // Update top icon
+                if (txtTopPauseIcon != null)
+                {
+                    txtTopPauseIcon.Text = "▶";
+                    txtTopPauseIcon.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#10B981")); // Green
+                    txtTopPauseText.Text = "Resume";
+                    txtTopPauseText.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#10B981")); // Green
+                }
             }
             else
             {
                 btnPauseAutoPrint.Content = "PAUSE";
                 btnPauseAutoPrint.Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#F3F4F6")); // Default secondary
                 btnPauseAutoPrint.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#1F2937"));
+                
+                // Update top icon
+                if (txtTopPauseIcon != null)
+                {
+                    txtTopPauseIcon.Text = "⏸";
+                    txtTopPauseIcon.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#D97706")); // Amber
+                    txtTopPauseText.Text = "Pause";
+                    txtTopPauseText.Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#D97706")); // Amber
+                }
             }
             
             txtWatchFolder.IsEnabled = !isRunning;

@@ -21,10 +21,11 @@ namespace PrintTrackerApp.Services
         public event EventHandler<string>? StatusChanged;
         public event EventHandler<string>? FileProcessingStarted;
         public event EventHandler? QueueEmpty;
+        public event EventHandler? PauseRequested;
         
         public Func<string, string, string>? OnRequestUniqueUserId;
 
-        public void Start(string watchFolder, string foxitPath, string userId, int copies, string windowStyle = "Normal", int delayBetweenPrints = 2)
+        public void Start(AppSettings settings)
         {
             if (IsRunning) return;
 
@@ -34,7 +35,7 @@ namespace PrintTrackerApp.Services
             
             StatusChanged?.Invoke(this, "Running");
 
-            _processingTask = Task.Run(() => PrintWorker(watchFolder, foxitPath, userId, copies, windowStyle, delayBetweenPrints, _cancellationTokenSource.Token));
+            _processingTask = Task.Run(() => PrintWorker(settings, _cancellationTokenSource.Token));
         }
 
         public void Stop()
@@ -46,9 +47,11 @@ namespace PrintTrackerApp.Services
             StatusChanged?.Invoke(this, "Stopped");
         }
 
-        private void PrintWorker(string watchFolder, string foxitPath, string userId, int copies, string windowStyle, int delayBetweenPrints, CancellationToken token)
+        private void PrintWorker(AppSettings settings, CancellationToken token)
         {
             bool hasProcessedFiles = false;
+            string watchFolder = settings.SourceFolderPath;
+            int lastPriorityLevel = 0;
 
             while (!token.IsCancellationRequested)
             {
@@ -60,6 +63,16 @@ namespace PrintTrackerApp.Services
                         continue;
                     }
 
+                    // Always reload settings so dynamic changes to priority lists reflect without restart
+                    var currentSettings = SettingsManager.LoadSettings();
+                    watchFolder = currentSettings.SourceFolderPath;
+
+                    if (!Directory.Exists(watchFolder)) 
+                    {
+                        Thread.Sleep(3000);
+                        continue;
+                    }
+
                     var files = Directory.GetFiles(watchFolder, "*.pdf")
                         .Where(f => !f.Contains("Complete Print", StringComparison.OrdinalIgnoreCase))
                         .OrderBy(f => File.GetCreationTime(f))
@@ -68,10 +81,86 @@ namespace PrintTrackerApp.Services
                     if (files.Count > 0)
                     {
                         hasProcessedFiles = true;
-                        var fileToProcess = files.First();
+                        string? fileToProcess = null;
+                        int currentPriorityLevel = 4;
+
+                        // Check Priority 1
+                        if (currentSettings.EnablePriority1 && !string.IsNullOrWhiteSpace(currentSettings.Priority1Prefixes))
+                        {
+                            fileToProcess = GetFirstMatchingFile(files, currentSettings.Priority1Prefixes);
+                            if (fileToProcess != null) currentPriorityLevel = 1;
+                        }
+
+                        // Check Priority 2
+                        if (fileToProcess == null && currentSettings.EnablePriority2 && !string.IsNullOrWhiteSpace(currentSettings.Priority2Prefixes))
+                        {
+                            fileToProcess = GetFirstMatchingFile(files, currentSettings.Priority2Prefixes);
+                            if (fileToProcess != null) currentPriorityLevel = 2;
+                        }
+
+                        // Check Priority 3
+                        if (fileToProcess == null && currentSettings.EnablePriority3 && !string.IsNullOrWhiteSpace(currentSettings.Priority3Prefixes))
+                        {
+                            fileToProcess = GetFirstMatchingFile(files, currentSettings.Priority3Prefixes);
+                            if (fileToProcess != null) currentPriorityLevel = 3;
+                        }
+
+                        // Normal (Fallback)
+                        if (fileToProcess == null)
+                        {
+                            fileToProcess = files.First();
+                            currentPriorityLevel = 4;
+                        }
+
+                        if (lastPriorityLevel == 0 && currentPriorityLevel == 4)
+                        {
+                            bool anyPriorityEnabled = (currentSettings.EnablePriority1 && !string.IsNullOrWhiteSpace(currentSettings.Priority1Prefixes)) ||
+                                                      (currentSettings.EnablePriority2 && !string.IsNullOrWhiteSpace(currentSettings.Priority2Prefixes)) ||
+                                                      (currentSettings.EnablePriority3 && !string.IsNullOrWhiteSpace(currentSettings.Priority3Prefixes));
+                            
+                            if (anyPriorityEnabled)
+                            {
+                                bool continuePrinting = false;
+                                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                                {
+                                    var window = new PriorityConfirmWindow(0);
+                                    continuePrinting = (window.ShowDialog() == true);
+                                });
+
+                                if (!continuePrinting)
+                                {
+                                    IsPaused = true;
+                                    StatusChanged?.Invoke(this, "Paused");
+                                    PauseRequested?.Invoke(this, EventArgs.Empty);
+                                    lastPriorityLevel = 0;
+                                    continue;
+                                }
+                            }
+                        }
+                        else if (lastPriorityLevel != 0 && lastPriorityLevel < 4 && lastPriorityLevel < currentPriorityLevel)
+                        {
+                            bool continuePrinting = false;
+                            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                var window = new PriorityConfirmWindow(lastPriorityLevel);
+                                continuePrinting = (window.ShowDialog() == true);
+                            });
+
+                            if (!continuePrinting)
+                            {
+                                IsPaused = true;
+                                StatusChanged?.Invoke(this, "Paused");
+                                PauseRequested?.Invoke(this, EventArgs.Empty);
+                                lastPriorityLevel = currentPriorityLevel; // Prevent asking again if they resume
+                                continue;
+                            }
+                        }
+
+                        lastPriorityLevel = currentPriorityLevel;
+
                         string fileName = Path.GetFileName(fileToProcess);
 
-                        if (!ParseDynamicFileInfo(fileName, userId, copies, out string _, out string _, out int _))
+                        if (!ParseDynamicFileInfo(fileName, currentSettings.HoldPrintUserId, currentSettings.AutoPrintCopies, out string _, out string _, out int _))
                         {
                             StatusChanged?.Invoke(this, $"Skipping {fileName} (Invalid Format)");
                             MoveFileToFolder(fileToProcess, watchFolder, "Skipped - Invalid Format");
@@ -80,11 +169,11 @@ namespace PrintTrackerApp.Services
 
                         FileProcessingStarted?.Invoke(this, fileName);
                         
-                        bool success = PrintPdfWithUIAutomation(fileToProcess, foxitPath, userId, fileName, copies, token, windowStyle);
+                        bool success = PrintPdfWithUIAutomation(fileToProcess, currentSettings.FoxitPath, currentSettings.HoldPrintUserId, fileName, currentSettings.AutoPrintCopies, token, currentSettings.FoxitWindowStyle);
                         
                         if (success && !token.IsCancellationRequested)
                         {
-                            Thread.Sleep(delayBetweenPrints * 1000);
+                            Thread.Sleep(currentSettings.DelayBetweenPrints * 1000);
                             MoveFileToFolder(fileToProcess, watchFolder, "Sent to Printer");
                         }
                         else
@@ -99,8 +188,9 @@ namespace PrintTrackerApp.Services
                         if (hasProcessedFiles)
                         {
                             QueueEmpty?.Invoke(this, EventArgs.Empty);
-                            break;
+                            hasProcessedFiles = false; // Prevent multiple empty queue invocations
                         }
+                        lastPriorityLevel = 0; // Reset when queue is empty
                         Thread.Sleep(3000);
                     }
                 }
@@ -110,6 +200,27 @@ namespace PrintTrackerApp.Services
                     Thread.Sleep(5000);
                 }
             }
+        }
+
+        private string? GetFirstMatchingFile(System.Collections.Generic.List<string> files, string prefixesCsv)
+        {
+            var prefixes = prefixesCsv.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                                      .Select(p => p.Trim())
+                                      .Where(p => p.Length > 0)
+                                      .ToList();
+
+            foreach (var file in files)
+            {
+                string fileName = Path.GetFileName(file);
+                foreach (var prefix in prefixes)
+                {
+                    if (fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return file;
+                    }
+                }
+            }
+            return null;
         }
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]

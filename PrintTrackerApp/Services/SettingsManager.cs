@@ -22,6 +22,23 @@ namespace PrintTrackerApp.Services
         public int AutoPrintCopies { get; set; } = 1;
         public string FoxitWindowStyle { get; set; } = "Normal";
         public int DelayBetweenPrints { get; set; } = 2;
+        
+        // Priority Printing Settings
+        public bool EnablePriority1 { get; set; } = false;
+        public string Priority1Prefixes { get; set; } = "";
+        public bool EnablePriority2 { get; set; } = false;
+        public string Priority2Prefixes { get; set; } = "";
+        public bool EnablePriority3 { get; set; } = false;
+        public string Priority3Prefixes { get; set; } = "";
+
+        // Telegram Notification Settings
+        public string TelegramBotUrl { get; set; } = "https://api.telegram.org/bot";
+        public string TelegramBotToken { get; set; } = "8944748256:AAGzDOsuZKu6WT-diIp-7SSgtPHxNOld6-Y";
+        public string TelegramChatId { get; set; } = "231401089";
+        public string DailyReportTime { get; set; } = "17:00";
+        public bool NotifySentToPrinter { get; set; } = true;
+        public bool NotifyStoringCompleted { get; set; } = true;
+        public bool NotifyPrintCompleted { get; set; } = true;
     }
 
     public static class SettingsManager
