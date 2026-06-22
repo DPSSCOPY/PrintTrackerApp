@@ -12,6 +12,8 @@ using System.Diagnostics;
 using PrintTrackerApp.Models;
 using PrintTrackerApp.Services;
 using AutoUpdaterDotNET;
+using PdfSharp.Pdf;
+using PdfSharp.Pdf.IO;
 
 namespace PrintTrackerApp
 {
@@ -37,6 +39,11 @@ namespace PrintTrackerApp
         
         private DispatcherTimer _runTimer;
         private Stopwatch _runStopwatch;
+        
+        private DispatcherTimer? _timeCheckTimer;
+        private ShutdownAlertWindow? _shutdownWindow;
+        private string _lastShutdownDate = "";
+        private System.Threading.CancellationTokenSource? _shutdownDelayCts;
 
         public MainWindow()
         {
@@ -80,6 +87,39 @@ namespace PrintTrackerApp
             _webMonitorWindow.Top = -10000;
             _webMonitorWindow.ShowInTaskbar = false;
             _webMonitorWindow.Show(); // Show it immediately so it renders off-screen
+
+            // Auto Shutdown timer disabled (Coming Soon)
+            // _timeCheckTimer = new DispatcherTimer();
+            // _timeCheckTimer.Interval = TimeSpan.FromSeconds(30);
+            // _timeCheckTimer.Tick += TimeCheckTimer_Tick;
+            // _timeCheckTimer.Start();
+        }
+
+        private void TimeCheckTimer_Tick(object? sender, EventArgs e)
+        {
+            if (_appSettings.EnableAutoShutdown && _appSettings.AutoShutdownMode == 1) // Specific Time
+            {
+                string currentTime = DateTime.Now.ToString("HH:mm");
+                string currentDate = DateTime.Now.ToString("yyyy-MM-dd");
+
+                if (currentTime == _appSettings.AutoShutdownTime && _lastShutdownDate != currentDate)
+                {
+                    _lastShutdownDate = currentDate;
+                    ShowShutdownAlert("Scheduled Auto Shutdown", $"The scheduled time ({_appSettings.AutoShutdownTime}) has been reached.");
+                }
+            }
+        }
+
+        private void ShowShutdownAlert(string title, string message)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (_shutdownWindow != null && _shutdownWindow.IsLoaded)
+                    return;
+
+                _shutdownWindow = new ShutdownAlertWindow($"{title}\n{message}");
+                _shutdownWindow.Show();
+            });
         }
 
         private string GenerateUniqueUserId(string baseUserId, string holdName)
@@ -187,8 +227,37 @@ namespace PrintTrackerApp
 
         private void SpoolerMonitor_OnJobCreated(object? sender, PrintJobInfo job)
         {
+            // 1. ATTEMPT TO GET EXACT PAGE COUNT FROM PDF FILE
+            string? physicalFile = FindPhysicalFileForJob(job);
+            bool parsedPdfPages = false;
+            if (!string.IsNullOrEmpty(physicalFile) && System.IO.File.Exists(physicalFile))
+            {
+                try
+                {
+                    System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+                    using (var document = PdfReader.Open(physicalFile, PdfDocumentOpenMode.Import))
+                    {
+                        if (document.PageCount > 0)
+                        {
+                            job.TotalPages = document.PageCount;
+                            parsedPdfPages = true;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Could not read PDF pages for {physicalFile}: {ex.Message}");
+                }
+            }
+
             Dispatcher.Invoke(() =>
             {
+                // Tag it so we know we got the accurate count from the PDF itself
+                if (parsedPdfPages)
+                {
+                    job.IsPdfPageCountAccurate = true; 
+                }
+
                 _printJobs.Insert(0, job);
                 job.Status = "Sent to Printer";
                 
@@ -215,7 +284,7 @@ namespace PrintTrackerApp
                 var job = _printJobs.FirstOrDefault(j => j.JobId == e.JobId);
                 if (job != null) 
                 {
-                    if (e.TotalPages > job.TotalPages)
+                    if (!job.IsPdfPageCountAccurate && e.TotalPages > job.TotalPages)
                     {
                         job.TotalPages = e.TotalPages;
                         CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
@@ -800,6 +869,11 @@ namespace PrintTrackerApp
                 {
                     _alertedSentToPrinter = false;
                     _alertedStoringCompleted = false;
+                    
+                    if (_appSettings.EnableAutoShutdown)
+                    {
+                        AbortShutdown();
+                    }
                 }
 
                 if (sourceCount == 0 && !_alertedSentToPrinter && _hasStartedPrinting)
@@ -844,11 +918,53 @@ namespace PrintTrackerApp
                     {
                         _ = SendTelegramMessageAsync("✅ *ការព្រីនត្រូវបានបញ្ចាំងរួចរាល់!* (Print Complete)");
                     }
+
+                    // Auto Shutdown after print complete (Specific Time mode) is disabled for now (Coming Soon)
+                    // if (_appSettings.EnableAutoShutdown && _appSettings.AutoShutdownMode == 0)
+                    // {
+                    //     int delayMs = _appSettings.AutoShutdownDelayMinutes * 60000;
+                    //     _shutdownDelayCts?.Cancel();
+                    //     _shutdownDelayCts = new System.Threading.CancellationTokenSource();
+                    //     var token = _shutdownDelayCts.Token;
+                    //
+                    //     Task.Run(async () =>
+                    //     {
+                    //         try
+                    //         {
+                    //             if (delayMs > 0)
+                    //             {
+                    //                 ShowNotification("Auto Shutdown Scheduled", $"PC will shut down in {_appSettings.AutoShutdownDelayMinutes} minutes.");
+                    //                 await Task.Delay(delayMs, token);
+                    //             }
+                    //
+                    //             if (!token.IsCancellationRequested)
+                    //             {
+                    //                 ShowShutdownAlert("Print Complete Auto Shutdown", "All print jobs have been completed.");
+                    //             }
+                    //         }
+                    //         catch { }
+                    //     });
+                    // }
                     
                     _alertedSentToPrinter = false;
                     _alertedStoringCompleted = false;
                 }
             });
+        }
+
+        private void AbortShutdown()
+        {
+            _shutdownDelayCts?.Cancel();
+            Dispatcher.Invoke(() =>
+            {
+                _shutdownWindow?.AbortExternally();
+            });
+
+            try
+            {
+                System.Diagnostics.Process.Start(new ProcessStartInfo("shutdown", "-a") { CreateNoWindow = true, UseShellExecute = false });
+            }
+            catch { }
         }
 
         private async Task SendTelegramMessageAsync(string message)
@@ -1206,12 +1322,14 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             var process = processes[0];
             string title = process.MainWindowTitle;
             if (title.Contains(" - Foxit")) return title;
-            
-            var windows = AutomationElement.RootElement.FindAll(TreeScope.Children, 
-                new AndCondition(new PropertyCondition(AutomationElement.ProcessIdProperty, process.Id), 
-                                 new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window)));
-            
-            foreach (AutomationElement window in windows) {
+
+            var windows = AutomationElement.RootElement.FindAll(TreeScope.Children,
+                new AndCondition(
+                    new PropertyCondition(AutomationElement.ProcessIdProperty, process.Id),
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window)));
+
+            foreach (AutomationElement window in windows)
+            {
                 if (window.Current.Name.Contains(" - Foxit")) return window.Current.Name;
             }
             return title; // fallback

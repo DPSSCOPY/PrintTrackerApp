@@ -39,6 +39,12 @@ namespace PrintTrackerApp.Services
         public bool NotifySentToPrinter { get; set; } = true;
         public bool NotifyStoringCompleted { get; set; } = true;
         public bool NotifyPrintCompleted { get; set; } = true;
+
+        // System Settings
+        public bool EnableAutoShutdown { get; set; } = false;
+        public int AutoShutdownMode { get; set; } = 0; // 0 = After Print Complete, 1 = Specific Time
+        public int AutoShutdownDelayMinutes { get; set; } = 5;
+        public string AutoShutdownTime { get; set; } = "18:00";
     }
 
     public static class SettingsManager

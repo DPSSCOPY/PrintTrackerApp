@@ -25,6 +25,7 @@ namespace PrintTrackerApp.Models
         public string MachineName { get; set; } = Environment.MachineName;
         public string PrinterName { get; set; } = string.Empty;
         public int WebJobId { get; set; } = -1;
+        public bool IsPdfPageCountAccurate { get; set; } = false;
 
         private int _copies = 1;
         public int Copies 

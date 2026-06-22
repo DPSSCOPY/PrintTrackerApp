@@ -54,6 +54,13 @@ namespace PrintTrackerApp
             chkNotifyStoringCompleted.IsChecked = CurrentSettings.NotifyStoringCompleted;
             chkNotifyPrintCompleted.IsChecked = CurrentSettings.NotifyPrintCompleted;
 
+            chkAutoShutdown.IsChecked = CurrentSettings.EnableAutoShutdown;
+            rbShutdownAfterPrint.IsChecked = CurrentSettings.AutoShutdownMode == 0;
+            rbShutdownAtTime.IsChecked = CurrentSettings.AutoShutdownMode == 1;
+            txtShutdownDelay.Text = CurrentSettings.AutoShutdownDelayMinutes.ToString();
+            txtShutdownTime.Text = CurrentSettings.AutoShutdownTime;
+            pnlAutoShutdownOptions.IsEnabled = CurrentSettings.EnableAutoShutdown;
+
             foreach (System.Windows.Controls.ComboBoxItem item in cmbRefreshInterval.Items)
             {
                 if (item.Tag.ToString() == CurrentSettings.RefreshIntervalSeconds.ToString())
@@ -130,6 +137,14 @@ namespace PrintTrackerApp
             CurrentSettings.NotifyStoringCompleted = chkNotifyStoringCompleted.IsChecked ?? true;
             CurrentSettings.NotifyPrintCompleted = chkNotifyPrintCompleted.IsChecked ?? true;
             
+            CurrentSettings.EnableAutoShutdown = chkAutoShutdown.IsChecked ?? false;
+            CurrentSettings.AutoShutdownMode = (rbShutdownAtTime.IsChecked == true) ? 1 : 0;
+            if (int.TryParse(txtShutdownDelay.Text.Trim(), out int minutes))
+            {
+                CurrentSettings.AutoShutdownDelayMinutes = minutes;
+            }
+            CurrentSettings.AutoShutdownTime = txtShutdownTime.Text.Trim();
+
             if (cmbRefreshInterval.SelectedItem is System.Windows.Controls.ComboBoxItem selectedItem && int.TryParse(selectedItem.Tag?.ToString(), out int interval))
             {
                 CurrentSettings.RefreshIntervalSeconds = interval;
@@ -151,6 +166,14 @@ namespace PrintTrackerApp
         private void BtnCancel_Click(object sender, RoutedEventArgs e)
         {
             this.Close();
+        }
+
+        private void chkAutoShutdown_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            if (pnlAutoShutdownOptions != null)
+            {
+                pnlAutoShutdownOptions.IsEnabled = chkAutoShutdown.IsChecked ?? false;
+            }
         }
 
         private async void BtnTestTelegram_Click(object sender, RoutedEventArgs e)

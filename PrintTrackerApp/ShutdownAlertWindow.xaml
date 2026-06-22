@@ -1,0 +1,78 @@
+<Window x:Class="PrintTrackerApp.ShutdownAlertWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Auto Shutdown Alert" SizeToContent="Height" MinHeight="200" Width="450"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        WindowStartupLocation="CenterScreen" Topmost="True" FontFamily="Noto Sans Khmer, Arial">
+
+    <Window.Resources>
+        <Storyboard x:Key="FadeIn">
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.2"/>
+            <ThicknessAnimation Storyboard.TargetProperty="Margin" From="0,20,0,0" To="0,0,0,0" Duration="0:0:0.2" DecelerationRatio="0.9"/>
+        </Storyboard>
+    </Window.Resources>
+
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="Window.Loaded">
+            <BeginStoryboard Storyboard="{StaticResource FadeIn}"/>
+        </EventTrigger>
+    </Window.Triggers>
+
+    <Border Background="White" CornerRadius="12" Margin="10">
+        <Border.Effect>
+            <DropShadowEffect Color="Black" Opacity="0.2" BlurRadius="15" ShadowDepth="5"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header -->
+            <Border x:Name="borderHeader" Background="#EF4444" CornerRadius="12,12,0,0" Padding="15,10">
+                <Grid>
+                    <TextBlock Text="Auto Shutdown Notice" Foreground="White" FontWeight="Bold" FontSize="16" VerticalAlignment="Center"/>
+                    <Button Content="✕" Foreground="White" Background="Transparent" BorderThickness="0" FontSize="16" FontWeight="Bold" 
+                            HorizontalAlignment="Right" VerticalAlignment="Center" Cursor="Hand" Click="BtnCancel_Click"/>
+                </Grid>
+            </Border>
+
+            <!-- Body -->
+            <StackPanel Grid.Row="1" Margin="20" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,15">
+                    <TextBlock Text="⚠️" FontSize="36" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                    <StackPanel>
+                        <TextBlock x:Name="txtMessage" Text="The PC will shut down shortly." 
+                                   TextWrapping="Wrap" FontSize="15" Foreground="#334155" LineHeight="22" MaxWidth="320" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="txtCountdown" Text="Shutting down in 30 seconds..." 
+                                   FontSize="18" Foreground="#EF4444" FontWeight="Bold" Margin="0,5,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+                
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <Button x:Name="btnPause" Grid.Column="0" Content="Pause (ផ្អាក)" Height="38" Background="#F59E0B" Foreground="White" FontWeight="SemiBold" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnPause_Click">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="6"/>
+                            </Style>
+                        </Button.Resources>
+                    </Button>
+                    
+                    <Button x:Name="btnCancel" Grid.Column="2" Content="Cancel (បោះបង់)" Height="38" Background="#6B7280" Foreground="White" FontWeight="SemiBold" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnCancel_Click">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="6"/>
+                            </Style>
+                        </Button.Resources>
+                    </Button>
+                </Grid>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
