@@ -23,6 +23,12 @@ namespace PrintTrackerApp.Services
         public string FoxitWindowStyle { get; set; } = "Normal";
         public int DelayBetweenPrints { get; set; } = 2;
         
+        // Advanced Auto Print Settings
+        public bool EnableBatchPrinting { get; set; } = false;
+        public int BatchSize { get; set; } = 5;
+        public bool EnableUiStepDelay { get; set; } = false;
+        public int UiStepDelayMs { get; set; } = 300;
+        
         // Priority Printing Settings
         public bool EnablePriority1 { get; set; } = false;
         public string Priority1Prefixes { get; set; } = "";

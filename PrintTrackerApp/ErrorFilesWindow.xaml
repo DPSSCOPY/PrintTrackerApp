@@ -1,0 +1,92 @@
+<Window x:Class="PrintTrackerApp.ErrorFilesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Error Files Manager" Height="450" Width="700"
+        WindowStartupLocation="CenterOwner"
+        Background="#F3F4F6"
+        Loaded="Window_Loaded"
+        Unloaded="Window_Unloaded">
+    <Window.Resources>
+        <!-- Modern Button Styles -->
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="#0284C7"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="15,8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#0369A1"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Background" Value="#E5E7EB"/>
+            <Setter Property="Foreground" Value="#374151"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="15,8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#D1D5DB"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#D1D5DB"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Manage Failed Print Jobs" FontSize="18" FontWeight="Bold" Foreground="#1F2937" Margin="0,0,0,15"/>
+
+        <Border Grid.Row="1" Background="White" CornerRadius="8" BorderBrush="#E5E7EB" BorderThickness="1" Margin="0,0,0,15">
+            <DataGrid x:Name="dataGridFiles" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" 
+                      BorderThickness="0" Background="Transparent" RowBackground="White" AlternatingRowBackground="#F9FAFB"
+                      HeadersVisibility="Column" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E5E7EB">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="Select" Width="60">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="File Name" Binding="{Binding FileName}" Width="*" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Status" Binding="{Binding StatusFolder}" Width="120" IsReadOnly="True"/>
+                    <DataGridTextColumn Header="Time in Status" Binding="{Binding DurationText}" Width="150" IsReadOnly="True"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Refresh" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0" Click="BtnRefresh_Click"/>
+            <Button Content="Move Selected to Main Folder" Style="{StaticResource PrimaryButton}" Click="BtnMoveSelected_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

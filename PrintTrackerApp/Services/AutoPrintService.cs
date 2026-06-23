@@ -22,6 +22,7 @@ namespace PrintTrackerApp.Services
         public event EventHandler<string>? FileProcessingStarted;
         public event EventHandler? QueueEmpty;
         public event EventHandler? PauseRequested;
+        public event EventHandler<(string FileName, bool Success)>? FileProcessingCompleted;
         
         public Func<string, string, string>? OnRequestUniqueUserId;
 
@@ -169,7 +170,10 @@ namespace PrintTrackerApp.Services
 
                         FileProcessingStarted?.Invoke(this, fileName);
                         
-                        bool success = PrintPdfWithUIAutomation(fileToProcess, currentSettings.FoxitPath, currentSettings.HoldPrintUserId, fileName, currentSettings.AutoPrintCopies, token, currentSettings.FoxitWindowStyle);
+                        int actualUiDelay = currentSettings.EnableUiStepDelay ? currentSettings.UiStepDelayMs : 300;
+                        bool success = PrintPdfWithUIAutomation(fileToProcess, currentSettings.FoxitPath, currentSettings.HoldPrintUserId, fileName, currentSettings.AutoPrintCopies, token, currentSettings.FoxitWindowStyle, actualUiDelay);
+                        
+                        FileProcessingCompleted?.Invoke(this, (fileName, success));
                         
                         if (success && !token.IsCancellationRequested)
                         {
@@ -300,8 +304,12 @@ namespace PrintTrackerApp.Services
             return false;
         }
 
-        private bool PrintPdfWithUIAutomation(string filePath, string foxitPath, string defaultUserId, string fileName, int defaultCopies, CancellationToken token, string windowStyle)
+        private bool PrintPdfWithUIAutomation(string filePath, string foxitPath, string defaultUserId, string fileName, int defaultCopies, CancellationToken token, string windowStyle, int uiStepDelayMs)
         {
+            int delayShort = Math.Max(100, uiStepDelayMs - 100);
+            int delayNormal = uiStepDelayMs;
+            int delayLong = uiStepDelayMs + 200;
+
             ParseDynamicFileInfo(filePath, defaultUserId, defaultCopies, out string dynamicUserId, out string dynamicFileName, out int dynamicCopies);
             
             if (OnRequestUniqueUserId != null)
@@ -354,7 +362,7 @@ namespace PrintTrackerApp.Services
                     }
 
                     if (mainWindow != null) break;
-                    Thread.Sleep(500);
+                    Thread.Sleep(delayLong);
                 }
 
                 if (mainWindow == null)
@@ -396,7 +404,7 @@ namespace PrintTrackerApp.Services
                 catch {}
 
                 mainWindow.SetFocus();
-                Thread.Sleep(200); // Give Foxit brief time to render
+                Thread.Sleep(delayNormal); // Give Foxit brief time to render
 
                 // 2. Send Ctrl+P using native API
                 KeyboardHelper.SendCtrlP();
@@ -420,7 +428,7 @@ namespace PrintTrackerApp.Services
                         {
                             InvokeElement(shortEdgeBtn);
                         }
-                        Thread.Sleep(200);
+                        Thread.Sleep(delayNormal);
                     }
                 }
                 else
@@ -436,7 +444,7 @@ namespace PrintTrackerApp.Services
                         {
                             InvokeElement(longEdgeBtn);
                         }
-                        Thread.Sleep(200);
+                        Thread.Sleep(delayNormal);
                     }
                 }
 
@@ -444,18 +452,18 @@ namespace PrintTrackerApp.Services
                 if (dynamicCopies > 1)
                 {
                     try { printDialog.SetFocus(); } catch { }
-                    Thread.Sleep(300);
+                    Thread.Sleep(delayNormal);
                     System.Windows.Forms.SendKeys.SendWait("%c");
-                    Thread.Sleep(200);
+                    Thread.Sleep(delayNormal);
                     System.Windows.Forms.SendKeys.SendWait(dynamicCopies.ToString());
-                    Thread.Sleep(200);
+                    Thread.Sleep(delayNormal);
                 }
 
                 // 5. Click 'Properties' (AutomationId: '10380')
                 AutomationElement propertiesBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "10380"));
                 if (propertiesBtn != null)
                 {
-                    Thread.Sleep(300);
+                    Thread.Sleep(delayNormal);
                     InvokeElement(propertiesBtn);
                 }
                 else
@@ -472,7 +480,7 @@ namespace PrintTrackerApp.Services
                 AutomationElement detailsBtn = savinProps.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "1018"));
                 if (detailsBtn != null)
                 {
-                    Thread.Sleep(300);
+                    Thread.Sleep(delayNormal);
                     InvokeElement(detailsBtn);
                     
                     // 9. Job Type Details Window
@@ -497,15 +505,15 @@ namespace PrintTrackerApp.Services
                         AutomationElement okDetailsBtn = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "1"));
                         if (okDetailsBtn != null)
                         {
-                            Thread.Sleep(300);
+                            Thread.Sleep(delayNormal);
                             InvokeElement(okDetailsBtn);
                         }
                         else
                         {
-                            Thread.Sleep(300);
+                            Thread.Sleep(delayNormal);
                             System.Windows.Forms.SendKeys.SendWait("{ENTER}");
                         }
-                        Thread.Sleep(500);
+                        Thread.Sleep(delayLong);
                     }
                 }
 
@@ -513,26 +521,26 @@ namespace PrintTrackerApp.Services
                 AutomationElement okPropsBtn = savinProps.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "1"));
                 if (okPropsBtn != null)
                 {
-                    Thread.Sleep(300);
+                    Thread.Sleep(delayNormal);
                     InvokeElement(okPropsBtn);
                 }
                 else
                 {
-                    Thread.Sleep(300);
+                    Thread.Sleep(delayNormal);
                     System.Windows.Forms.SendKeys.SendWait("{ENTER}");
                 }
-                Thread.Sleep(500);
+                Thread.Sleep(delayLong);
 
                 // 11. Click 'OK' on Foxit Print window (AutomationId: '1')
                 AutomationElement okPrintBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "1"));
                 if (okPrintBtn != null)
                 {
-                    Thread.Sleep(300);
+                    Thread.Sleep(delayNormal);
                     InvokeElement(okPrintBtn);
                 }
                 else
                 {
-                    Thread.Sleep(300);
+                    Thread.Sleep(delayNormal);
                     System.Windows.Forms.SendKeys.SendWait("{ENTER}");
                 }
 

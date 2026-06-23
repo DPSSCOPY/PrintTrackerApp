@@ -45,11 +45,18 @@ namespace PrintTrackerApp
         private string _lastShutdownDate = "";
         private System.Threading.CancellationTokenSource? _shutdownDelayCts;
 
+        // Batch Printing State
+        private System.Collections.Generic.List<PrintJobInfo> _currentBatchJobs = new System.Collections.Generic.List<PrintJobInfo>();
+        private int _batchCounter = 0;
+        private bool _isWaitingForBatch = false;
+        private DateTime _batchWaitStartTime;
+
         public MainWindow()
         {
             _autoPrintService = new AutoPrintService();
             _autoPrintService.StatusChanged += AutoPrintService_StatusChanged;
             _autoPrintService.FileProcessingStarted += AutoPrintService_FileProcessingStarted;
+            _autoPrintService.FileProcessingCompleted += AutoPrintService_FileProcessingCompleted;
             _autoPrintService.QueueEmpty += AutoPrintService_QueueEmpty;
             _autoPrintService.PauseRequested += AutoPrintService_PauseRequested;
             _autoPrintService.OnRequestUniqueUserId = GenerateUniqueUserId;
@@ -225,8 +232,26 @@ namespace PrintTrackerApp
             }
         }
 
+        private string _currentAutoPrintFile = "";
+
         private void SpoolerMonitor_OnJobCreated(object? sender, PrintJobInfo job)
         {
+            if (job.DocumentName == "Local Downlevel Document" || job.DocumentName == "Print Document")
+            {
+                if (!string.IsNullOrEmpty(_currentAutoPrintFile) && _autoPrintService != null && _autoPrintService.IsRunning)
+                {
+                    job.DocumentName = _currentAutoPrintFile;
+                    if (job.WebFileName == "Local Downlevel Document" || job.WebFileName == "Print Document")
+                    {
+                        job.WebFileName = _currentAutoPrintFile;
+                    }
+                }
+                else if (!string.IsNullOrEmpty(job.WebFileName) && job.WebFileName != "Local Downlevel Document" && job.WebFileName != "Print Document")
+                {
+                    job.DocumentName = job.WebFileName;
+                }
+            }
+
             // 1. ATTEMPT TO GET EXACT PAGE COUNT FROM PDF FILE
             string? physicalFile = FindPhysicalFileForJob(job);
             bool parsedPdfPages = false;
@@ -267,6 +292,14 @@ namespace PrintTrackerApp
                 }
                 
                 CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+
+                if (_appSettings.EnableBatchPrinting && _autoPrintService != null && _autoPrintService.IsRunning)
+                {
+                    _currentBatchJobs.Add(job);
+                }
+
+                // Dynamically move the file to folder (useful for manual prints)
+                UpdateFileStatusLocation(job, job.Status);
             });
         }
 
@@ -317,6 +350,10 @@ namespace PrintTrackerApp
             }
 
             UpdateVerificationPanel();
+            if (_isWaitingForBatch)
+            {
+                CheckBatchWaitStatus();
+            }
             CheckAndSendDailyReport();
         }
 
@@ -542,6 +579,11 @@ namespace PrintTrackerApp
                                     j.Status != "Print Complete" && j.Status != "Successfully Printed" &&
                                     jobId > j.WebJobId &&
                                     IsTimeMatch(j.Timestamp, createdAt));
+                                    
+                                if (matchedJob != null)
+                                {
+                                    matchedJob.IsInPrintPhase = true;
+                                }
                             }
                         }
                         
@@ -563,10 +605,10 @@ namespace PrintTrackerApp
                             
                             // 3. Fallback: Take the OLDEST unlinked job (FIFO)
                             // Allow a buffer of 50 to catch out-of-order pagination from Web Monitor
-                            if (matchedJob == null && jobId >= _maxScrapedId - 50) 
-                            {
-                                matchedJob = _printJobs.LastOrDefault(j => j.WebJobId == -1);
-                            }
+                            // if (matchedJob == null && jobId >= _maxScrapedId - 50) 
+                            // {
+                            //     matchedJob = _printJobs.LastOrDefault(j => j.WebJobId == -1);
+                            // }
                             
                             // 4. If we STILL couldn't find a matching local job, ignore it per user request.
                             if (matchedJob == null)
@@ -582,15 +624,31 @@ namespace PrintTrackerApp
                                 matchedJob.WebJobId = jobId; // VERY IMPORTANT: Link it so it doesn't get matched again as unclaimed!
                                 
                                 string oldStatus = matchedJob.Status;
-                                matchedJob.Status = status;
                                 
-                                if (oldStatus != status)
+                                // Strict Rules for Storing Phase: 
+                                // If already "Storing Complete", do NOT downgrade to "Storing Failed".
+                                // However, it CAN transition to Error or Cancelled.
+                                bool canUpdate = true;
+                                if (oldStatus.Contains("Storing Complete", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    if ((status.Contains("Complete", StringComparison.OrdinalIgnoreCase) || status.Contains("Printed", StringComparison.OrdinalIgnoreCase)) && !status.Contains("Storing", StringComparison.OrdinalIgnoreCase))
+                                    if (status.Contains("Storing Failed", StringComparison.OrdinalIgnoreCase))
                                     {
-                                        ShowNotification("Print Complete", $"File: {matchedJob.WebFileName}\nUser: {matchedJob.Owner}");
+                                        canUpdate = false;
                                     }
-                                    UpdateFileStatusLocation(matchedJob, status);
+                                }
+
+                                if (canUpdate)
+                                {
+                                    matchedJob.Status = status;
+                                    
+                                    if (oldStatus != status)
+                                    {
+                                        if ((status.Contains("Complete", StringComparison.OrdinalIgnoreCase) || status.Contains("Printed", StringComparison.OrdinalIgnoreCase)) && !status.Contains("Storing", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            ShowNotification("Print Complete", $"File: {matchedJob.WebFileName}\nUser: {matchedJob.Owner}");
+                                        }
+                                        UpdateFileStatusLocation(matchedJob, status);
+                                    }
                                 }
                                 
                                 if (jobId > _maxScrapedId) _maxScrapedId = jobId; // Update the max seen
@@ -835,7 +893,9 @@ namespace PrintTrackerApp
                     string fileNameWithoutExt = System.IO.Path.GetFileNameWithoutExtension(file);
 
                     if (string.Equals(fileName, job.DocumentName, StringComparison.OrdinalIgnoreCase) ||
-                        job.DocumentName.IndexOf(fileNameWithoutExt, StringComparison.OrdinalIgnoreCase) >= 0)
+                        job.DocumentName.IndexOf(fileNameWithoutExt, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        fileNameWithoutExt.IndexOf(job.DocumentName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        (!string.IsNullOrEmpty(job.WebFileName) && fileNameWithoutExt.IndexOf(job.WebFileName, StringComparison.OrdinalIgnoreCase) >= 0))
                     {
                         return file;
                     }
@@ -950,6 +1010,134 @@ namespace PrintTrackerApp
                     _alertedStoringCompleted = false;
                 }
             });
+        }
+
+        private void CheckBatchWaitStatus()
+        {
+            if (!_isWaitingForBatch) return;
+
+            bool allCompleted = true;
+            bool anyFailed = false;
+            bool anySentToPrinter = false;
+            string failedFileName = "";
+
+            foreach (var job in _currentBatchJobs)
+            {
+                string status = job.Status ?? "";
+                if (status.Contains("Failed", StringComparison.OrdinalIgnoreCase) || 
+                    status.Contains("Error", StringComparison.OrdinalIgnoreCase) || 
+                    status.Contains("Cancel", StringComparison.OrdinalIgnoreCase))
+                {
+                    anyFailed = true;
+                    failedFileName = job.DocumentName;
+                    break;
+                }
+                
+                if (status.Contains("Sent to Printer", StringComparison.OrdinalIgnoreCase) ||
+                    status.Contains("Spooling", StringComparison.OrdinalIgnoreCase))
+                {
+                    anySentToPrinter = true;
+                }
+                
+                // Continue if "Storing Complete" or better
+                if (!status.Contains("Storing Complete", StringComparison.OrdinalIgnoreCase) && 
+                    !status.Contains("Print Complete", StringComparison.OrdinalIgnoreCase) && 
+                    !status.Contains("Printed", StringComparison.OrdinalIgnoreCase) &&
+                    !status.Contains("Printing", StringComparison.OrdinalIgnoreCase) && 
+                    !status.Contains("Processing", StringComparison.OrdinalIgnoreCase))
+                {
+                    allCompleted = false;
+                }
+            }
+
+            if (anyFailed)
+            {
+                _isWaitingForBatch = false;
+                
+                System.Windows.Application.Current.Dispatcher.Invoke(() => 
+                {
+                    bool isYes = CustomConfirmWindow.ShowConfirm(
+                        "Batch Print Error",
+                        $"File '{failedFileName}' encountered an error or was cancelled.\nDo you want to continue printing the next batch?",
+                        AlertType.Error);
+                        
+                    if (isYes)
+                    {
+                        _currentBatchJobs.Clear();
+                        _batchCounter = 0;
+                        _autoPrintService.IsPaused = false;
+                        AutoPrintService_StatusChanged(this, "Running");
+                    }
+                    else
+                    {
+                        BtnStopAutoPrint_Click(null, null);
+                    }
+                });
+            }
+            else if (allCompleted && _currentBatchJobs.Count >= _batchCounter)
+            {
+                _isWaitingForBatch = false;
+                _currentBatchJobs.Clear();
+                _batchCounter = 0;
+                _autoPrintService.IsPaused = false;
+                AutoPrintService_StatusChanged(this, "Running");
+            }
+            else
+            {
+                bool isWaitingForArrival = _currentBatchJobs.Count < _batchCounter;
+
+                if (anySentToPrinter || isWaitingForArrival)
+                {
+                    // Timeout check: 30 seconds only if still 'Sent to Printer'
+                    if ((DateTime.Now - _batchWaitStartTime).TotalSeconds >= 30)
+                    {
+                        _isWaitingForBatch = false;
+                        System.Windows.Application.Current.Dispatcher.Invoke(() => 
+                        {
+                            bool isYes = CustomConfirmWindow.ShowConfirm(
+                                "Batch Print Timeout",
+                                "Batch verification timed out after 30 seconds.\nSome files are still stuck (e.g. 'Sent to Printer').\nDo you want to continue printing the next batch?",
+                                AlertType.Warning);
+                                
+                            if (isYes)
+                            {
+                                _currentBatchJobs.Clear();
+                                _batchCounter = 0;
+                                _autoPrintService.IsPaused = false;
+                                AutoPrintService_StatusChanged(this, "Running");
+                            }
+                            else
+                            {
+                                BtnStopAutoPrint_Click(null, null);
+                            }
+                        });
+                    }
+                }
+                else
+                {
+                    // Alert IMMEDIATELY if no files are "Sent to Printer" but they are not all completed (e.g. Printer Offline, Paper Out)
+                    _isWaitingForBatch = false;
+                    System.Windows.Application.Current.Dispatcher.Invoke(() => 
+                    {
+                        bool isYes = CustomConfirmWindow.ShowConfirm(
+                            "Batch Print Warning",
+                            "Some files are stuck in an unknown state (not 'Sent to Printer').\nDo you want to continue printing the next batch?",
+                            AlertType.Warning);
+                            
+                        if (isYes)
+                        {
+                            _currentBatchJobs.Clear();
+                            _batchCounter = 0;
+                            _autoPrintService.IsPaused = false;
+                            AutoPrintService_StatusChanged(this, "Running");
+                        }
+                        else
+                        {
+                            BtnStopAutoPrint_Click(null, null);
+                        }
+                    });
+                }
+            }
         }
 
         private void AbortShutdown()
@@ -1174,6 +1362,9 @@ namespace PrintTrackerApp
             _runStopwatch.Stop();
             _runTimer.Stop();
             _autoPrintService.Stop();
+            _isWaitingForBatch = false;
+            _currentBatchJobs.Clear();
+            _batchCounter = 0;
             UpdateStatusUI();
         }
 
@@ -1209,9 +1400,28 @@ namespace PrintTrackerApp
 
         private void AutoPrintService_FileProcessingStarted(object sender, string fileName)
         {
+            _currentAutoPrintFile = fileName;
             Dispatcher.Invoke(() =>
             {
                 txtCurrentFile.Text = fileName;
+            });
+        }
+
+        private void AutoPrintService_FileProcessingCompleted(object sender, (string FileName, bool Success) e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (_appSettings.EnableBatchPrinting && !_isWaitingForBatch && _autoPrintService != null && _autoPrintService.IsRunning && e.Success)
+                {
+                    _batchCounter++;
+                    if (_batchCounter >= _appSettings.BatchSize)
+                    {
+                        _autoPrintService.IsPaused = true;
+                        _isWaitingForBatch = true;
+                        _batchWaitStartTime = DateTime.Now;
+                        UpdateStatusUI();
+                    }
+                }
             });
         }
 
@@ -1586,6 +1796,23 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             
             // Start the update check
             AutoUpdater.Start("https://raw.githubusercontent.com/DPSSCOPY/PrintTrackerApp/main/AutoUpdater.xml");
+        }
+
+        private void BtnShowErrorFiles_Click(object sender, RoutedEventArgs e)
+        {
+            var errorWindow = new ErrorFilesWindow(_appSettings.SourceFolderPath);
+            errorWindow.Owner = this;
+            errorWindow.ShowDialog();
+        }
+
+        private void BtnAdvancedAutoPrintSettings_Click(object sender, RoutedEventArgs e)
+        {
+            var advancedWindow = new AdvancedAutoPrintSettingsWindow(_appSettings);
+            advancedWindow.Owner = this;
+            if (advancedWindow.ShowDialog() == true)
+            {
+                _appSettings = SettingsManager.LoadSettings();
+            }
         }
 
         protected override void OnClosed(EventArgs e)
