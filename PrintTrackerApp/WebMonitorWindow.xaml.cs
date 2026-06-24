@@ -132,12 +132,13 @@ namespace PrintTrackerApp
                                             }
                                         }
 
-                                        if (nextBtn) {
-                                            triggerClick(nextBtn);
+                                        if (refreshBtn) {
+                                            triggerClick(refreshBtn);
                                         } else if (firstBtn) {
                                             triggerClick(firstBtn);
-                                        } else if (refreshBtn) {
-                                            triggerClick(refreshBtn);
+                                        } else {
+                                            // Fallback to reload if no buttons found to ensure we always get newest data
+                                            try { win.location.reload(); } catch(e) {}
                                         }
                                     }
                                     return dataString; // Successfully found and processed the data frame
@@ -185,7 +186,14 @@ namespace PrintTrackerApp
                 }
                 catch (Exception)
                 {
-                    // Ignore errors silently for stability
+                    // If script fails (e.g., we are on an error page or offline), we should still count it as empty!
+                    _emptyResultCount++;
+                    if (_emptyResultCount >= 10) 
+                    {
+                        _emptyResultCount = 0;
+                        Debug.WriteLine("Web Monitor error page. Auto-reloading...");
+                        try { webView.CoreWebView2.Navigate($"http://{_printerIp}/"); } catch {}
+                    }
                 }
             }
         }
@@ -198,6 +206,7 @@ namespace PrintTrackerApp
                 await webView.EnsureCoreWebView2Async(env);
                 
                 webView.CoreWebView2.NavigationCompleted += CoreWebView2_NavigationCompleted;
+                _pollTimer.Start(); // Start polling immediately so auto-retry works if printer is offline
                 webView.CoreWebView2.Navigate($"http://{_printerIp}/");
             }
             catch (Exception ex)
@@ -210,25 +219,24 @@ namespace PrintTrackerApp
         {
             if (e.IsSuccess)
             {
-                // We are on a page. Depending on the URL or DOM, we can inject login scripts or scraping scripts.
-                // NOTE: The exact DOM element IDs depend on Ricoh's Web Image Monitor structure.
-                // We will attempt to login automatically if we find the login form.
-                
                 string currentUrl = webView.Source.ToString();
                 Debug.WriteLine($"Navigated to: {currentUrl}");
 
-                // Basic example of injecting login (IDs like 'userid' and 'password' might need adjustment)
-                string loginScript = $@"
-                    if (document.getElementById('userid') && document.getElementById('password')) {{
-                        document.getElementById('userid').value = '{Username}';
-                        document.getElementById('password').value = '{Password}';
-                        // Add auto submit if button exists: document.getElementById('loginBtn').click();
-                    }}
+                // Auto navigate to job history directly without logging in
+                string navigateScript = @"
+                    try {
+                        if (typeof wsMenu_jumpUrl === 'function') {
+                            wsMenu_jumpUrl('../../webprinter/jobHistory.cgi', 000);
+                        } else if (window.frames && window.frames.length > 0) {
+                            for(var i=0; i<window.frames.length; i++) {
+                                if (typeof window.frames[i].wsMenu_jumpUrl === 'function') {
+                                    window.frames[i].wsMenu_jumpUrl('../../webprinter/jobHistory.cgi', 000);
+                                }
+                            }
+                        }
+                    } catch(err) {}
                 ";
-                await webView.CoreWebView2.ExecuteScriptAsync(loginScript);
-
-                // Start polling status
-                _pollTimer.Start();
+                await webView.CoreWebView2.ExecuteScriptAsync(navigateScript);
             }
         }
 

@@ -177,6 +177,9 @@ namespace PrintTrackerApp
         {
             AutoUpdater.Start("https://raw.githubusercontent.com/DPSSCOPY/PrintTrackerApp/main/AutoUpdater.xml");
 
+            // Auto-open the web monitor window as requested by the user, but run it in the background
+            StartWebMonitorInBackground();
+
             // Load today's history from CSV
             var loadedJobs = CsvLogger.LoadJobsFromCsv(_appSettings.CsvExportPath);
             foreach (var job in loadedJobs)
@@ -334,6 +337,7 @@ namespace PrintTrackerApp
                 _currentDate = today;
                 _printJobs.Clear();
                 _maxScrapedId = -1; // Reset web scraper tracking
+                _webMonitorHistoryJobs.Clear();
             }
 
             await UpdatePrinterStatusAsync();
@@ -416,11 +420,12 @@ namespace PrintTrackerApp
             Dispatcher.Invoke(() =>
             {
                 int completedToday = _printJobs.Count(j => j.Status.Contains("Complete", StringComparison.OrdinalIgnoreCase) || j.Status.Contains("Printed", StringComparison.OrdinalIgnoreCase));
-                txtCompletedCount.Text = completedToday.ToString();
 
                 if (string.IsNullOrWhiteSpace(_appSettings.SourceFolderPath) || !System.IO.Directory.Exists(_appSettings.SourceFolderPath))
                 {
                     txtPendingCount.Text = "0";
+                    txtSubfolderCount.Text = "0";
+                    txtDuplicateCount.Text = "0";
                     return;
                 }
 
@@ -430,6 +435,38 @@ namespace PrintTrackerApp
                     var files = System.IO.Directory.GetFiles(_appSettings.SourceFolderPath);
                     int currentCount = files.Length;
                     txtPendingCount.Text = currentCount.ToString();
+
+                    // Count all pdf files in subfolders, separating actual unique files from duplicates
+                    int totalSubCount = 0;
+                    HashSet<string> uniqueBaseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    
+                    var subdirs = System.IO.Directory.GetDirectories(_appSettings.SourceFolderPath);
+                    foreach (var dir in subdirs)
+                    {
+                        try 
+                        { 
+                            var pdfFiles = System.IO.Directory.GetFiles(dir, "*.pdf");
+                            totalSubCount += pdfFiles.Length;
+                            foreach(var f in pdfFiles) 
+                            {
+                                string name = System.IO.Path.GetFileNameWithoutExtension(f);
+                                // Remove auto-appended time suffix (_HHmmss) to identify the true original file
+                                var match = System.Text.RegularExpressions.Regex.Match(name, @"_(\d{6})$");
+                                if (match.Success) 
+                                {
+                                    name = name.Substring(0, name.Length - 7);
+                                }
+                                uniqueBaseNames.Add(name);
+                            }
+                        } 
+                        catch { }
+                    }
+                    
+                    int actualCount = uniqueBaseNames.Count;
+                    int duplicateCount = totalSubCount - actualCount;
+
+                    txtSubfolderCount.Text = actualCount.ToString();
+                    txtDuplicateCount.Text = duplicateCount.ToString();
 
                     if (currentCount > 0 && _autoPrintService != null && _autoPrintService.IsRunning)
                     {
@@ -473,6 +510,78 @@ namespace PrintTrackerApp
                     UseShellExecute = true,
                     Verb = "open"
                 });
+            }
+        }
+
+        private void BtnShowSubfolderDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(_appSettings.SourceFolderPath) || !System.IO.Directory.Exists(_appSettings.SourceFolderPath))
+            {
+                System.Windows.MessageBox.Show("Source folder is not configured or does not exist.", "Details", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                var subdirs = System.IO.Directory.GetDirectories(_appSettings.SourceFolderPath);
+                System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                sb.AppendLine("Summary of files by subfolder:");
+                sb.AppendLine(new string('-', 40));
+
+                int totalCount = 0;
+                foreach (var dir in subdirs)
+                {
+                    string dirName = System.IO.Path.GetFileName(dir);
+                    int count = 0;
+                    try { count = System.IO.Directory.GetFiles(dir, "*.pdf").Length; } catch { }
+                    
+                    sb.AppendLine($"{dirName}: {count} file(s)");
+                    totalCount += count;
+                }
+
+                sb.AppendLine(new string('-', 40));
+                sb.AppendLine($"Total files in subfolders: {totalCount}");
+
+                var window = new SubfolderSummaryWindow(sb.ToString());
+                window.Owner = this;
+                window.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Error retrieving details: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void TxtSearch_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        {
+            string searchText = txtSearch.Text.ToLower();
+            
+            // Handle placeholder visibility
+            if (txtSearchPlaceholder != null)
+                txtSearchPlaceholder.Visibility = string.IsNullOrEmpty(searchText) ? Visibility.Visible : Visibility.Collapsed;
+
+            System.ComponentModel.ICollectionView view = System.Windows.Data.CollectionViewSource.GetDefaultView(dgPrintJobs.ItemsSource);
+            if (view != null)
+            {
+                if (string.IsNullOrWhiteSpace(searchText))
+                {
+                    view.Filter = null;
+                }
+                else
+                {
+                    view.Filter = item =>
+                    {
+                        var job = item as PrintJobInfo;
+                        if (job == null) return false;
+
+                        return (job.DocumentName != null && job.DocumentName.ToLower().Contains(searchText)) ||
+                               (job.WebFileName != null && job.WebFileName.ToLower().Contains(searchText)) ||
+                               (job.RicohUserId != null && job.RicohUserId.ToLower().Contains(searchText)) ||
+                               (job.Owner != null && job.Owner.ToLower().Contains(searchText)) ||
+                               (job.PrinterName != null && job.PrinterName.ToLower().Contains(searchText)) ||
+                               (job.Status != null && job.Status.ToLower().Contains(searchText));
+                    };
+                }
             }
         }
 
@@ -520,6 +629,7 @@ namespace PrintTrackerApp
             // SpoolerMonitor_OnJobDeleted will handle updating the job status precisely when it finishes.
         }
         private int _maxScrapedId = -1;
+        private Dictionary<int, string[]> _webMonitorHistoryJobs = new Dictionary<int, string[]>();
 
         private void WebMonitor_OnScrapedStatusReceived(object? sender, string data)
         {
@@ -554,6 +664,31 @@ namespace PrintTrackerApp
                         string userId = parts[3];
                         int.TryParse(parts[4], out int webPages);
                         string createdAt = parts.Length >= 6 ? parts[5] : "";
+
+                        // Raw History Logging: Dynamic Update (Overwrite file if status changes or new job)
+                        bool changed = false;
+                        if (!_webMonitorHistoryJobs.ContainsKey(jobId))
+                        {
+                            var newRow = new List<string>(parts);
+                            newRow.Add(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")); // Append Log Time as 7th element (index 6)
+                            _webMonitorHistoryJobs[jobId] = newRow.ToArray();
+                            changed = true;
+                        }
+                        else if (_webMonitorHistoryJobs[jobId].Length > 2 && _webMonitorHistoryJobs[jobId][2] != status)
+                        {
+                            // Status changed! Update it, but keep original Log Time
+                            var updatedRow = new List<string>(parts);
+                            string oldLogTime = _webMonitorHistoryJobs[jobId].Length > 6 ? _webMonitorHistoryJobs[jobId][6] : DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                            updatedRow.Add(oldLogTime);
+                            _webMonitorHistoryJobs[jobId] = updatedRow.ToArray();
+                            changed = true;
+                        }
+
+                        if (changed)
+                        {
+                            // Output jobs sorted by ID descending
+                            CsvLogger.ExportWebMonitorRawToCsv(_webMonitorHistoryJobs.Values.OrderByDescending(x => int.Parse(x[0])), _appSettings.CsvExportPath);
+                        }
 
                         // 1. Check if we ALREADY linked this exact Web Monitor Job ID to an internal print job
                         var matchedJob = _printJobs.FirstOrDefault(j => j.WebJobId == jobId);
@@ -590,27 +725,25 @@ namespace PrintTrackerApp
                         // 3. If STILL not found, and it's a completely NEW job ID OR we are in the first batch processing old loaded jobs
                         if (matchedJob == null)
                         {
-                            // 1. Strong Exact Match using the parsed WebFileName and UserId from PC!
+                            // 1. Strict Match: Web Job ID (if we could somehow get it, but we can't from PC side before linking)
+                            // 2. Strict Match: Hold Name (UserId) + File Name + Timestamp (As requested by user for 100% accuracy)
                             matchedJob = _printJobs.FirstOrDefault(j => 
                                 j.WebJobId == -1 && 
-                                string.Equals(j.WebFileName?.Trim(), webFileName?.Trim(), StringComparison.OrdinalIgnoreCase) && 
-                                string.Equals(j.RicohUserId?.Trim(), userId?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                                IsUserIdMatch(j.RicohUserId, j.Owner, userId) &&
+                                (string.Equals(j.WebFileName?.Trim(), webFileName?.Trim(), StringComparison.OrdinalIgnoreCase) || string.Equals(j.DocumentName?.Trim(), webFileName?.Trim(), StringComparison.OrdinalIgnoreCase)) &&
                                 IsTimeMatch(j.Timestamp, createdAt));
 
-                            // 2. Try to find an unlinked job by fuzzy File Name Match (if strong match fails)
+                            // 3. Fallback: Fuzzy File Name Match BUT STILL REQUIRE STRICT User ID (Hold Name) Match
                             if (matchedJob == null)
                             {
-                                matchedJob = _printJobs.FirstOrDefault(j => j.WebJobId == -1 && IsFileNameMatch(j.DocumentName, webFileName) && IsTimeMatch(j.Timestamp, createdAt));
+                                matchedJob = _printJobs.FirstOrDefault(j => 
+                                    j.WebJobId == -1 && 
+                                    IsUserIdMatch(j.RicohUserId, j.Owner, userId) && 
+                                    IsFileNameMatch(j.DocumentName, webFileName) && 
+                                    IsTimeMatch(j.Timestamp, createdAt));
                             }
                             
-                            // 3. Fallback: Take the OLDEST unlinked job (FIFO)
-                            // Allow a buffer of 50 to catch out-of-order pagination from Web Monitor
-                            // if (matchedJob == null && jobId >= _maxScrapedId - 50) 
-                            // {
-                            //     matchedJob = _printJobs.LastOrDefault(j => j.WebJobId == -1);
-                            // }
-                            
-                            // 4. If we STILL couldn't find a matching local job, ignore it per user request.
+                            // 4. If we STILL couldn't find a matching local job, ignore it per user request to prevent wrong status updates.
                             if (matchedJob == null)
                             {
                                 if (jobId > _maxScrapedId) _maxScrapedId = jobId;
@@ -718,6 +851,28 @@ namespace PrintTrackerApp
             return true;
         }
 
+        private bool IsUserIdMatch(string pcUserId, string pcOwner, string webUserId)
+        {
+            if (string.IsNullOrWhiteSpace(webUserId)) return true; // If web monitor doesn't provide it, we can't filter by it
+            
+            string webClean = webUserId.Trim();
+            if (string.Equals(pcUserId?.Trim(), webClean, StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.Equals(pcOwner?.Trim(), webClean, StringComparison.OrdinalIgnoreCase)) return true;
+            
+            // Sometimes Ricoh strips domain prefixes (e.g. DOMAIN\User becomes User)
+            if (!string.IsNullOrEmpty(pcOwner))
+            {
+                var parts = pcOwner.Split('\\');
+                string ownerName = parts.Length > 1 ? parts[1] : parts[0];
+                if (string.Equals(ownerName.Trim(), webClean, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            
+            // Allow partial match if PC user id contains the web user id
+            if (!string.IsNullOrEmpty(pcUserId) && pcUserId.IndexOf(webClean, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            
+            return false;
+        }
+
         private bool IsFileNameMatch(string pcDocName, string webFileName)
         {
             if (string.Equals(pcDocName, webFileName, StringComparison.OrdinalIgnoreCase)) return true;
@@ -741,6 +896,14 @@ namespace PrintTrackerApp
             if (matchCount >= 4) return true;
 
             return false;
+        }
+
+        private void StartWebMonitorInBackground()
+        {
+            _webMonitorWindow.Left = -10000;
+            _webMonitorWindow.Top = -10000;
+            _webMonitorWindow.ShowInTaskbar = false;
+            _webMonitorWindow.Show();
         }
 
         private void BtnOpenWebMonitor_Click(object sender, RoutedEventArgs e)
@@ -1422,6 +1585,69 @@ namespace PrintTrackerApp
                         UpdateStatusUI();
                     }
                 }
+
+                if (e.Success)
+                {
+                    // Fallback: Ensure job is tracked even if WMI drops the event (e.g. printing too fast)
+                    Task.Run(async () =>
+                    {
+                        await Task.Delay(3000); // Give WMI 3s to capture the event
+                        Dispatcher.Invoke(() =>
+                        {
+                            var exists = _printJobs.Any(j => 
+                                (string.Equals(j.DocumentName, e.FileName, StringComparison.OrdinalIgnoreCase) || 
+                                 string.Equals(j.WebFileName, e.FileName, StringComparison.OrdinalIgnoreCase)) &&
+                                (DateTime.Now - DateTime.Parse(j.Timestamp)).TotalMinutes < 5);
+                                
+                            if (!exists)
+                            {
+                                // WMI missed it! Add it manually to ensure tracking
+                                PrintTrackerApp.Services.AutoPrintService.ParseDynamicFileInfo(e.FileName, _appSettings.HoldPrintUserId, _appSettings.AutoPrintCopies, out string userId, out string _, out int copies);
+                                
+                                var fallbackJob = new PrintJobInfo
+                                {
+                                    JobId = Guid.NewGuid().ToString(),
+                                    DocumentName = e.FileName,
+                                    WebFileName = e.FileName,
+                                    RicohUserId = userId,
+                                    Copies = copies,
+                                    TotalPages = 1,
+                                    Owner = Environment.UserName,
+                                    PrinterName = _appSettings.PrinterIp ?? "Unknown",
+                                    Status = "Sent to Printer",
+                                    Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                                    WebJobId = -1
+                                };
+                                
+                                // Attempt to parse exact PDF pages just like SpoolerMonitor does
+                                string? physicalFile = FindPhysicalFileForJob(fallbackJob);
+                                bool parsedPdfPages = false;
+                                if (!string.IsNullOrEmpty(physicalFile) && System.IO.File.Exists(physicalFile))
+                                {
+                                    try
+                                    {
+                                        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+                                        using (var document = PdfReader.Open(physicalFile, PdfDocumentOpenMode.Import))
+                                        {
+                                            if (document.PageCount > 0)
+                                            {
+                                                fallbackJob.TotalPages = document.PageCount;
+                                                parsedPdfPages = true;
+                                            }
+                                        }
+                                    }
+                                    catch { }
+                                }
+                                
+                                if (parsedPdfPages) fallbackJob.IsPdfPageCountAccurate = true;
+                                
+                                _printJobs.Insert(0, fallbackJob);
+                                if (_currentActiveJob == null) _currentActiveJob = fallbackJob;
+                                CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                            }
+                        });
+                    });
+                }
             });
         }
 
@@ -1803,6 +2029,35 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             var errorWindow = new ErrorFilesWindow(_appSettings.SourceFolderPath);
             errorWindow.Owner = this;
             errorWindow.ShowDialog();
+
+            if (errorWindow.MovedFiles != null && errorWindow.MovedFiles.Count > 0)
+            {
+                var jobsToRemove = _printJobs.Where(job => 
+                    errorWindow.MovedFiles.Any(mf => 
+                    {
+                        string fileName = mf;
+                        string fileNameWithoutExt = System.IO.Path.GetFileNameWithoutExtension(mf);
+                        string docName = job.DocumentName;
+                        string webFileName = job.WebFileName;
+
+                        if (string.IsNullOrEmpty(docName)) return false;
+
+                        return string.Equals(fileName, docName, StringComparison.OrdinalIgnoreCase) ||
+                               docName.IndexOf(fileNameWithoutExt, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                               fileNameWithoutExt.IndexOf(docName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                               (!string.IsNullOrEmpty(webFileName) && fileNameWithoutExt.IndexOf(webFileName, StringComparison.OrdinalIgnoreCase) >= 0);
+                    })).ToList();
+
+                foreach (var job in jobsToRemove)
+                {
+                    _printJobs.Remove(job);
+                }
+
+                if (jobsToRemove.Count > 0)
+                {
+                    CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                }
+            }
         }
 
         private void BtnAdvancedAutoPrintSettings_Click(object sender, RoutedEventArgs e)

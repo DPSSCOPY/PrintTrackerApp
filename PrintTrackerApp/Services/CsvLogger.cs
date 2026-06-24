@@ -65,6 +65,46 @@ namespace PrintTrackerApp.Services
             return field;
         }
 
+        public static void ExportWebMonitorRawToCsv(IEnumerable<string[]> rawJobs, string folderPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(folderPath) || rawJobs == null || !rawJobs.Any())
+                    return;
+
+                if (!Directory.Exists(folderPath))
+                    Directory.CreateDirectory(folderPath);
+
+                string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
+                string filePath = Path.Combine(folderPath, $"WebMonitorHistory_{dateStr}.csv");
+
+                // Overwrite mode for dynamic update
+                using (var writer = new StreamWriter(filePath, append: false, Encoding.UTF8))
+                {
+                    writer.WriteLine("Log Time,Job ID,File Name,Status,User ID,Pages,Created At");
+
+                    foreach (var rawJobParts in rawJobs)
+                    {
+                        // Check if we passed the log time as the 7th element (index 6) or 8th. 
+                        // Actually, let's just assume MainWindow appends Log Time at the end (index 6).
+                        string logTime = EscapeCsv(rawJobParts.Length > 6 ? rawJobParts[6] : DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                        string jobId = EscapeCsv(rawJobParts.Length > 0 ? rawJobParts[0] : "");
+                        string fileName = EscapeCsv(rawJobParts.Length > 1 ? rawJobParts[1] : "");
+                        string status = EscapeCsv(rawJobParts.Length > 2 ? rawJobParts[2] : "");
+                        string userId = EscapeCsv(rawJobParts.Length > 3 ? rawJobParts[3] : "");
+                        string pages = EscapeCsv(rawJobParts.Length > 4 ? rawJobParts[4] : "");
+                        string createdAt = EscapeCsv(rawJobParts.Length > 5 ? rawJobParts[5] : "");
+
+                        writer.WriteLine($"{logTime},{jobId},{fileName},{status},{userId},{pages},{createdAt}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Error logging raw web monitor to CSV: " + ex.Message);
+            }
+        }
+
         public static List<PrintJobInfo> LoadJobsFromCsv(string folderPath)
         {
             var jobs = new List<PrintJobInfo>();

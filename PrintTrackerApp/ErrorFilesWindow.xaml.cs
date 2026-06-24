@@ -50,6 +50,7 @@ namespace PrintTrackerApp
 
     public partial class ErrorFilesWindow : Window
     {
+        public System.Collections.Generic.List<string> MovedFiles { get; private set; } = new System.Collections.Generic.List<string>();
         private ObservableCollection<ErrorFileInfo> _errorFiles = new ObservableCollection<ErrorFileInfo>();
         private string _sourceFolderPath;
         private DispatcherTimer _timer;
@@ -147,6 +148,7 @@ namespace PrintTrackerApp
                         }
 
                         File.Move(fileInfo.FilePath, destPath);
+                        MovedFiles.Add(Path.GetFileName(destPath));
                         successCount++;
                     }
                 }

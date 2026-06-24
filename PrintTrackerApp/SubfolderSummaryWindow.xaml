@@ -1,0 +1,66 @@
+<Window x:Class="PrintTrackerApp.SubfolderSummaryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Subfolder Details" SizeToContent="Height" MinHeight="250" MaxHeight="600" Width="450"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        WindowStartupLocation="CenterOwner" Topmost="True" FontFamily="Noto Sans Khmer, Arial">
+
+    <Window.Resources>
+        <Storyboard x:Key="FadeIn">
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.2"/>
+            <ThicknessAnimation Storyboard.TargetProperty="Margin" From="0,20,0,0" To="0,0,0,0" Duration="0:0:0.2" DecelerationRatio="0.9"/>
+        </Storyboard>
+    </Window.Resources>
+
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="Window.Loaded">
+            <BeginStoryboard Storyboard="{StaticResource FadeIn}"/>
+        </EventTrigger>
+    </Window.Triggers>
+
+    <Border Background="White" CornerRadius="12" Margin="10">
+        <Border.Effect>
+            <DropShadowEffect Color="Black" Opacity="0.2" BlurRadius="15" ShadowDepth="5"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header -->
+            <Border x:Name="borderHeader" Background="#3B82F6" CornerRadius="12,12,0,0" Padding="15,10" MouseLeftButtonDown="BorderHeader_MouseLeftButtonDown">
+                <Grid>
+                    <TextBlock x:Name="txtTitle" Text="Subfolder Details" Foreground="White" FontWeight="Bold" FontSize="16" VerticalAlignment="Center"/>
+                    <Button Content="✕" Foreground="White" Background="Transparent" BorderThickness="0" FontSize="16" FontWeight="Bold" 
+                            HorizontalAlignment="Right" VerticalAlignment="Center" Cursor="Hand" Click="BtnOK_Click"/>
+                </Grid>
+            </Border>
+
+            <!-- Body -->
+            <ScrollViewer Grid.Row="1" Margin="20" VerticalScrollBarVisibility="Auto" MaxHeight="400">
+                <TextBlock x:Name="txtSummary" Text="Summary goes here." 
+                           TextWrapping="Wrap" FontSize="14" Foreground="#334155" LineHeight="22"/>
+            </ScrollViewer>
+            
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">
+                <Button x:Name="btnShowDuplicates" Content="Show Duplicate Files" Height="38" Width="180" Background="#F59E0B" Foreground="White" FontWeight="SemiBold" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnShowDuplicates_Click" Margin="0,0,10,0">
+                    <Button.Resources>
+                        <Style TargetType="Border">
+                            <Setter Property="CornerRadius" Value="6"/>
+                        </Style>
+                    </Button.Resources>
+                </Button>
+                
+                <Button x:Name="btnOK" Content="យល់ព្រម (OK)" Height="38" Width="120" Background="#3B82F6" Foreground="White" FontWeight="SemiBold" FontSize="14" BorderThickness="0" Cursor="Hand" Click="BtnOK_Click">
+                    <Button.Resources>
+                        <Style TargetType="Border">
+                            <Setter Property="CornerRadius" Value="6"/>
+                        </Style>
+                    </Button.Resources>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
