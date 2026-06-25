@@ -944,32 +944,28 @@ namespace PrintTrackerApp
         {
             if (string.IsNullOrWhiteSpace(pcDocName) || string.IsNullOrWhiteSpace(webFileName)) return false;
 
-            if (string.Equals(pcDocName, webFileName, StringComparison.OrdinalIgnoreCase)) return true;
+            string pcNameNoExt = System.IO.Path.GetFileNameWithoutExtension(pcDocName).Trim();
+            string webNameNoExt = System.IO.Path.GetFileNameWithoutExtension(webFileName).Trim();
 
-            // Remove all '?' (which Ricoh uses for unicode) and check if remaining parts match
-            string cleanWebName = webFileName.Replace("?", "").Trim();
-            if (cleanWebName.Length >= 5 && pcDocName.IndexOf(cleanWebName, StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
+            // 1. 100% Exact Match
+            if (string.Equals(pcNameNoExt, webNameNoExt, StringComparison.OrdinalIgnoreCase)) return true;
 
-            // Remove extensions and check prefix
-            string pcNameNoExt = System.IO.Path.GetFileNameWithoutExtension(pcDocName);
-            string webNameNoExt = System.IO.Path.GetFileNameWithoutExtension(webFileName);
-            
-            if (pcNameNoExt.StartsWith(webNameNoExt, StringComparison.OrdinalIgnoreCase) && webNameNoExt.Length >= 5)
-                return true;
-
-            int matchCount = 0;
-            for(int i=0; i<Math.Min(pcNameNoExt.Length, webNameNoExt.Length); i++)
+            // 2. Exact match considering '?' (Ricoh replaces unicode characters with '?')
+            // The length MUST be exactly the same for it to be a 100% match.
+            if (pcNameNoExt.Length == webNameNoExt.Length)
             {
-                if (webNameNoExt[i] == '?') continue;
-                if (char.ToLower(pcNameNoExt[i]) == char.ToLower(webNameNoExt[i])) matchCount++;
-                else break;
+                bool isMatch = true;
+                for (int i = 0; i < pcNameNoExt.Length; i++)
+                {
+                    if (webNameNoExt[i] == '?') continue; // wildcard for unicode
+                    if (char.ToLowerInvariant(pcNameNoExt[i]) != char.ToLowerInvariant(webNameNoExt[i]))
+                    {
+                        isMatch = false;
+                        break;
+                    }
+                }
+                if (isMatch) return true;
             }
-            
-            // Require a much stricter match than just 4 characters.
-            // Either it matches completely (accounting for ? characters), or it matches a very large prefix.
-            int requiredMatch = Math.Max(5, (int)(webNameNoExt.Length * 0.8));
-            if (matchCount >= requiredMatch) return true;
 
             return false;
         }
