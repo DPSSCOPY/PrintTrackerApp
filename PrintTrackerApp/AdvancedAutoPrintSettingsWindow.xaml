@@ -50,6 +50,43 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+        <Style TargetType="CheckBox" x:Key="ToggleSwitchStyle">
+            <Setter Property="Background" Value="#E5E5EA"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                            <Grid Width="40" Height="22">
+                                <Border x:Name="Border" CornerRadius="11" Background="{TemplateBinding Background}" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" />
+                                
+                                <!-- On mark (Vertical line) -->
+                                <Rectangle x:Name="OnLabel" Fill="White" Width="2" Height="10" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="9,0,0,0" Visibility="Hidden"/>
+                                
+                                <!-- Off mark (Circle outline) -->
+                                <Ellipse x:Name="OffLabel" Width="8" Height="8" Stroke="#9CA3AF" StrokeThickness="2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                
+                                <!-- Knob -->
+                                <Border x:Name="Knob" Width="18" Height="18" CornerRadius="9" Background="White" HorizontalAlignment="Left" Margin="2,0,0,0">
+                                    <Border.Effect>
+                                        <DropShadowEffect ShadowDepth="1" BlurRadius="2" Opacity="0.2"/>
+                                    </Border.Effect>
+                                </Border>
+                            </Grid>
+                            <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center" Content="{TemplateBinding Content}"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="#52C45A"/>
+                                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/>
+                                <Setter TargetName="Knob" Property="Margin" Value="0,0,2,0"/>
+                                <Setter TargetName="OnLabel" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="OffLabel" Property="Visibility" Value="Hidden"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="20">
@@ -67,7 +104,7 @@
         <!-- Function 1: Batch Printing -->
         <Border Background="White" CornerRadius="8" Padding="15" Margin="0,0,0,15" Grid.Row="1">
             <StackPanel>
-                <CheckBox x:Name="chkEnableBatchPrinting" Content="Enable Batch Printing Verification" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,10" ToolTip="Pause printing after N files to check if all files have been stored correctly."/>
+                <CheckBox x:Name="chkEnableBatchPrinting" Content="Enable Batch Printing Verification" Style="{StaticResource ToggleSwitchStyle}" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,10" ToolTip="Pause printing after N files to check if all files have been stored correctly."/>
                 
                 <StackPanel Orientation="Horizontal" Margin="25,0,0,0">
                     <TextBlock Text="Batch Size (Files):" VerticalAlignment="Center" Foreground="#4B5563" Width="130"/>
@@ -82,7 +119,7 @@
                 <TextBlock Text="Timing &amp; Delays" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,10"/>
                 
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-                    <CheckBox x:Name="chkEnableUiStepDelay" Content="Enable Custom UI Step Delay" FontWeight="SemiBold" Foreground="#374151" Checked="ChkEnableUiStepDelay_CheckedChanged" Unchecked="ChkEnableUiStepDelay_CheckedChanged"/>
+                    <CheckBox x:Name="chkEnableUiStepDelay" Content="Enable Custom UI Step Delay" Style="{StaticResource ToggleSwitchStyle}" FontWeight="SemiBold" Foreground="#374151" Checked="ChkEnableUiStepDelay_CheckedChanged" Unchecked="ChkEnableUiStepDelay_CheckedChanged"/>
                     <TextBlock Text="(Default: 300 ms)" Foreground="#6B7280" FontStyle="Italic" Margin="10,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
 
@@ -94,6 +131,17 @@
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="Delay between prints (s):" VerticalAlignment="Center" Foreground="#4B5563" Width="155"/>
                     <TextBox x:Name="txtDelayBetweenPrints" Width="60" TextAlignment="Center" PreviewTextInput="NumberValidationTextBox" Padding="4"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Function 3: Page Settings -->
+        <Border Background="White" CornerRadius="8" Padding="15" Margin="0,15,0,0" Grid.Row="3">
+            <StackPanel>
+                <TextBlock Text="Page Settings" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,10"/>
+                
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                    <CheckBox x:Name="chkSkipBlankPage" Content="Skip blank page" Style="{StaticResource ToggleSwitchStyle}" FontWeight="SemiBold" Foreground="#374151" ToolTip="Automatically skip printing blank pages."/>
                 </StackPanel>
             </StackPanel>
         </Border>

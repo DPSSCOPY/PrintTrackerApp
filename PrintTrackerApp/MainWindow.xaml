@@ -1,7 +1,7 @@
 <Window x:Class="PrintTrackerApp.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Ricoh Print Tracker &amp; Auto Print - Ver1.0.4" Height="700" Width="850" MinWidth="380" MinHeight="500" Background="#F0F4F8" Loaded="Window_Loaded" SizeChanged="Window_SizeChanged"
+        Title="Ricoh Print Tracker &amp; Auto Print - Ver1.0.5" Height="700" Width="850" MinWidth="380" MinHeight="500" Background="#F0F4F8" Loaded="Window_Loaded" SizeChanged="Window_SizeChanged"
         Icon="icon.png" ShowInTaskbar="True">
     <Window.Resources>
         <Style TargetType="Button" x:Key="ModernButton">
@@ -197,11 +197,23 @@
                                 <TextBlock x:Name="txtSubfolderCount" Text="0" Foreground="Black" FontWeight="ExtraBold" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="Actual unique files printed"/>
                             </Border>
 
+                            <TextBlock Text="Sent to Printer:" FontWeight="Bold" FontSize="15" Foreground="#0F172A" VerticalAlignment="Center" Margin="15,5,0,0"/>
+                            <Border Background="#3B82F6" CornerRadius="16" MinWidth="45" Height="40" Margin="10,5,5,0" Padding="10,0">
+                                <TextBlock x:Name="txtSentToPrinterCount" Text="0" Foreground="White" FontWeight="ExtraBold" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="Files sent to printer but not yet stored"/>
+                            </Border>
+                            <Button Content="Details" Style="{StaticResource SecondaryButton}" Height="30" Padding="15,0" Margin="0,5,0,0" FontSize="14" FontWeight="Bold" Click="BtnShowSentToPrinter_Click"/>
+
                             <TextBlock Text="Duplicate Files:" FontWeight="Bold" FontSize="15" Foreground="#0F172A" VerticalAlignment="Center" Margin="15,5,0,0"/>
                             <Border Background="#FACC15" CornerRadius="16" MinWidth="45" Height="40" Margin="10,5,15,0" Padding="10,0">
                                 <TextBlock x:Name="txtDuplicateCount" Text="0" Foreground="Black" FontWeight="ExtraBold" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="Number of duplicate files"/>
                             </Border>
                             <Button Content="Details" Style="{StaticResource SecondaryButton}" Height="30" Padding="15,0" Margin="0,5,0,0" FontSize="14" FontWeight="Bold" Click="BtnShowSubfolderDetails_Click"/>
+
+                            <TextBlock Text="Error Files:" FontWeight="Bold" FontSize="15" Foreground="#0F172A" VerticalAlignment="Center" Margin="15,5,0,0"/>
+                            <Border Background="#EF4444" CornerRadius="16" MinWidth="45" Height="40" Margin="10,5,5,0" Padding="10,0">
+                                <TextBlock x:Name="txtErrorFilesCount" Text="0" Foreground="White" FontWeight="ExtraBold" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="Number of failed print jobs"/>
+                            </Border>
+                            <Button Content="Details" Style="{StaticResource SecondaryButton}" Height="30" Padding="15,0" Margin="0,5,0,0" FontSize="14" FontWeight="Bold" Click="BtnShowErrorFiles_Click"/>
                         </WrapPanel>
 
                         <WrapPanel Orientation="Horizontal">

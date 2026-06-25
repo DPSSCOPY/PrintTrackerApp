@@ -63,7 +63,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Text="Manage Failed Print Jobs" FontSize="18" FontWeight="Bold" Foreground="#1F2937" Margin="0,0,0,15"/>
+        <TextBlock x:Name="txtTitle" Text="Manage Failed Print Jobs" FontSize="18" FontWeight="Bold" Foreground="#1F2937" Margin="0,0,0,15"/>
 
         <Border Grid.Row="1" Background="White" CornerRadius="8" BorderBrush="#E5E7EB" BorderThickness="1" Margin="0,0,0,15">
             <DataGrid x:Name="dataGridFiles" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" 

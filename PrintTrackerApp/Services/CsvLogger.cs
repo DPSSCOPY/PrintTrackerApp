@@ -44,8 +44,9 @@ namespace PrintTrackerApp.Services
                         string user = EscapeCsv(job.Owner);
                         string printer = EscapeCsv(job.PrinterName);
                         string status = EscapeCsv(job.Status);
+                        string webJobId = job.WebJobId.ToString();
 
-                        writer.WriteLine($"{time},{docName},{webFileName},{userId},{pages},{copies},{user},{printer},{status}");
+                        writer.WriteLine($"{time},{docName},{webFileName},{userId},{pages},{copies},{user},{printer},{status},{webJobId}");
                     }
                 }
             }
@@ -142,7 +143,7 @@ namespace PrintTrackerApp.Services
                                 PrinterName = parts[7],
                                 Status = parts[8],
                                 JobId = Guid.NewGuid().ToString(),
-                                WebJobId = -1
+                                WebJobId = parts.Count >= 10 && int.TryParse(parts[9], out int wid) ? wid : -1
                             });
                         }
                     }
@@ -156,6 +157,56 @@ namespace PrintTrackerApp.Services
             // Reverse so newest jobs are at the top, like the DataGrid expects
             jobs.Reverse();
             return jobs;
+        }
+
+        public static Dictionary<int, string[]> LoadWebMonitorRawFromCsv(string folderPath)
+        {
+            var dict = new Dictionary<int, string[]>();
+            try
+            {
+                if (string.IsNullOrWhiteSpace(folderPath))
+                    return dict;
+
+                string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
+                string filePath = Path.Combine(folderPath, $"WebMonitorHistory_{dateStr}.csv");
+
+                if (!File.Exists(filePath))
+                    return dict;
+
+                using (var reader = new StreamReader(filePath, Encoding.UTF8))
+                {
+                    string header = reader.ReadLine(); // skip header
+                    while (!reader.EndOfStream)
+                    {
+                        var line = reader.ReadLine();
+                        if (string.IsNullOrWhiteSpace(line)) continue;
+                        
+                        var parts = ParseCsvLine(line);
+                        if (parts.Count >= 7)
+                        {
+                            // "Log Time,Job ID,File Name,Status,User ID,Pages,Created At"
+                            if (int.TryParse(parts[1], out int jobId))
+                            {
+                                dict[jobId] = new string[] 
+                                {
+                                    parts[1], // Job ID
+                                    parts[2], // File Name
+                                    parts[3], // Status
+                                    parts[4], // User ID
+                                    parts[5], // Pages
+                                    parts[6], // Created At
+                                    parts[0]  // Log Time
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Error loading WebMonitor CSV: " + ex.Message);
+            }
+            return dict;
         }
 
         private static List<string> ParseCsvLine(string line)

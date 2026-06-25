@@ -187,6 +187,9 @@ namespace PrintTrackerApp
                 _printJobs.Add(job);
             }
 
+            // Also load the existing web monitor history so it's not overwritten and deleted on restart
+            _webMonitorHistoryJobs = CsvLogger.LoadWebMonitorRawFromCsv(_appSettings.CsvExportPath);
+
             txtFolderPath.Text = string.IsNullOrWhiteSpace(_appSettings.SourceFolderPath) ? "Not configured" : _appSettings.SourceFolderPath;
             UpdateVerificationPanel();
 
@@ -262,14 +265,14 @@ namespace PrintTrackerApp
             {
                 try
                 {
-                    System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-                    using (var document = PdfReader.Open(physicalFile, PdfDocumentOpenMode.Import))
+                    // Instead of using PdfSharp to get total raw pages, 
+                    // use PdfPageHelper to get the actual filtered (non-blank) page count
+                    // that Foxit will actually print.
+                    PdfPageHelper.GetNonBlankPagesString(physicalFile, out bool isAllPages, out int actualPageCount);
+                    if (actualPageCount > 0)
                     {
-                        if (document.PageCount > 0)
-                        {
-                            job.TotalPages = document.PageCount;
-                            parsedPdfPages = true;
-                        }
+                        job.TotalPages = actualPageCount;
+                        parsedPdfPages = true;
                     }
                 }
                 catch (Exception ex)
@@ -425,7 +428,9 @@ namespace PrintTrackerApp
                 {
                     txtPendingCount.Text = "0";
                     txtSubfolderCount.Text = "0";
+                    txtSentToPrinterCount.Text = "0";
                     txtDuplicateCount.Text = "0";
+                    txtErrorFilesCount.Text = "0";
                     return;
                 }
 
@@ -436,16 +441,16 @@ namespace PrintTrackerApp
                     int currentCount = files.Length;
                     txtPendingCount.Text = currentCount.ToString();
 
-                    // Count all pdf files in subfolders, separating actual unique files from duplicates
+                    // Count pdf files ONLY in "Storing Complete" folder
                     int totalSubCount = 0;
                     HashSet<string> uniqueBaseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     
-                    var subdirs = System.IO.Directory.GetDirectories(_appSettings.SourceFolderPath);
-                    foreach (var dir in subdirs)
+                    string storingCompleteDir = System.IO.Path.Combine(_appSettings.SourceFolderPath, "Storing Complete");
+                    if (System.IO.Directory.Exists(storingCompleteDir))
                     {
                         try 
                         { 
-                            var pdfFiles = System.IO.Directory.GetFiles(dir, "*.pdf");
+                            var pdfFiles = System.IO.Directory.GetFiles(storingCompleteDir, "*.pdf");
                             totalSubCount += pdfFiles.Length;
                             foreach(var f in pdfFiles) 
                             {
@@ -467,6 +472,55 @@ namespace PrintTrackerApp
 
                     txtSubfolderCount.Text = actualCount.ToString();
                     txtDuplicateCount.Text = duplicateCount.ToString();
+
+                    // Count Sent to Printer files
+                    int sentToPrinterCount = 0;
+                    string sentToPrinterDir = System.IO.Path.Combine(_appSettings.SourceFolderPath, "Sent to Printer");
+                    if (System.IO.Directory.Exists(sentToPrinterDir))
+                    {
+                        try
+                        {
+                            sentToPrinterCount = System.IO.Directory.GetFiles(sentToPrinterDir, "*.pdf").Length;
+                        }
+                        catch { }
+                    }
+                    txtSentToPrinterCount.Text = sentToPrinterCount.ToString();
+
+                    // Count Error files: any subfolder except active states and "Storing Complete"
+                    int errorCount = 0;
+                    string[] activeOrSuccessFolders = { 
+                        "Storing Complete", 
+                        "Processing", 
+                        "Sent to Printer", 
+                        "Printing", 
+                        "Storing" 
+                    };
+                    
+                    var subdirs = System.IO.Directory.GetDirectories(_appSettings.SourceFolderPath);
+                    foreach (var dir in subdirs)
+                    {
+                        string dirName = System.IO.Path.GetFileName(dir);
+                        
+                        bool isExcluded = false;
+                        foreach (var exclude in activeOrSuccessFolders)
+                        {
+                            if (dirName.Equals(exclude, StringComparison.OrdinalIgnoreCase))
+                            {
+                                isExcluded = true;
+                                break;
+                            }
+                        }
+
+                        if (!isExcluded)
+                        {
+                            try
+                            {
+                                errorCount += System.IO.Directory.GetFiles(dir, "*.pdf").Length;
+                            }
+                            catch { }
+                        }
+                    }
+                    txtErrorFilesCount.Text = errorCount.ToString();
 
                     if (currentCount > 0 && _autoPrintService != null && _autoPrintService.IsRunning)
                     {
@@ -698,7 +752,7 @@ namespace PrintTrackerApp
                         if (matchedJob == null && (status.Contains("Complete", StringComparison.OrdinalIgnoreCase) || status.Contains("Printed", StringComparison.OrdinalIgnoreCase) || status.Contains("Processing", StringComparison.OrdinalIgnoreCase)))
                         {
                             // Prioritize finding an UNCLAIMED job first
-                            matchedJob = _printJobs.LastOrDefault(j => 
+                            matchedJob = _printJobs.FirstOrDefault(j => 
                                 j.WebJobId == -1 &&
                                 string.Equals(j.RicohUserId?.Trim(), userId?.Trim(), StringComparison.OrdinalIgnoreCase) && 
                                 string.Equals(j.WebFileName?.Trim(), webFileName?.Trim(), StringComparison.OrdinalIgnoreCase) && 
@@ -708,9 +762,10 @@ namespace PrintTrackerApp
                             // If no unclaimed job, find an already claimed one that hasn't finished printing yet
                             if (matchedJob == null)
                             {
-                                matchedJob = _printJobs.LastOrDefault(j => 
+                                matchedJob = _printJobs.FirstOrDefault(j => 
                                     string.Equals(j.RicohUserId?.Trim(), userId?.Trim(), StringComparison.OrdinalIgnoreCase) && 
                                     (string.Equals(j.WebFileName?.Trim(), webFileName?.Trim(), StringComparison.OrdinalIgnoreCase) || IsFileNameMatch(j.WebFileName ?? "", webFileName) || IsFileNameMatch(j.DocumentName ?? "", webFileName)) && 
+                                    j.TotalPages == webPages &&
                                     j.Status != "Print Complete" && j.Status != "Successfully Printed" &&
                                     jobId > j.WebJobId &&
                                     IsTimeMatch(j.Timestamp, createdAt));
@@ -731,6 +786,7 @@ namespace PrintTrackerApp
                                 j.WebJobId == -1 && 
                                 IsUserIdMatch(j.RicohUserId, j.Owner, userId) &&
                                 (string.Equals(j.WebFileName?.Trim(), webFileName?.Trim(), StringComparison.OrdinalIgnoreCase) || string.Equals(j.DocumentName?.Trim(), webFileName?.Trim(), StringComparison.OrdinalIgnoreCase)) &&
+                                j.TotalPages == webPages &&
                                 IsTimeMatch(j.Timestamp, createdAt));
 
                             // 3. Fallback: Fuzzy File Name Match BUT STILL REQUIRE STRICT User ID (Hold Name) Match
@@ -740,7 +796,18 @@ namespace PrintTrackerApp
                                     j.WebJobId == -1 && 
                                     IsUserIdMatch(j.RicohUserId, j.Owner, userId) && 
                                     IsFileNameMatch(j.DocumentName, webFileName) && 
+                                    j.TotalPages == webPages &&
                                     IsTimeMatch(j.Timestamp, createdAt));
+                                    
+                                // 4. Final Fallback: If still not found, try without Pages just in case Ricoh reports pages differently (e.g. duplex)
+                                if (matchedJob == null)
+                                {
+                                    matchedJob = _printJobs.FirstOrDefault(j => 
+                                        j.WebJobId == -1 && 
+                                        IsUserIdMatch(j.RicohUserId, j.Owner, userId) && 
+                                        IsFileNameMatch(j.DocumentName, webFileName) && 
+                                        IsTimeMatch(j.Timestamp, createdAt));
+                                }
                             }
                             
                             // 4. If we STILL couldn't find a matching local job, ignore it per user request to prevent wrong status updates.
@@ -875,17 +942,22 @@ namespace PrintTrackerApp
 
         private bool IsFileNameMatch(string pcDocName, string webFileName)
         {
+            if (string.IsNullOrWhiteSpace(pcDocName) || string.IsNullOrWhiteSpace(webFileName)) return false;
+
             if (string.Equals(pcDocName, webFileName, StringComparison.OrdinalIgnoreCase)) return true;
 
             // Remove all '?' (which Ricoh uses for unicode) and check if remaining parts match
             string cleanWebName = webFileName.Replace("?", "").Trim();
-            if (cleanWebName.Length >= 3 && pcDocName.IndexOf(cleanWebName, StringComparison.OrdinalIgnoreCase) >= 0)
+            if (cleanWebName.Length >= 5 && pcDocName.IndexOf(cleanWebName, StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
 
             // Remove extensions and check prefix
             string pcNameNoExt = System.IO.Path.GetFileNameWithoutExtension(pcDocName);
             string webNameNoExt = System.IO.Path.GetFileNameWithoutExtension(webFileName);
             
+            if (pcNameNoExt.StartsWith(webNameNoExt, StringComparison.OrdinalIgnoreCase) && webNameNoExt.Length >= 5)
+                return true;
+
             int matchCount = 0;
             for(int i=0; i<Math.Min(pcNameNoExt.Length, webNameNoExt.Length); i++)
             {
@@ -893,7 +965,11 @@ namespace PrintTrackerApp
                 if (char.ToLower(pcNameNoExt[i]) == char.ToLower(webNameNoExt[i])) matchCount++;
                 else break;
             }
-            if (matchCount >= 4) return true;
+            
+            // Require a much stricter match than just 4 characters.
+            // Either it matches completely (accounting for ? characters), or it matches a very large prefix.
+            int requiredMatch = Math.Max(5, (int)(webNameNoExt.Length * 0.8));
+            if (matchCount >= requiredMatch) return true;
 
             return false;
         }
@@ -968,9 +1044,13 @@ namespace PrintTrackerApp
             {
                 targetSubFolder = "Storing Failed";
             }
-            else if (status.Contains("Storing", StringComparison.OrdinalIgnoreCase))
+            else if (status.Contains("Storing Complete", StringComparison.OrdinalIgnoreCase))
             {
                 targetSubFolder = "Storing Complete";
+            }
+            else if (status.Contains("Storing", StringComparison.OrdinalIgnoreCase) || status.Contains("Hold", StringComparison.OrdinalIgnoreCase) || status.Contains("Locked", StringComparison.OrdinalIgnoreCase))
+            {
+                targetSubFolder = "Storing";
             }
             else if (status.Contains("Power Failed", StringComparison.OrdinalIgnoreCase) || status.Contains("Power Fail", StringComparison.OrdinalIgnoreCase))
             {
@@ -1046,7 +1126,21 @@ namespace PrintTrackerApp
             }
             catch { }
 
-            // Only use exact match by document name to prevent moving unrelated files
+            string jobDocName = job.DocumentName ?? "";
+            string jobDocNameNoExt = System.IO.Path.GetFileNameWithoutExtension(jobDocName);
+
+            // Pass 1: Exact Match
+            foreach (var folder in searchFolders)
+            {
+                if (!System.IO.Directory.Exists(folder)) continue;
+                string exactPath = System.IO.Path.Combine(folder, jobDocName);
+                if (System.IO.File.Exists(exactPath))
+                {
+                    return exactPath;
+                }
+            }
+
+            // Pass 2: Fallback (Time Suffixes or Web Monitor matches)
             foreach (var folder in searchFolders)
             {
                 if (!System.IO.Directory.Exists(folder)) continue;
@@ -1055,10 +1149,15 @@ namespace PrintTrackerApp
                     string fileName = System.IO.Path.GetFileName(file);
                     string fileNameWithoutExt = System.IO.Path.GetFileNameWithoutExtension(file);
 
-                    if (string.Equals(fileName, job.DocumentName, StringComparison.OrdinalIgnoreCase) ||
-                        job.DocumentName.IndexOf(fileNameWithoutExt, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        fileNameWithoutExt.IndexOf(job.DocumentName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        (!string.IsNullOrEmpty(job.WebFileName) && fileNameWithoutExt.IndexOf(job.WebFileName, StringComparison.OrdinalIgnoreCase) >= 0))
+                    // If file was renamed with a time suffix like "_123456"
+                    if (!string.IsNullOrWhiteSpace(jobDocNameNoExt) && 
+                        fileNameWithoutExt.StartsWith(jobDocNameNoExt, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return file;
+                    }
+
+                    // Strict WebFileName match (ONLY if we couldn't find the exact file)
+                    if (!string.IsNullOrWhiteSpace(job.WebFileName) && IsFileNameMatch(fileName, job.WebFileName))
                     {
                         return file;
                     }
@@ -2024,40 +2123,53 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             AutoUpdater.Start("https://raw.githubusercontent.com/DPSSCOPY/PrintTrackerApp/main/AutoUpdater.xml");
         }
 
+        private void RemoveJobsBeforeMove(System.Collections.Generic.List<string> fileNames)
+        {
+            if (fileNames == null || fileNames.Count == 0) return;
+
+            var jobsToRemove = _printJobs.Where(job => 
+                fileNames.Any(mf => 
+                {
+                    string fileName = mf;
+                    string fileNameWithoutExt = System.IO.Path.GetFileNameWithoutExtension(mf);
+                    string docName = job.DocumentName;
+                    string webFileName = job.WebFileName;
+
+                    if (string.IsNullOrEmpty(docName)) return false;
+
+                    return string.Equals(fileName, docName, StringComparison.OrdinalIgnoreCase) ||
+                           docName.IndexOf(fileNameWithoutExt, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                           fileNameWithoutExt.IndexOf(docName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                           (!string.IsNullOrEmpty(webFileName) && fileNameWithoutExt.IndexOf(webFileName, StringComparison.OrdinalIgnoreCase) >= 0);
+                })).ToList();
+
+            foreach (var job in jobsToRemove)
+            {
+                _printJobs.Remove(job);
+            }
+
+            if (jobsToRemove.Count > 0)
+            {
+                CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+            }
+        }
+
+        private void BtnShowSentToPrinter_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new ErrorFilesWindow(_appSettings.SourceFolderPath, ErrorWindowMode.SentToPrinter, RemoveJobsBeforeMove);
+            window.Owner = this;
+            window.ShowDialog();
+            
+            UpdateVerificationPanel();
+        }
+
         private void BtnShowErrorFiles_Click(object sender, RoutedEventArgs e)
         {
-            var errorWindow = new ErrorFilesWindow(_appSettings.SourceFolderPath);
+            var errorWindow = new ErrorFilesWindow(_appSettings.SourceFolderPath, ErrorWindowMode.ErrorFiles, RemoveJobsBeforeMove);
             errorWindow.Owner = this;
             errorWindow.ShowDialog();
 
-            if (errorWindow.MovedFiles != null && errorWindow.MovedFiles.Count > 0)
-            {
-                var jobsToRemove = _printJobs.Where(job => 
-                    errorWindow.MovedFiles.Any(mf => 
-                    {
-                        string fileName = mf;
-                        string fileNameWithoutExt = System.IO.Path.GetFileNameWithoutExtension(mf);
-                        string docName = job.DocumentName;
-                        string webFileName = job.WebFileName;
-
-                        if (string.IsNullOrEmpty(docName)) return false;
-
-                        return string.Equals(fileName, docName, StringComparison.OrdinalIgnoreCase) ||
-                               docName.IndexOf(fileNameWithoutExt, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                               fileNameWithoutExt.IndexOf(docName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                               (!string.IsNullOrEmpty(webFileName) && fileNameWithoutExt.IndexOf(webFileName, StringComparison.OrdinalIgnoreCase) >= 0);
-                    })).ToList();
-
-                foreach (var job in jobsToRemove)
-                {
-                    _printJobs.Remove(job);
-                }
-
-                if (jobsToRemove.Count > 0)
-                {
-                    CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
-                }
-            }
+            UpdateVerificationPanel();
         }
 
         private void BtnAdvancedAutoPrintSettings_Click(object sender, RoutedEventArgs e)

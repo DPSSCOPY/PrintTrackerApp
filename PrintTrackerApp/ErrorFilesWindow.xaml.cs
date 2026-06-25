@@ -48,17 +48,34 @@ namespace PrintTrackerApp
         }
     }
 
+    public enum ErrorWindowMode
+    {
+        ErrorFiles,
+        SentToPrinter
+    }
+
     public partial class ErrorFilesWindow : Window
     {
         public System.Collections.Generic.List<string> MovedFiles { get; private set; } = new System.Collections.Generic.List<string>();
         private ObservableCollection<ErrorFileInfo> _errorFiles = new ObservableCollection<ErrorFileInfo>();
         private string _sourceFolderPath;
         private DispatcherTimer _timer;
+        private ErrorWindowMode _mode;
+        private Action<System.Collections.Generic.List<string>> _onFilesMoving;
 
-        public ErrorFilesWindow(string sourceFolderPath)
+        public ErrorFilesWindow(string sourceFolderPath, ErrorWindowMode mode = ErrorWindowMode.ErrorFiles, Action<System.Collections.Generic.List<string>> onFilesMoving = null)
         {
             InitializeComponent();
             _sourceFolderPath = sourceFolderPath;
+            _mode = mode;
+            _onFilesMoving = onFilesMoving;
+
+            if (_mode == ErrorWindowMode.SentToPrinter)
+            {
+                this.Title = "Sent to Printer Files Manager";
+                txtTitle.Text = "Manage Sent to Printer Files";
+            }
+
             dataGridFiles.ItemsSource = _errorFiles;
 
             _timer = new DispatcherTimer();
@@ -92,11 +109,9 @@ namespace PrintTrackerApp
             if (string.IsNullOrEmpty(_sourceFolderPath) || !Directory.Exists(_sourceFolderPath))
                 return;
 
-            string[] targetFolders = { "Error", "Cancelled", "Storing Failed" };
-
-            foreach (var folder in targetFolders)
+            if (_mode == ErrorWindowMode.SentToPrinter)
             {
-                string folderPath = Path.Combine(_sourceFolderPath, folder);
+                string folderPath = Path.Combine(_sourceFolderPath, "Sent to Printer");
                 if (Directory.Exists(folderPath))
                 {
                     var files = Directory.GetFiles(folderPath, "*.pdf");
@@ -106,11 +121,54 @@ namespace PrintTrackerApp
                         {
                             FileName = Path.GetFileName(file),
                             FilePath = file,
-                            StatusFolder = folder,
+                            StatusFolder = "Sent to Printer",
                             FailedTime = File.GetLastWriteTime(file)
                         };
                         info.UpdateDuration();
                         _errorFiles.Add(info);
+                    }
+                }
+            }
+            else
+            {
+                string[] activeOrSuccessFolders = { 
+                    "Storing Complete", 
+                    "Processing", 
+                    "Sent to Printer", 
+                    "Printing", 
+                    "Storing" 
+                };
+
+                var subdirs = Directory.GetDirectories(_sourceFolderPath);
+                foreach (var folderPath in subdirs)
+                {
+                    string folderName = Path.GetFileName(folderPath);
+                    
+                    bool isExcluded = false;
+                    foreach (var exclude in activeOrSuccessFolders)
+                    {
+                        if (folderName.Equals(exclude, StringComparison.OrdinalIgnoreCase))
+                        {
+                            isExcluded = true;
+                            break;
+                        }
+                    }
+
+                    if (!isExcluded && Directory.Exists(folderPath))
+                    {
+                        var files = Directory.GetFiles(folderPath, "*.pdf");
+                        foreach (var file in files)
+                        {
+                            var info = new ErrorFileInfo
+                            {
+                                FileName = Path.GetFileName(file),
+                                FilePath = file,
+                                StatusFolder = folderName,
+                                FailedTime = File.GetLastWriteTime(file)
+                            };
+                            info.UpdateDuration();
+                            _errorFiles.Add(info);
+                        }
                     }
                 }
             }
@@ -129,6 +187,10 @@ namespace PrintTrackerApp
                 System.Windows.MessageBox.Show("Please select at least one file to move.", "No Selection", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
+
+            // Notify MainWindow to remove history before the files are actually moved
+            var fileNamesToMove = selectedFiles.Select(f => f.FileName).ToList();
+            _onFilesMoving?.Invoke(fileNamesToMove);
 
             int successCount = 0;
             foreach (var fileInfo in selectedFiles)

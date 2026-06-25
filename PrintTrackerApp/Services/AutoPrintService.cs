@@ -171,7 +171,7 @@ namespace PrintTrackerApp.Services
                         FileProcessingStarted?.Invoke(this, fileName);
                         
                         int actualUiDelay = currentSettings.EnableUiStepDelay ? currentSettings.UiStepDelayMs : 300;
-                        bool success = PrintPdfWithUIAutomation(fileToProcess, currentSettings.FoxitPath, currentSettings.HoldPrintUserId, fileName, currentSettings.AutoPrintCopies, token, currentSettings.FoxitWindowStyle, actualUiDelay);
+                        bool success = PrintPdfWithUIAutomation(fileToProcess, currentSettings.FoxitPath, currentSettings.HoldPrintUserId, fileName, currentSettings.AutoPrintCopies, token, currentSettings.FoxitWindowStyle, actualUiDelay, currentSettings.SkipBlankPage);
                         
                         FileProcessingCompleted?.Invoke(this, (fileName, success));
                         
@@ -304,7 +304,7 @@ namespace PrintTrackerApp.Services
             return false;
         }
 
-        private bool PrintPdfWithUIAutomation(string filePath, string foxitPath, string defaultUserId, string fileName, int defaultCopies, CancellationToken token, string windowStyle, int uiStepDelayMs)
+        private bool PrintPdfWithUIAutomation(string filePath, string foxitPath, string defaultUserId, string fileName, int defaultCopies, CancellationToken token, string windowStyle, int uiStepDelayMs, bool skipBlankPage)
         {
             int delayShort = Math.Max(100, uiStepDelayMs - 100);
             int delayNormal = uiStepDelayMs;
@@ -413,6 +413,51 @@ namespace PrintTrackerApp.Services
                 AutomationElement? printDialog = WaitForKeyWindow(mainWindow, "Print", token);
                 if (printDialog == null) return false;
 
+                // 3.1 Check and skip blank pages using PdfPig
+                bool isAllPages = true;
+                string printRange = "";
+                
+                if (skipBlankPage)
+                {
+                    printRange = PdfPageHelper.GetNonBlankPagesString(filePath, out isAllPages, out int actualPageCount);
+                    if (string.IsNullOrEmpty(printRange))
+                    {
+                        Debug.WriteLine($"File {fileName} is completely blank or only contains headers. Skipping printing.");
+                        if (foxitProcess != null && !foxitProcess.HasExited)
+                        {
+                            try { foxitProcess.Kill(); } catch { }
+                        }
+                        return true;
+                    }
+                }
+                
+                // If there are blank pages and skip blank page is enabled, we set the specific range. Otherwise, let Foxit use "All pages" (default).
+                if (skipBlankPage && !isAllPages)
+                {
+                    // Set Pages Radio Button (AutomationId: '10433')
+                    AutomationElement pagesRadioButton = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "10433"));
+                    if (pagesRadioButton != null)
+                    {
+                        if (pagesRadioButton.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object selPattern))
+                        {
+                            ((SelectionItemPattern)selPattern).Select();
+                        }
+                        else
+                        {
+                            InvokeElement(pagesRadioButton);
+                        }
+                        Thread.Sleep(delayNormal);
+                    }
+
+                    // Set Pages Textbox (AutomationId: '10415')
+                    AutomationElement pagesTextBox = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "10415"));
+                    if (pagesTextBox != null)
+                    {
+                        SetTextElement(pagesTextBox, printRange);
+                        Thread.Sleep(delayNormal);
+                    }
+                }
+
                 // 3.5. Auto-select Flip on short/long edge based on orientation
                 bool isLandscape = IsPdfLandscape(filePath);
                 if (isLandscape)
@@ -431,22 +476,7 @@ namespace PrintTrackerApp.Services
                         Thread.Sleep(delayNormal);
                     }
                 }
-                else
-                {
-                    AutomationElement longEdgeBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Flip on long edge"));
-                    if (longEdgeBtn != null)
-                    {
-                        if (longEdgeBtn.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object selPattern))
-                        {
-                            ((SelectionItemPattern)selPattern).Select();
-                        }
-                        else
-                        {
-                            InvokeElement(longEdgeBtn);
-                        }
-                        Thread.Sleep(delayNormal);
-                    }
-                }
+
 
                 // 4. Set Copies
                 if (dynamicCopies > 1)
@@ -545,7 +575,35 @@ namespace PrintTrackerApp.Services
                 }
 
                 // Wait for print spooling
-                Thread.Sleep(3000);
+                // Complex files (Khmer fonts, large sizes) take longer to spool.
+                // We base minimum sleep on file size, then check the Print Spooler.
+                long fileBytes = new System.IO.FileInfo(filePath).Length;
+                int minWait = 3000 + (int)(fileBytes / (1024 * 1024)) * 1000; // 3s + 1s per MB
+                Thread.Sleep(minWait);
+
+                try
+                {
+                    // Check WMI for any jobs that are still spooling
+                    for (int s = 0; s < 30; s++) // Max 30 seconds extra wait
+                    {
+                        bool isSpooling = false;
+                        using (var searcher = new System.Management.ManagementObjectSearcher("SELECT JobStatus FROM Win32_PrintJob"))
+                        {
+                            foreach (System.Management.ManagementObject printJob in searcher.Get())
+                            {
+                                string jobStatus = printJob["JobStatus"]?.ToString() ?? "";
+                                if (jobStatus.Contains("Spooling", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    isSpooling = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!isSpooling) break;
+                        Thread.Sleep(1000);
+                    }
+                }
+                catch { Thread.Sleep(3000); }
                 
                 // 12. Close Foxit (Ctrl+W or Alt+F4)
                 if (!foxitProcess.HasExited)

@@ -24,6 +24,7 @@ namespace PrintTrackerApp.Services
         public int DelayBetweenPrints { get; set; } = 2;
         
         // Advanced Auto Print Settings
+        public bool SkipBlankPage { get; set; } = false;
         public bool EnableBatchPrinting { get; set; } = false;
         public int BatchSize { get; set; } = 5;
         public bool EnableUiStepDelay { get; set; } = false;

@@ -15,6 +15,7 @@ namespace PrintTrackerApp
             _appSettings = currentSettings;
 
             // Load settings into UI
+            chkSkipBlankPage.IsChecked = _appSettings.SkipBlankPage;
             chkEnableBatchPrinting.IsChecked = _appSettings.EnableBatchPrinting;
             txtBatchSize.Text = _appSettings.BatchSize.ToString();
             
@@ -47,6 +48,7 @@ namespace PrintTrackerApp
 
         private void BtnSave_Click(object sender, RoutedEventArgs e)
         {
+            _appSettings.SkipBlankPage = chkSkipBlankPage.IsChecked ?? false;
             _appSettings.EnableBatchPrinting = chkEnableBatchPrinting.IsChecked ?? false;
             
             if (int.TryParse(txtBatchSize.Text, out int batchSize))
