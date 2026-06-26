@@ -441,30 +441,34 @@ namespace PrintTrackerApp
                     int currentCount = files.Length;
                     txtPendingCount.Text = currentCount.ToString();
 
-                    // Count pdf files ONLY in "Storing Complete" folder
+                    // Count pdf files ONLY in specific printed folders
                     int totalSubCount = 0;
                     HashSet<string> uniqueBaseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     
-                    string storingCompleteDir = System.IO.Path.Combine(_appSettings.SourceFolderPath, "Storing Complete");
-                    if (System.IO.Directory.Exists(storingCompleteDir))
+                    string[] printedFolders = { "Storing Complete", "Complete Print", "Processing" };
+                    foreach (var folder in printedFolders)
                     {
-                        try 
-                        { 
-                            var pdfFiles = System.IO.Directory.GetFiles(storingCompleteDir, "*.pdf");
-                            totalSubCount += pdfFiles.Length;
-                            foreach(var f in pdfFiles) 
-                            {
-                                string name = System.IO.Path.GetFileNameWithoutExtension(f);
-                                // Remove auto-appended time suffix (_HHmmss) to identify the true original file
-                                var match = System.Text.RegularExpressions.Regex.Match(name, @"_(\d{6})$");
-                                if (match.Success) 
+                        string dirPath = System.IO.Path.Combine(_appSettings.SourceFolderPath, folder);
+                        if (System.IO.Directory.Exists(dirPath))
+                        {
+                            try 
+                            { 
+                                var pdfFiles = System.IO.Directory.GetFiles(dirPath, "*.pdf");
+                                totalSubCount += pdfFiles.Length;
+                                foreach(var f in pdfFiles) 
                                 {
-                                    name = name.Substring(0, name.Length - 7);
+                                    string name = System.IO.Path.GetFileNameWithoutExtension(f);
+                                    // Remove auto-appended time suffix (_HHmmss) to identify the true original file
+                                    var match = System.Text.RegularExpressions.Regex.Match(name, @"_(\d{6})$");
+                                    if (match.Success) 
+                                    {
+                                        name = name.Substring(0, name.Length - 7);
+                                    }
+                                    uniqueBaseNames.Add(name);
                                 }
-                                uniqueBaseNames.Add(name);
-                            }
-                        } 
-                        catch { }
+                            } 
+                            catch { }
+                        }
                     }
                     
                     int actualCount = uniqueBaseNames.Count;
@@ -490,6 +494,7 @@ namespace PrintTrackerApp
                     int errorCount = 0;
                     string[] activeOrSuccessFolders = { 
                         "Storing Complete", 
+                        "Print Complete",
                         "Processing", 
                         "Sent to Printer", 
                         "Printing", 
@@ -756,7 +761,6 @@ namespace PrintTrackerApp
                                 j.WebJobId == -1 &&
                                 string.Equals(j.RicohUserId?.Trim(), userId?.Trim(), StringComparison.OrdinalIgnoreCase) && 
                                 string.Equals(j.WebFileName?.Trim(), webFileName?.Trim(), StringComparison.OrdinalIgnoreCase) && 
-                                j.TotalPages == webPages &&
                                 IsTimeMatch(j.Timestamp, createdAt));
                                 
                             // If no unclaimed job, find an already claimed one that hasn't finished printing yet
@@ -765,7 +769,6 @@ namespace PrintTrackerApp
                                 matchedJob = _printJobs.FirstOrDefault(j => 
                                     string.Equals(j.RicohUserId?.Trim(), userId?.Trim(), StringComparison.OrdinalIgnoreCase) && 
                                     (string.Equals(j.WebFileName?.Trim(), webFileName?.Trim(), StringComparison.OrdinalIgnoreCase) || IsFileNameMatch(j.WebFileName ?? "", webFileName) || IsFileNameMatch(j.DocumentName ?? "", webFileName)) && 
-                                    j.TotalPages == webPages &&
                                     j.Status != "Print Complete" && j.Status != "Successfully Printed" &&
                                     jobId > j.WebJobId &&
                                     IsTimeMatch(j.Timestamp, createdAt));

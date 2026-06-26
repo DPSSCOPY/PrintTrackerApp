@@ -133,6 +133,7 @@ namespace PrintTrackerApp
             {
                 string[] activeOrSuccessFolders = { 
                     "Storing Complete", 
+                    "Print Complete",
                     "Processing", 
                     "Sent to Printer", 
                     "Printing", 

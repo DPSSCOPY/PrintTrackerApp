@@ -575,32 +575,42 @@ namespace PrintTrackerApp.Services
                 }
 
                 // Wait for print spooling
-                // Complex files (Khmer fonts, large sizes) take longer to spool.
-                // We base minimum sleep on file size, then check the Print Spooler.
-                long fileBytes = new System.IO.FileInfo(filePath).Length;
-                int minWait = 3000 + (int)(fileBytes / (1024 * 1024)) * 1000; // 3s + 1s per MB
-                Thread.Sleep(minWait);
+                // We do a minimal 200ms sleep to let Foxit submit to Windows Spooler,
+                // then we actively check the WMI queue to see when it finishes spooling.
+                Thread.Sleep(200);
 
+                // Wait for print spooling by checking Foxit's windows
+                // When Foxit is printing, it shows the Print dialog, and then a "Printing..." progress dialog.
+                // We wait until Foxit has only 1 window left (the main window), meaning all dialogs have closed.
                 try
                 {
-                    // Check WMI for any jobs that are still spooling
-                    for (int s = 0; s < 30; s++) // Max 30 seconds extra wait
+                    AutomationElement root = AutomationElement.RootElement;
+                    for (int s = 0; s < 150; s++) // Max 30 seconds wait
                     {
-                        bool isSpooling = false;
-                        using (var searcher = new System.Management.ManagementObjectSearcher("SELECT JobStatus FROM Win32_PrintJob"))
+                        if (token.IsCancellationRequested) return false;
+
+                        AutomationElementCollection windows = root.FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ProcessIdProperty, foxitProcess.Id));
+                        
+                        // If Foxit has 1 or 0 windows, it means no modal dialogs (Print or Printing...) are open.
+                        if (windows.Count <= 1)
                         {
-                            foreach (System.Management.ManagementObject printJob in searcher.Get())
+                            // Double check that the Print dialog is actually gone
+                            bool printDialogClosed = false;
+                            try 
+                            { 
+                                if (printDialog.Current.IsOffscreen) printDialogClosed = true; 
+                            } 
+                            catch { printDialogClosed = true; } // ElementNotAvailableException
+
+                            if (printDialogClosed)
                             {
-                                string jobStatus = printJob["JobStatus"]?.ToString() ?? "";
-                                if (jobStatus.Contains("Spooling", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    isSpooling = true;
-                                    break;
-                                }
+                                // Add a tiny 200ms buffer to ensure Foxit fully flushed the spool data
+                                Thread.Sleep(200);
+                                break;
                             }
                         }
-                        if (!isSpooling) break;
-                        Thread.Sleep(1000);
+
+                        Thread.Sleep(200);
                     }
                 }
                 catch { Thread.Sleep(3000); }
