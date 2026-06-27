@@ -585,19 +585,31 @@ namespace PrintTrackerApp.Services
                     if (detailsWindow != null)
                     {
                         // Set User ID 
-                        AutomationElement userIdEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinUserIdTextBoxId));
-                        if (userIdEdit != null)
-                        {
-                            SetTextElement(userIdEdit, dynamicUserId);
-                        }
+                AutomationElement userIdEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinUserIdTextBoxId));
+                if (userIdEdit == null)
+                {
+                    Debug.WriteLine("Failed to find User ID TextBox. Aborting print.");
+                    return false;
+                }
+                if (!SetTextElement(userIdEdit, dynamicUserId))
+                {
+                    Debug.WriteLine("Failed to verify User ID text was set. Aborting print.");
+                    return false;
+                }
 
-                        // Set File Name
-                        AutomationElement fileNameEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinFileNameTextBoxId));
-                        if (fileNameEdit != null)
-                        {
-                            SetTextElement(fileNameEdit, dynamicFileName);
+                // Set File Name
+                AutomationElement fileNameEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinFileNameTextBoxId));
+                if (fileNameEdit == null)
+                {
+                    Debug.WriteLine("Failed to find File Name TextBox. Aborting print.");
+                    return false;
+                }
+                if (!SetTextElement(fileNameEdit, dynamicFileName))
+                {
+                    Debug.WriteLine("Failed to verify File Name text was set. Aborting print.");
+                    return false;
+                }
                             Thread.Sleep(delayNormal);
-                        }
                         
                         // Click 'OK' on Details window
                         AutomationElement okDetailsBtn = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinDetailsOkBtnId));
@@ -648,7 +660,7 @@ namespace PrintTrackerApp.Services
                 try
                 {
                     AutomationElement root = AutomationElement.RootElement;
-                    for (int s = 0; s < 150; s++) // Max 30 seconds wait
+                    for (int s = 0; s < 600; s++) // Max 120 seconds wait
                     {
                         if (token.IsCancellationRequested) return false;
                         
@@ -761,7 +773,7 @@ namespace PrintTrackerApp.Services
         [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
         internal static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
 
-        public static void SetTextElement(AutomationElement element, string text)
+        public static bool SetTextElement(AutomationElement element, string text)
         {
             try
             {
@@ -770,34 +782,50 @@ namespace PrintTrackerApp.Services
                 if (hwnd != 0)
                 {
                     SendMessage((IntPtr)hwnd, WM_SETTEXT, IntPtr.Zero, text);
-                    return;
+                    Thread.Sleep(50);
+                    return VerifyTextElement(element, text);
                 }
 
                 // Try using ValuePattern
                 if (element.TryGetCurrentPattern(ValuePattern.Pattern, out object pattern))
                 {
                     ((ValuePattern)pattern).SetValue(text);
-                }
-                else
-                {
-                    // Fallback to sending keys
-                    element.SetFocus();
-                    Thread.Sleep(100);
-                    System.Windows.Forms.SendKeys.SendWait("^{HOME}^+{END}{BACKSPACE}"); 
-                    System.Windows.Forms.SendKeys.SendWait(text);
+                    Thread.Sleep(50);
+                    return VerifyTextElement(element, text);
                 }
             }
-            catch
-            {
-                try 
-                {
-                    element.SetFocus();
-                    Thread.Sleep(100);
-                    System.Windows.Forms.SendKeys.SendWait(text);
-                } 
-                catch {}
-            }
+            catch { }
+            return false;
         }
+
+        private static bool VerifyTextElement(AutomationElement element, string expectedText)
+        {
+            try
+            {
+                if (element.TryGetCurrentPattern(ValuePattern.Pattern, out object pattern))
+                {
+                    string actualText = ((ValuePattern)pattern).Current.Value;
+                    if (actualText == expectedText) return true;
+                }
+                
+                // Fallback: check Name property if ValuePattern fails
+                if (element.Current.Name == expectedText) return true;
+                
+                int hwnd = element.Current.NativeWindowHandle;
+                if (hwnd != 0)
+                {
+                    System.Text.StringBuilder sb = new System.Text.StringBuilder(256);
+                    SendMessageGetText((IntPtr)hwnd, WM_GETTEXT, (IntPtr)sb.Capacity, sb);
+                    if (sb.ToString() == expectedText) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+        
+        [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr SendMessageGetText(IntPtr hWnd, uint Msg, IntPtr wParam, System.Text.StringBuilder lParam);
+        private const uint WM_GETTEXT = 0x000D;
 
         public static void MoveFileToFolder(string sourceFile, string watchFolder, string targetSubFolder)
         {

@@ -27,6 +27,7 @@ namespace PrintTrackerApp.Models
         public int WebJobId { get; set; } = -1;
         public bool IsPdfPageCountAccurate { get; set; } = false;
         public bool IsInPrintPhase { get; set; } = false;
+        public DateTime? SpoolerDeletedTime { get; set; } = null;
 
         private int _copies = 1;
         public int Copies 

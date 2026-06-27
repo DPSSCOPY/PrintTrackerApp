@@ -56,16 +56,20 @@ namespace PrintTrackerApp.Services
                         var matchUser = Regex.Match(content, @"@PJL\s+SET\s+USERID\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase);
                         if (matchUser.Success) details.UserId = matchUser.Groups[1].Value;
 
-                        // Example: @PJL SET DOCUMENTNAME="harry"
-                        var matchDoc = Regex.Match(content, @"@PJL\s+SET\s+DOCUMENTNAME\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase);
-                        if (matchDoc.Success) 
-                            details.DocumentName = matchDoc.Groups[1].Value;
+                        // Ricoh actually uses JOBID for the custom File Name (Hold Print Name)!
+                        var matchJobId = Regex.Match(content, @"@PJL\s+SET\s+JOBID\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase);
+                        if (matchJobId.Success) 
+                        {
+                            details.DocumentName = matchJobId.Groups[1].Value;
+                        }
                         else
                         {
-                            // Ricoh actually uses JOBID for the custom File Name!
-                            var matchJobId = Regex.Match(content, @"@PJL\s+SET\s+JOBID\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase);
-                            if (matchJobId.Success) 
-                                details.DocumentName = matchJobId.Groups[1].Value;
+                            // Example: @PJL SET DOCUMENTNAME="harry"
+                            var matchDoc = Regex.Match(content, @"@PJL\s+SET\s+DOCUMENTNAME\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase);
+                            if (matchDoc.Success) 
+                            {
+                                details.DocumentName = matchDoc.Groups[1].Value;
+                            }
                             else
                             {
                                 // Fallback PJL: @PJL JOB NAME="harry"

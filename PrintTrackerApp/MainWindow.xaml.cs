@@ -228,12 +228,27 @@ namespace PrintTrackerApp
 
             // Start Spooler Monitor
             _spoolerMonitor.OnJobCreated += SpoolerMonitor_OnJobCreated;
+            _spoolerMonitor.OnJobUpdated += SpoolerMonitor_OnJobUpdated;
             _spoolerMonitor.OnJobDeleted += SpoolerMonitor_OnJobDeleted;
             _spoolerMonitor.OnJobPagesUpdated += SpoolerMonitor_OnJobPagesUpdated;
             _spoolerMonitor.Start();
 
             // Start SNMP Polling
             _statusTimer.Start();
+        }
+
+        private void SpoolerMonitor_OnJobUpdated(object? sender, PrintJobInfo updatedJob)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                var existingJob = _printJobs.FirstOrDefault(j => j.JobId == updatedJob.JobId);
+                if (existingJob != null)
+                {
+                    existingJob.RicohUserId = updatedJob.RicohUserId;
+                    existingJob.WebFileName = updatedJob.WebFileName;
+                    existingJob.Copies = updatedJob.Copies;
+                }
+            });
         }
 
         private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -320,7 +335,7 @@ namespace PrintTrackerApp
             });
         }
 
-        private void SpoolerMonitor_OnJobDeleted(object? sender, string jobId)
+        private void SpoolerMonitor_OnJobDeleted(object? sender, (string JobId, string JobStatus, int PagesPrinted) e)
         {
             // The job was deleted from the PC's print spooler.
             // Per user request, DO NOT update the status to "Successfully Printed" based on the PC queue.
