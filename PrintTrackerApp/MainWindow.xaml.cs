@@ -44,6 +44,8 @@ namespace PrintTrackerApp
         private ShutdownAlertWindow? _shutdownWindow;
         private string _lastShutdownDate = "";
         private System.Threading.CancellationTokenSource? _shutdownDelayCts;
+        private AutoUpdaterDotNET.UpdateInfoEventArgs _pendingUpdate;
+        private System.Windows.Threading.DispatcherTimer _updateReminderTimer;
 
         // Batch Printing State
         private System.Collections.Generic.List<PrintJobInfo> _currentBatchJobs = new System.Collections.Generic.List<PrintJobInfo>();
@@ -175,7 +177,16 @@ namespace PrintTrackerApp
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            AutoUpdater.CheckForUpdateEvent += AutoUpdaterOnCheckForUpdateEvent;
             AutoUpdater.Start("https://raw.githubusercontent.com/DPSSCOPY/PrintTrackerApp/main/AutoUpdater.xml");
+
+            // Setup reminder timer
+            _updateReminderTimer = new System.Windows.Threading.DispatcherTimer();
+            _updateReminderTimer.Tick += (s, ev) => 
+            {
+                _updateReminderTimer.Stop();
+                AutoUpdater.Start("https://raw.githubusercontent.com/DPSSCOPY/PrintTrackerApp/main/AutoUpdater.xml");
+            };
 
             // Auto-open the web monitor window as requested by the user, but run it in the background
             StartWebMonitorInBackground();
@@ -2154,13 +2165,60 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             }
         }
     
+        private void AutoUpdaterOnCheckForUpdateEvent(UpdateInfoEventArgs args)
+        {
+            if (args != null && args.IsUpdateAvailable)
+            {
+                _pendingUpdate = args;
+                
+                // Show badge
+                Dispatcher.Invoke(() => {
+                    borderUpdateBadge.Visibility = Visibility.Visible;
+                });
+
+                // Show custom update window
+                Dispatcher.Invoke(() => {
+                    var updateWindow = new UpdateWindow(args);
+                    updateWindow.Owner = this;
+                    updateWindow.ShowDialog();
+
+                    if (updateWindow.DelayMinutes > 0)
+                    {
+                        // User chose to be reminded later
+                        _updateReminderTimer.Interval = TimeSpan.FromMinutes(updateWindow.DelayMinutes);
+                        _updateReminderTimer.Start();
+                    }
+                });
+            }
+            else
+            {
+                // No update or error
+                _pendingUpdate = null;
+                Dispatcher.Invoke(() => {
+                    borderUpdateBadge.Visibility = Visibility.Collapsed;
+                });
+            }
+        }
+
         private void BtnUpdate_Click(object sender, RoutedEventArgs e)
         {
-            // Enable reporting so it shows a message even if there is no update
-            AutoUpdater.ReportErrors = true;
-            
-            // Start the update check
-            AutoUpdater.Start("https://raw.githubusercontent.com/DPSSCOPY/PrintTrackerApp/main/AutoUpdater.xml");
+            if (_pendingUpdate != null && _pendingUpdate.IsUpdateAvailable)
+            {
+                var updateWindow = new UpdateWindow(_pendingUpdate);
+                updateWindow.Owner = this;
+                updateWindow.ShowDialog();
+
+                if (updateWindow.DelayMinutes > 0)
+                {
+                    _updateReminderTimer.Interval = TimeSpan.FromMinutes(updateWindow.DelayMinutes);
+                    _updateReminderTimer.Start();
+                }
+            }
+            else
+            {
+                // Force check again
+                AutoUpdater.Start("https://raw.githubusercontent.com/DPSSCOPY/PrintTrackerApp/main/AutoUpdater.xml");
+            }
         }
 
         private void RemoveJobsBeforeMove(System.Collections.Generic.List<string> fileNames)

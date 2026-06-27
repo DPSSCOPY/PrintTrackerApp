@@ -1,0 +1,6 @@
+Update Version 1.0.7 Features:
+- Added Multi-Printer Profiles (e.g., RICOH MP 9003, SAVIN Main).
+- Improved Auto-Print UI capture and stability.
+- Added a new loading screen when launching the application.
+- Simplified update window to easily view update features.
+- Minor bug fixes and performance improvements.
