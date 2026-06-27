@@ -190,6 +190,7 @@ namespace PrintTrackerApp
             CurrentSettings.FoxitCopiesSpinnerId = updatedSettings.FoxitCopiesSpinnerId;
             CurrentSettings.FoxitPagesRadioBtnId = updatedSettings.FoxitPagesRadioBtnId;
             CurrentSettings.FoxitShortEdgeRadioBtnId = updatedSettings.FoxitShortEdgeRadioBtnId;
+            CurrentSettings.FoxitLongEdgeRadioBtnId = updatedSettings.FoxitLongEdgeRadioBtnId;
             CurrentSettings.FoxitPagesTextBoxId = updatedSettings.FoxitPagesTextBoxId;
             CurrentSettings.FoxitCopiesTextBoxId = updatedSettings.FoxitCopiesTextBoxId;
 

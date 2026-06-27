@@ -51,6 +51,7 @@ namespace PrintTrackerApp.Services
         public string FoxitPagesTextBoxId { get; set; } = "10415";
         public string FoxitCopiesTextBoxId { get; set; } = "10408";
         public string FoxitShortEdgeRadioBtnId { get; set; } = "10431";
+        public string FoxitLongEdgeRadioBtnId { get; set; } = "";
 
         // SAVIN Printer Driver Automation Settings (Legacy - Kept for migration)
         public string SavinDetailsBtnId { get; set; } = "1018";

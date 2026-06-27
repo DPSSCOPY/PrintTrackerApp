@@ -47,6 +47,7 @@ namespace PrintTrackerApp
             txtFoxitCopiesSpinnerId.Text = _settings.FoxitCopiesSpinnerId;
             txtFoxitPagesRadioBtnId.Text = _settings.FoxitPagesRadioBtnId;
             txtFoxitShortEdgeRadioBtnId.Text = _settings.FoxitShortEdgeRadioBtnId;
+            txtFoxitLongEdgeRadioBtnId.Text = _settings.FoxitLongEdgeRadioBtnId;
             txtFoxitPagesTextBoxId.Text = _settings.FoxitPagesTextBoxId;
             txtFoxitCopiesTextBoxId.Text = _settings.FoxitCopiesTextBoxId;
 
@@ -158,6 +159,7 @@ namespace PrintTrackerApp
         private async void BtnCaptureCopiesSpinner_Click(object sender, RoutedEventArgs e) => await CaptureElementAsync(txtFoxitCopiesSpinnerId, false);
         private async void BtnCapturePagesRadioBtn_Click(object sender, RoutedEventArgs e) => await CaptureElementAsync(txtFoxitPagesRadioBtnId, false);
         private async void BtnCaptureShortEdgeRadioBtn_Click(object sender, RoutedEventArgs e) => await CaptureElementAsync(txtFoxitShortEdgeRadioBtnId, false);
+        private async void BtnCaptureLongEdgeRadioBtn_Click(object sender, RoutedEventArgs e) => await CaptureElementAsync(txtFoxitLongEdgeRadioBtnId, false);
         private async void BtnCapturePagesTextBox_Click(object sender, RoutedEventArgs e) => await CaptureElementAsync(txtFoxitPagesTextBoxId, false);
         private async void BtnCaptureCopiesTextBox_Click(object sender, RoutedEventArgs e) => await CaptureElementAsync(txtFoxitCopiesTextBoxId, false);
 
@@ -248,6 +250,7 @@ namespace PrintTrackerApp
             txtFoxitCopiesSpinnerId.Text = "10590";
             txtFoxitPagesRadioBtnId.Text = "10433";
             txtFoxitShortEdgeRadioBtnId.Text = "10431";
+            txtFoxitLongEdgeRadioBtnId.Text = "";
             txtFoxitPagesTextBoxId.Text = "10415";
             txtFoxitCopiesTextBoxId.Text = "10408";
 
@@ -273,6 +276,7 @@ namespace PrintTrackerApp
             _settings.FoxitCopiesSpinnerId = txtFoxitCopiesSpinnerId.Text;
             _settings.FoxitPagesRadioBtnId = txtFoxitPagesRadioBtnId.Text;
             _settings.FoxitShortEdgeRadioBtnId = txtFoxitShortEdgeRadioBtnId.Text;
+            _settings.FoxitLongEdgeRadioBtnId = txtFoxitLongEdgeRadioBtnId.Text;
             _settings.FoxitPagesTextBoxId = txtFoxitPagesTextBoxId.Text;
             _settings.FoxitCopiesTextBoxId = txtFoxitCopiesTextBoxId.Text;
 

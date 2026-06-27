@@ -12,7 +12,8 @@ namespace PrintTrackerApp.Services
         private ManagementEventWatcher? _watcherModification;
         private readonly string _printerName;
         public event EventHandler<PrintJobInfo>? OnJobCreated;
-        public event EventHandler<string>? OnJobDeleted;
+        public event EventHandler<PrintJobInfo>? OnJobUpdated;
+        public event EventHandler<(string JobId, string JobStatus, int PagesPrinted)>? OnJobDeleted;
         public event EventHandler<(string JobId, int TotalPages)>? OnJobPagesUpdated;
 
         public PrintSpoolerMonitor(string printerName)
@@ -41,7 +42,8 @@ namespace PrintTrackerApp.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine("Error starting WMI monitor: " + ex.Message);
+                System.Diagnostics.Debug.WriteLine($"[WMI] Error starting PrintSpoolerMonitor: {ex.Message}");
+                System.IO.File.AppendAllText("wmi_debug.log", $"[{DateTime.Now}] Start Error: {ex.Message}\n");
             }
         }
 
@@ -72,11 +74,7 @@ namespace PrintTrackerApp.Services
                 string name = targetInstance["Name"]?.ToString() ?? "";
                 
                 System.Diagnostics.Debug.WriteLine($"[WMI] Job Created Event: Name={name}, PrinterName={_printerName}");
-                System.IO.File.AppendAllText("wmi_debug.log", $"[{DateTime.Now}] Job Created Event: Name={name}, PrinterName={_printerName}\n");
                 
-                // Track all jobs regardless of printer name for now, 
-                // because the user might print to a non-default printer.
-
             var job = new PrintJobInfo
             {
                 JobId = targetInstance["JobId"]?.ToString() ?? "",
@@ -94,26 +92,55 @@ namespace PrintTrackerApp.Services
             job.WebFileName = job.DocumentName;
             job.RicohUserId = job.Owner;
 
-            // Attempt to parse actual custom User ID / Document Name from Ricoh .SPL file
-                var customDetails = SpoolFileParser.Parse(job.JobId);
-                if (customDetails != null)
-                {
-                    if (!string.IsNullOrEmpty(customDetails.UserId))
-                        job.RicohUserId = customDetails.UserId;
-                        
-                    if (!string.IsNullOrEmpty(customDetails.DocumentName))
-                        job.WebFileName = customDetails.DocumentName;
-                        
-                    if (customDetails.Copies > 1)
-                        job.Copies = customDetails.Copies;
-                }
-
-                if (job.TotalPages <= 0)
-                {
-                    job.TotalPages = 1; // Fallback so it doesn't show 0 initially
-                }
+            if (job.TotalPages <= 0)
+            {
+                job.TotalPages = 1; // Fallback so it doesn't show 0 initially
+            }
 
             OnJobCreated?.Invoke(this, job);
+
+            // Attempt to parse actual custom User ID / Document Name from Ricoh .SPL file asynchronously
+            // Large files might take 10-60 seconds to unlock the .SPL file for reading.
+            System.Threading.Tasks.Task.Run(() => 
+            {
+                for (int i = 0; i < 60; i++) // Poll for up to 60 seconds
+                {
+                    var customDetails = SpoolFileParser.Parse(job.JobId);
+                    if (customDetails != null)
+                    {
+                        bool changed = false;
+                        if (!string.IsNullOrEmpty(customDetails.UserId) && job.RicohUserId != customDetails.UserId)
+                        {
+                            job.RicohUserId = customDetails.UserId;
+                            changed = true;
+                        }
+                            
+                        if (!string.IsNullOrEmpty(customDetails.DocumentName) && job.WebFileName != customDetails.DocumentName)
+                        {
+                            job.WebFileName = customDetails.DocumentName;
+                            changed = true;
+                        }
+                            
+                        if (customDetails.Copies > 1 && job.Copies != customDetails.Copies)
+                        {
+                            job.Copies = customDetails.Copies;
+                            changed = true;
+                        }
+
+                        if (changed)
+                        {
+                            OnJobUpdated?.Invoke(this, job);
+                        }
+                        
+                        // We strictly want the custom Document Name. If it's missing (maybe file partially written), don't break yet!
+                        if (!string.IsNullOrEmpty(customDetails.DocumentName))
+                        {
+                            break;
+                        }
+                    }
+                    System.Threading.Thread.Sleep(1000);
+                }
+            });
             }
             catch (Exception ex)
             {
@@ -135,7 +162,10 @@ namespace PrintTrackerApp.Services
                     OnJobPagesUpdated?.Invoke(this, (jobId, totalPages));
                 }
 
-                OnJobDeleted?.Invoke(this, jobId);
+                string jobStatus = targetInstance["JobStatus"]?.ToString() ?? "";
+                int pagesPrinted = Convert.ToInt32(targetInstance["PagesPrinted"] ?? 0);
+
+                OnJobDeleted?.Invoke(this, (jobId, jobStatus, pagesPrinted));
             }
             catch { }
         }

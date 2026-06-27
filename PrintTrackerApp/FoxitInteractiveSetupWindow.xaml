@@ -95,6 +95,13 @@
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="'Long Edge' Radio Btn:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtFoxitLongEdgeRadioBtnId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCaptureLongEdgeRadioBtn_Click"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
                             <TextBlock Text="Pages TextBox:" VerticalAlignment="Center" FontWeight="SemiBold"/>
                             <TextBox x:Name="txtFoxitPagesTextBoxId" Grid.Column="1" Margin="5,0" Padding="5"/>
                             <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCapturePagesTextBox_Click"/>

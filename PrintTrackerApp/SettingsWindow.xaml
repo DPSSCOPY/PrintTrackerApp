@@ -91,7 +91,9 @@
                 <StackPanel Margin="0,0,0,15">
                     <TextBlock Text="Web Monitor Refresh Interval (Seconds):" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
                     <ComboBox x:Name="cmbRefreshInterval" Padding="6" BorderBrush="#D1D5DB">
-                        <ComboBoxItem Content="3 seconds (Fastest)" Tag="3"/>
+                        <ComboBoxItem Content="1 second (Ultra Fast)" Tag="1"/>
+                        <ComboBoxItem Content="2 seconds (Very Fast)" Tag="2"/>
+                        <ComboBoxItem Content="3 seconds (Fast)" Tag="3"/>
                         <ComboBoxItem Content="5 seconds (Recommended)" Tag="5"/>
                         <ComboBoxItem Content="10 seconds (Slower)" Tag="10"/>
                         <ComboBoxItem Content="15 seconds (Stable)" Tag="15"/>

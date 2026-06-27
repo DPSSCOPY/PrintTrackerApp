@@ -7,7 +7,19 @@ namespace PrintTrackerApp.Models
     {
         public string JobId { get; set; } = string.Empty;
         public string Timestamp { get; set; } = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-        public string DocumentName { get; set; } = string.Empty;
+        private string _documentName = string.Empty;
+        public string DocumentName 
+        { 
+            get => _documentName; 
+            set
+            {
+                if (_documentName != value)
+                {
+                    _documentName = value;
+                    OnPropertyChanged(nameof(DocumentName));
+                }
+            }
+        }
         private int _totalPages;
         public int TotalPages 
         { 
@@ -27,6 +39,7 @@ namespace PrintTrackerApp.Models
         public int WebJobId { get; set; } = -1;
         public bool IsPdfPageCountAccurate { get; set; } = false;
         public bool IsInPrintPhase { get; set; } = false;
+        public DateTime? SpoolerDeletedTime { get; set; } = null;
 
         private int _copies = 1;
         public int Copies 

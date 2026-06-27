@@ -321,19 +321,28 @@ namespace PrintTrackerApp.Services
         {
             try
             {
-                System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-                using (PdfDocument document = PdfReader.Open(filePath, PdfDocumentOpenMode.Import))
+                using (var document = UglyToad.PdfPig.PdfDocument.Open(filePath))
                 {
-                    if (document.PageCount > 0)
+                    if (document.NumberOfPages > 0)
                     {
-                        var page = document.Pages[0];
-                        return page.Width > page.Height;
+                        var page = document.GetPage(1); // 1-indexed
+                        bool isLandscape = page.Width > page.Height;
+                        
+                        // PdfPig Rotation is 0, 90, 180, 270
+                        int rotate = page.Rotation.Value;
+                        if (rotate == 90 || rotate == 270)
+                        {
+                            isLandscape = !isLandscape; // Swap width and height logic
+                        }
+                        
+                        Debug.WriteLine($"[PDF Info] {Path.GetFileName(filePath)} -> Width: {page.Width}, Height: {page.Height}, Rotate: {rotate}, IsLandscape: {isLandscape}");
+                        return isLandscape;
                     }
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error reading PDF orientation: {ex.Message}");
+                Debug.WriteLine($"Error reading PDF orientation with PdfPig: {ex.Message}");
             }
             return false;
         }
@@ -498,27 +507,39 @@ namespace PrintTrackerApp.Services
 
                 // 3.5. Auto-select Flip on short/long edge based on orientation
                 bool isLandscape = IsPdfLandscape(filePath);
-                if (isLandscape)
+                
+                AutomationElement edgeBtn = null;
+                string targetEdgeName = isLandscape ? "Flip on short edge" : "Flip on long edge";
+                string targetEdgeId = isLandscape ? settings.FoxitShortEdgeRadioBtnId : settings.FoxitLongEdgeRadioBtnId;
+                
+                // Try up to 3 times to find the button because UI might be slow to update
+                for (int i = 0; i < 3; i++)
                 {
-                    AutomationElement shortEdgeBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, settings.FoxitShortEdgeRadioBtnId));
+                    if (!string.IsNullOrEmpty(targetEdgeId))
+                    {
+                        edgeBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, targetEdgeId));
+                    }
                     
-                    if (shortEdgeBtn == null)
+                    if (edgeBtn == null)
                     {
-                        // Fallback to name if ID fails
-                        shortEdgeBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Flip on short edge"));
+                        edgeBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, targetEdgeName));
                     }
-                    if (shortEdgeBtn != null)
+                    
+                    if (edgeBtn != null) break;
+                    Thread.Sleep(100);
+                }
+                
+                if (edgeBtn != null)
+                {
+                    if (edgeBtn.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object selPattern))
                     {
-                        if (shortEdgeBtn.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object selPattern))
-                        {
-                            ((SelectionItemPattern)selPattern).Select();
-                        }
-                        else
-                        {
-                            InvokeElement(shortEdgeBtn);
-                        }
-                        Thread.Sleep(delayNormal);
+                        ((SelectionItemPattern)selPattern).Select();
                     }
+                    else
+                    {
+                        InvokeElement(edgeBtn);
+                    }
+                    Thread.Sleep(delayNormal);
                 }
 
 
@@ -585,19 +606,31 @@ namespace PrintTrackerApp.Services
                     if (detailsWindow != null)
                     {
                         // Set User ID 
-                        AutomationElement userIdEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinUserIdTextBoxId));
-                        if (userIdEdit != null)
-                        {
-                            SetTextElement(userIdEdit, dynamicUserId);
-                        }
+                AutomationElement userIdEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinUserIdTextBoxId));
+                if (userIdEdit == null)
+                {
+                    Debug.WriteLine("Failed to find User ID TextBox. Aborting print.");
+                    return false;
+                }
+                if (!SetTextElement(userIdEdit, dynamicUserId))
+                {
+                    Debug.WriteLine("Failed to verify User ID text was set. Aborting print.");
+                    return false;
+                }
 
-                        // Set File Name
-                        AutomationElement fileNameEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinFileNameTextBoxId));
-                        if (fileNameEdit != null)
-                        {
-                            SetTextElement(fileNameEdit, dynamicFileName);
+                // Set File Name
+                AutomationElement fileNameEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinFileNameTextBoxId));
+                if (fileNameEdit == null)
+                {
+                    Debug.WriteLine("Failed to find File Name TextBox. Aborting print.");
+                    return false;
+                }
+                if (!SetTextElement(fileNameEdit, dynamicFileName))
+                {
+                    Debug.WriteLine("Failed to verify File Name text was set. Aborting print.");
+                    return false;
+                }
                             Thread.Sleep(delayNormal);
-                        }
                         
                         // Click 'OK' on Details window
                         AutomationElement okDetailsBtn = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinDetailsOkBtnId));
@@ -648,7 +681,7 @@ namespace PrintTrackerApp.Services
                 try
                 {
                     AutomationElement root = AutomationElement.RootElement;
-                    for (int s = 0; s < 150; s++) // Max 30 seconds wait
+                    for (int s = 0; s < 600; s++) // Max 120 seconds wait
                     {
                         if (token.IsCancellationRequested) return false;
                         
@@ -761,7 +794,7 @@ namespace PrintTrackerApp.Services
         [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
         internal static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
 
-        public static void SetTextElement(AutomationElement element, string text)
+        public static bool SetTextElement(AutomationElement element, string text)
         {
             try
             {
@@ -770,34 +803,50 @@ namespace PrintTrackerApp.Services
                 if (hwnd != 0)
                 {
                     SendMessage((IntPtr)hwnd, WM_SETTEXT, IntPtr.Zero, text);
-                    return;
+                    Thread.Sleep(50);
+                    return VerifyTextElement(element, text);
                 }
 
                 // Try using ValuePattern
                 if (element.TryGetCurrentPattern(ValuePattern.Pattern, out object pattern))
                 {
                     ((ValuePattern)pattern).SetValue(text);
-                }
-                else
-                {
-                    // Fallback to sending keys
-                    element.SetFocus();
-                    Thread.Sleep(100);
-                    System.Windows.Forms.SendKeys.SendWait("^{HOME}^+{END}{BACKSPACE}"); 
-                    System.Windows.Forms.SendKeys.SendWait(text);
+                    Thread.Sleep(50);
+                    return VerifyTextElement(element, text);
                 }
             }
-            catch
-            {
-                try 
-                {
-                    element.SetFocus();
-                    Thread.Sleep(100);
-                    System.Windows.Forms.SendKeys.SendWait(text);
-                } 
-                catch {}
-            }
+            catch { }
+            return false;
         }
+
+        private static bool VerifyTextElement(AutomationElement element, string expectedText)
+        {
+            try
+            {
+                if (element.TryGetCurrentPattern(ValuePattern.Pattern, out object pattern))
+                {
+                    string actualText = ((ValuePattern)pattern).Current.Value;
+                    if (actualText == expectedText) return true;
+                }
+                
+                // Fallback: check Name property if ValuePattern fails
+                if (element.Current.Name == expectedText) return true;
+                
+                int hwnd = element.Current.NativeWindowHandle;
+                if (hwnd != 0)
+                {
+                    System.Text.StringBuilder sb = new System.Text.StringBuilder(256);
+                    SendMessageGetText((IntPtr)hwnd, WM_GETTEXT, (IntPtr)sb.Capacity, sb);
+                    if (sb.ToString() == expectedText) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+        
+        [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr SendMessageGetText(IntPtr hWnd, uint Msg, IntPtr wParam, System.Text.StringBuilder lParam);
+        private const uint WM_GETTEXT = 0x000D;
 
         public static void MoveFileToFolder(string sourceFile, string watchFolder, string targetSubFolder)
         {
