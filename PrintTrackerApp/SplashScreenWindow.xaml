@@ -1,0 +1,53 @@
+<Window x:Class="PrintTrackerApp.SplashScreenWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Loading" Height="300" Width="550"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        WindowStartupLocation="CenterScreen" ResizeMode="NoResize" Topmost="True">
+    
+    <Border Background="#2B2D3C" CornerRadius="8" BorderBrush="#1C1D26" BorderThickness="1">
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            
+            <!-- Main Content Area -->
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Left Side: Icon and Print Auto -->
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <Image Source="pack://application:,,,/icon.png" Width="100" Height="100" Stretch="Uniform" Margin="0,0,0,10"/>
+                    <TextBlock Text="Print Auto" Foreground="#FBD415" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Middle Separator -->
+                <Rectangle Grid.Column="1" Width="3" Fill="#A9A9B0" Margin="20,20,20,20" RadiusX="1.5" RadiusY="1.5" />
+
+                <!-- Right Side: Text Information -->
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock Text="DPSS COPY" Foreground="#D0D0D5" FontSize="36" FontWeight="Black" HorizontalAlignment="Center" Margin="0,0,0,15" />
+                    <TextBlock Text="PORHUOR PHY" Foreground="#A9A9B0" FontSize="16" FontWeight="Medium" HorizontalAlignment="Center" Margin="0,0,0,5" />
+                    <TextBlock Text="Powered by Antigravity" Foreground="#A9A9B0" FontSize="16" FontWeight="Medium" HorizontalAlignment="Center" Margin="0,0,0,5" />
+                    <TextBlock x:Name="VersionText" Text="VERSION 1.0.0" Foreground="#A9A9B0" FontSize="16" FontWeight="Medium" HorizontalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Progress Bar Area -->
+            <Grid Grid.Row="1" Margin="10,20,10,10">
+                <Border Background="#453B18" Height="10" CornerRadius="2">
+                    <Border x:Name="ProgressIndicator" Background="#FBD415" Width="0" HorizontalAlignment="Left" CornerRadius="2" />
+                </Border>
+            </Grid>
+
+            <!-- Loading Text -->
+            <TextBlock x:Name="LoadingText" Grid.Row="2" Text="Loading UI ..." Foreground="#A9A9B0" FontSize="12" HorizontalAlignment="Center" Margin="0,0,0,10" />
+        </Grid>
+    </Border>
+</Window>

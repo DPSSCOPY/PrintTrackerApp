@@ -1,0 +1,204 @@
+<Window x:Class="PrintTrackerApp.FoxitInteractiveSetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Interactive Foxit UI Setup" Height="650" Width="650" WindowStartupLocation="CenterOwner" Background="#F9FAFB">
+    
+    <Window.Resources>
+        <Style TargetType="Button" x:Key="CaptureBtn">
+            <Setter Property="Background" Value="#10B981"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#059669"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="🎯 Interactive UI Inspector" FontSize="20" FontWeight="Bold" Foreground="#111827" Margin="0,0,0,5" Grid.Row="0"/>
+        
+        <TextBlock Grid.Row="1" TextWrapping="Wrap" Foreground="#4B5563" Margin="0,0,0,15">
+            Click "Capture" next to the element you want to configure. You will have 5 seconds to move your mouse over the target window or button. The tool will automatically grab its ID or Name.
+        </TextBlock>
+
+        <!-- Status Text -->
+        <Border Grid.Row="2" Background="#E0F2FE" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,15" VerticalAlignment="Top">
+            <TextBlock x:Name="txtStatus" Text="Ready." FontWeight="Bold" Foreground="#0369A1" TextAlignment="Center" FontSize="16"/>
+        </Border>
+
+        <!-- Configuration Fields -->
+        <ScrollViewer Grid.Row="2" Margin="0,60,0,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                
+                <!-- FOXIT ELEMENTS -->
+                <GroupBox Header="Foxit UI Elements" Margin="0,0,0,15" BorderBrush="#D1D5DB" Padding="10">
+                    <StackPanel>
+                        <!-- Windows -->
+                        <TextBlock Text="Window Names:" FontWeight="Bold" Margin="0,5,0,5"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Print Window:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtFoxitPrintWindowName" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCapturePrintWindow_Click"/>
+                        </Grid>
+
+                        <!-- Buttons/Controls -->
+                        <TextBlock Text="Control Automation IDs:" FontWeight="Bold" Margin="0,15,0,5"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Print 'OK' Button:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtFoxitPrintOkBtnId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCapturePrintOkBtn_Click"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Properties Button:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtFoxitPropertiesBtnId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCapturePropertiesBtn_Click"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="'Pages' Radio Btn:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtFoxitPagesRadioBtnId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCapturePagesRadioBtn_Click"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="'Short Edge' Radio Btn:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtFoxitShortEdgeRadioBtnId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCaptureShortEdgeRadioBtn_Click"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Pages TextBox:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtFoxitPagesTextBoxId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCapturePagesTextBox_Click"/>
+                        </Grid>
+                        
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Copies TextBox:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtFoxitCopiesTextBoxId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCaptureCopiesTextBox_Click"/>
+                        </Grid>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Copies Spinner:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtFoxitCopiesSpinnerId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCaptureCopiesSpinner_Click"/>
+                        </Grid>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- PRINTER ELEMENTS -->
+                <GroupBox Header="Printer Driver UI Elements" BorderBrush="#D1D5DB" Padding="10">
+                    <StackPanel>
+                        <!-- Printer Profiles -->
+                        <TextBlock Text="Printer Profiles:" FontWeight="Bold" Margin="0,5,0,5"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="cmbPrinterProfiles" Grid.Column="0" Margin="0,0,10,0" Padding="5" SelectionChanged="CmbPrinterProfiles_SelectionChanged" DisplayMemberPath="ProfileName"/>
+                            <Button Grid.Column="1" Content="Add New" Background="#3B82F6" Foreground="White" Padding="10,5" Margin="0,0,5,0" BorderThickness="0" Cursor="Hand" Click="BtnAddPrinter_Click"/>
+                            <Button Grid.Column="2" Content="Delete" Background="#EF4444" Foreground="White" Padding="10,5" BorderThickness="0" Cursor="Hand" Click="BtnDeletePrinter_Click"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,15">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Profile Name:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtProfileName" Grid.Column="1" Margin="5,0" Padding="5" TextChanged="TxtProfileName_TextChanged"/>
+                        </Grid>
+
+                        <!-- Windows -->
+                        <TextBlock Text="Window Names:" FontWeight="Bold" Margin="0,5,0,5"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Properties Window:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtFoxitPropertiesWindowName" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCapturePropertiesWindow_Click"/>
+                        </Grid>
+                        
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Job Details Window:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtFoxitJobDetailsWindowName" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCaptureJobDetailsWindow_Click"/>
+                        </Grid>
+
+                        <!-- Buttons/Controls -->
+                        <TextBlock Text="Control Automation IDs:" FontWeight="Bold" Margin="0,15,0,5"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="'Details...' Button:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtSavinDetailsBtnId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCaptureSavinDetailsBtn_Click"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="User ID TextBox:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtSavinUserIdTextBoxId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCaptureSavinUserIdTextBox_Click"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="File Name TextBox:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtSavinFileNameTextBoxId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCaptureSavinFileNameTextBox_Click"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Details 'OK' Button:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtSavinDetailsOkBtnId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCaptureSavinDetailsOkBtn_Click"/>
+                        </Grid>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Properties 'OK' Button:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <TextBox x:Name="txtSavinPropertiesOkBtnId" Grid.Column="1" Margin="5,0" Padding="5"/>
+                            <Button Grid.Column="2" Content="Capture" Style="{StaticResource CaptureBtn}" Click="BtnCaptureSavinPropertiesOkBtn_Click"/>
+                        </Grid>
+                    </StackPanel>
+                </GroupBox>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Footer Buttons -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
+            <Button Content="Reset Defaults" Padding="15,8" Margin="0,0,10,0" Click="BtnReset_Click"/>
+            <Button Content="Save &amp; Close" Background="#0078D4" Foreground="White" Padding="15,8" Click="BtnSave_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

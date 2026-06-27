@@ -176,6 +176,27 @@ namespace PrintTrackerApp
             }
         }
 
+        private void BtnFoxitUISettings_Click(object sender, RoutedEventArgs e)
+        {
+            var foxitUiWindow = new FoxitInteractiveSetupWindow();
+            foxitUiWindow.Owner = this;
+            foxitUiWindow.ShowDialog();
+            
+            // Reload settings so the updated Foxit IDs are immediately available
+            var updatedSettings = SettingsManager.LoadSettings();
+            CurrentSettings.FoxitPrintWindowName = updatedSettings.FoxitPrintWindowName;
+            CurrentSettings.FoxitPrintOkBtnId = updatedSettings.FoxitPrintOkBtnId;
+            CurrentSettings.FoxitPropertiesBtnId = updatedSettings.FoxitPropertiesBtnId;
+            CurrentSettings.FoxitCopiesSpinnerId = updatedSettings.FoxitCopiesSpinnerId;
+            CurrentSettings.FoxitPagesRadioBtnId = updatedSettings.FoxitPagesRadioBtnId;
+            CurrentSettings.FoxitShortEdgeRadioBtnId = updatedSettings.FoxitShortEdgeRadioBtnId;
+            CurrentSettings.FoxitPagesTextBoxId = updatedSettings.FoxitPagesTextBoxId;
+            CurrentSettings.FoxitCopiesTextBoxId = updatedSettings.FoxitCopiesTextBoxId;
+
+            CurrentSettings.PrinterProfiles = updatedSettings.PrinterProfiles;
+            CurrentSettings.ActivePrinterProfileName = updatedSettings.ActivePrinterProfileName;
+        }
+
         private async void BtnTestTelegram_Click(object sender, RoutedEventArgs e)
         {
             btnTestTelegram.IsEnabled = false;

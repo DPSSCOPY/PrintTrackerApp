@@ -113,12 +113,15 @@
 
                 <StackPanel Margin="0,0,0,15">
                     <TextBlock Text="Foxit Window View (Auto Print):" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
-                    <ComboBox x:Name="cmbFoxitWindowStyle" Padding="6" BorderBrush="#D1D5DB">
+                    <ComboBox x:Name="cmbFoxitWindowStyle" Padding="6" BorderBrush="#D1D5DB" Margin="0,0,0,10">
                         <ComboBoxItem Content="Normal (Default)" Tag="Normal"/>
                         <ComboBoxItem Content="Minimized (Taskbar Only)" Tag="Minimized"/>
                         <ComboBoxItem Content="Small (Top Left Corner)" Tag="Small"/>
                         <ComboBoxItem Content="Right Half (Side-by-Side)" Tag="RightHalf"/>
                     </ComboBox>
+                    
+                    <Button Content="Foxit UI Automation Settings..." Style="{StaticResource SecondaryButton}" 
+                            HorizontalAlignment="Left" Click="BtnFoxitUISettings_Click"/>
                 </StackPanel>
 
                 <StackPanel Margin="0,0,0,15">

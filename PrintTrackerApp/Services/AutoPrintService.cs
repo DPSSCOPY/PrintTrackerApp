@@ -16,7 +16,9 @@ namespace PrintTrackerApp.Services
         private Task? _processingTask;
 
         public bool IsRunning { get; private set; }
-        public bool IsPaused { get; set; }
+        public bool IsPaused { get; set; } = false;
+
+        private Dictionary<string, DateTime> _failedFilesCooldown = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
         public event EventHandler<string>? StatusChanged;
         public event EventHandler<string>? FileProcessingStarted;
@@ -78,6 +80,18 @@ namespace PrintTrackerApp.Services
                         .Where(f => !f.Contains("Complete Print", StringComparison.OrdinalIgnoreCase))
                         .OrderBy(f => File.GetCreationTime(f))
                         .ToList();
+
+                    // Filter out files that are in cooldown (failed recently)
+                    var currentNow = DateTime.Now;
+                    files = files.Where(f => 
+                    {
+                        if (_failedFilesCooldown.TryGetValue(f, out DateTime failedTime))
+                        {
+                            if ((currentNow - failedTime).TotalMinutes < 5) return false; // Skip for 5 minutes
+                            else _failedFilesCooldown.Remove(f); // Cooldown expired
+                        }
+                        return true;
+                    }).ToList();
 
                     if (files.Count > 0)
                     {
@@ -171,7 +185,7 @@ namespace PrintTrackerApp.Services
                         FileProcessingStarted?.Invoke(this, fileName);
                         
                         int actualUiDelay = currentSettings.EnableUiStepDelay ? currentSettings.UiStepDelayMs : 300;
-                        bool success = PrintPdfWithUIAutomation(fileToProcess, currentSettings.FoxitPath, currentSettings.HoldPrintUserId, fileName, currentSettings.AutoPrintCopies, token, currentSettings.FoxitWindowStyle, actualUiDelay, currentSettings.SkipBlankPage);
+                        bool success = PrintPdfWithUIAutomation(fileToProcess, currentSettings.FoxitPath, currentSettings.HoldPrintUserId, fileName, currentSettings.AutoPrintCopies, token, currentSettings.FoxitWindowStyle, actualUiDelay, currentSettings.SkipBlankPage, currentSettings);
                         
                         FileProcessingCompleted?.Invoke(this, (fileName, success));
                         
@@ -179,10 +193,30 @@ namespace PrintTrackerApp.Services
                         {
                             Thread.Sleep(currentSettings.DelayBetweenPrints * 1000);
                             MoveFileToFolder(fileToProcess, watchFolder, "Sent to Printer");
+                            _failedFilesCooldown.Remove(fileToProcess);
                         }
                         else
                         {
                             StatusChanged?.Invoke(this, "Error during printing. Pausing 5s...");
+                            
+                            // Add to cooldown so we process the next file instead of getting stuck in a loop
+                            if (fileToProcess != null)
+                            {
+                                _failedFilesCooldown[fileToProcess] = DateTime.Now;
+                            }
+                            
+                            // Kill orphaned print driver dialogs (splwow64) to prevent them from blocking the next job
+                            foreach (var p in Process.GetProcessesByName("splwow64"))
+                            {
+                                try { p.Kill(); } catch { }
+                            }
+                            
+                            // Also ensure all Foxit processes are completely dead as requested
+                            foreach (var p in Process.GetProcessesByName("FoxitPDFReader"))
+                            {
+                                try { p.Kill(); } catch { }
+                            }
+
                             Thread.Sleep(5000);
                             StatusChanged?.Invoke(this, "Running");
                         }
@@ -304,7 +338,7 @@ namespace PrintTrackerApp.Services
             return false;
         }
 
-        private bool PrintPdfWithUIAutomation(string filePath, string foxitPath, string defaultUserId, string fileName, int defaultCopies, CancellationToken token, string windowStyle, int uiStepDelayMs, bool skipBlankPage)
+        private bool PrintPdfWithUIAutomation(string filePath, string foxitPath, string defaultUserId, string fileName, int defaultCopies, CancellationToken token, string windowStyle, int uiStepDelayMs, bool skipBlankPage, AppSettings settings)
         {
             int delayShort = Math.Max(100, uiStepDelayMs - 100);
             int delayNormal = uiStepDelayMs;
@@ -316,6 +350,10 @@ namespace PrintTrackerApp.Services
             {
                 dynamicUserId = OnRequestUniqueUserId(dynamicUserId, dynamicFileName);
             }
+            
+            PrinterProfile activeProfile = settings.PrinterProfiles?.FirstOrDefault(p => p.ProfileName == settings.ActivePrinterProfileName) 
+                                        ?? settings.PrinterProfiles?.FirstOrDefault() 
+                                        ?? new PrinterProfile();
             
             Process? foxitProcess = null;
             try
@@ -410,7 +448,7 @@ namespace PrintTrackerApp.Services
                 KeyboardHelper.SendCtrlP();
                 
                 // 3. Wait for Foxit Print dialog
-                AutomationElement? printDialog = WaitForKeyWindow(mainWindow, "Print", token);
+                AutomationElement? printDialog = WaitForKeyWindow(mainWindow, settings.FoxitPrintWindowName, token);
                 if (printDialog == null) return false;
 
                 // 3.1 Check and skip blank pages using PdfPig
@@ -434,8 +472,8 @@ namespace PrintTrackerApp.Services
                 // If there are blank pages and skip blank page is enabled, we set the specific range. Otherwise, let Foxit use "All pages" (default).
                 if (skipBlankPage && !isAllPages)
                 {
-                    // Set Pages Radio Button (AutomationId: '10433')
-                    AutomationElement pagesRadioButton = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "10433"));
+                    // Set Pages Radio Button (Using configured ID)
+                    AutomationElement pagesRadioButton = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, settings.FoxitPagesRadioBtnId));
                     if (pagesRadioButton != null)
                     {
                         if (pagesRadioButton.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object selPattern))
@@ -449,8 +487,8 @@ namespace PrintTrackerApp.Services
                         Thread.Sleep(delayNormal);
                     }
 
-                    // Set Pages Textbox (AutomationId: '10415')
-                    AutomationElement pagesTextBox = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "10415"));
+                    // Fill Pages TextBox
+                    AutomationElement pagesTextBox = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, settings.FoxitPagesTextBoxId));
                     if (pagesTextBox != null)
                     {
                         SetTextElement(pagesTextBox, printRange);
@@ -462,7 +500,13 @@ namespace PrintTrackerApp.Services
                 bool isLandscape = IsPdfLandscape(filePath);
                 if (isLandscape)
                 {
-                    AutomationElement shortEdgeBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Flip on short edge"));
+                    AutomationElement shortEdgeBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, settings.FoxitShortEdgeRadioBtnId));
+                    
+                    if (shortEdgeBtn == null)
+                    {
+                        // Fallback to name if ID fails
+                        shortEdgeBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Flip on short edge"));
+                    }
                     if (shortEdgeBtn != null)
                     {
                         if (shortEdgeBtn.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object selPattern))
@@ -483,72 +527,91 @@ namespace PrintTrackerApp.Services
                 {
                     try { printDialog.SetFocus(); } catch { }
                     Thread.Sleep(delayNormal);
-                    System.Windows.Forms.SendKeys.SendWait("%c");
-                    Thread.Sleep(delayNormal);
-                    System.Windows.Forms.SendKeys.SendWait(dynamicCopies.ToString());
+                    
+                    AutomationElement copiesTextBox = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, settings.FoxitCopiesTextBoxId));
+                    AutomationElement copiesSpinner = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, settings.FoxitCopiesSpinnerId));
+                    
+                    if (copiesTextBox != null)
+                    {
+                        SetTextElement(copiesTextBox, dynamicCopies.ToString());
+                    }
+                    else if (copiesSpinner != null)
+                    {
+                        // Spinners (10590) might use RangeValuePattern
+                        if (copiesSpinner.TryGetCurrentPattern(RangeValuePattern.Pattern, out object rangePattern))
+                        {
+                            ((RangeValuePattern)rangePattern).SetValue(dynamicCopies);
+                        }
+                        else
+                        {
+                            // Fallback for spinner: Focus and type
+                            try { copiesSpinner.SetFocus(); } catch { }
+                            Thread.Sleep(delayNormal);
+                            System.Windows.Forms.SendKeys.SendWait("^{HOME}^+{END}{BACKSPACE}"); 
+                            System.Windows.Forms.SendKeys.SendWait(dynamicCopies.ToString());
+                        }
+                    }
+                    else
+                    {
+                        // Fallback to SendKeys (Alt+C)
+                        System.Windows.Forms.SendKeys.SendWait("%c");
+                        Thread.Sleep(delayNormal);
+                        System.Windows.Forms.SendKeys.SendWait(dynamicCopies.ToString());
+                    }
                     Thread.Sleep(delayNormal);
                 }
 
-                // 5. Click 'Properties' (AutomationId: '10380')
-                AutomationElement propertiesBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "10380"));
+                // 7. Click 'Properties' button
+                AutomationElement propertiesBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, settings.FoxitPropertiesBtnId));
                 if (propertiesBtn != null)
                 {
-                    Thread.Sleep(delayNormal);
                     InvokeElement(propertiesBtn);
-                }
-                else
-                {
-                    // Fallback to Alt+R which is usually Properties
-                    System.Windows.Forms.SendKeys.SendWait("%r");
+                    Thread.Sleep(delayNormal);
                 }
 
-                // 6. Wait for SAVIN Properties window
-                AutomationElement? savinProps = WaitForKeyWindow(printDialog, "Properties", token, true); // contains Properties
+                // Wait for Properties window
+                AutomationElement? savinProps = WaitForKeyWindow(printDialog, activeProfile.FoxitPropertiesWindowName, token, true); // contains Properties
                 if (savinProps == null) return false;
 
-                // 8. Click 'Details...' (AutomationId: '1018')
-                AutomationElement detailsBtn = savinProps.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "1018"));
+                // 8. Click 'Details...' 
+                AutomationElement detailsBtn = savinProps.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinDetailsBtnId));
                 if (detailsBtn != null)
                 {
                     Thread.Sleep(delayNormal);
                     InvokeElement(detailsBtn);
-                    
-                    // 9. Job Type Details Window
-                    AutomationElement? detailsWindow = WaitForKeyWindow(savinProps, "Details", token, true);
+
+                    // 9. Wait for Details window
+                    AutomationElement? detailsWindow = WaitForKeyWindow(savinProps, activeProfile.FoxitJobDetailsWindowName, token, true);
                     if (detailsWindow != null)
                     {
-                        // Set User ID (AutomationId: '1004')
-                        AutomationElement userIdEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "1004"));
+                        // Set User ID 
+                        AutomationElement userIdEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinUserIdTextBoxId));
                         if (userIdEdit != null)
                         {
                             SetTextElement(userIdEdit, dynamicUserId);
                         }
 
-                        // Set File Name (AutomationId: '1007')
-                        AutomationElement fileNameEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "1007"));
+                        // Set File Name
+                        AutomationElement fileNameEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinFileNameTextBoxId));
                         if (fileNameEdit != null)
                         {
                             SetTextElement(fileNameEdit, dynamicFileName);
+                            Thread.Sleep(delayNormal);
                         }
                         
-                        // Click OK on Details Window (AutomationId: '1')
-                        AutomationElement okDetailsBtn = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "1"));
+                        // Click 'OK' on Details window
+                        AutomationElement okDetailsBtn = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinDetailsOkBtnId));
                         if (okDetailsBtn != null)
                         {
                             Thread.Sleep(delayNormal);
                             InvokeElement(okDetailsBtn);
-                        }
-                        else
-                        {
                             Thread.Sleep(delayNormal);
-                            System.Windows.Forms.SendKeys.SendWait("{ENTER}");
                         }
-                        Thread.Sleep(delayLong);
                     }
                 }
 
-                // 10. Click 'OK' on Properties (AutomationId: '1')
-                AutomationElement okPropsBtn = savinProps.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "1"));
+                // 10. Click 'OK' on SAVIN Properties window
+                AutomationElement okPropsBtn = savinProps.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinPropertiesOkBtnId));
                 if (okPropsBtn != null)
                 {
                     Thread.Sleep(delayNormal);
@@ -561,8 +624,8 @@ namespace PrintTrackerApp.Services
                 }
                 Thread.Sleep(delayLong);
 
-                // 11. Click 'OK' on Foxit Print window (AutomationId: '1')
-                AutomationElement okPrintBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "1"));
+                // 11. Click 'OK' on Foxit Print window
+                AutomationElement okPrintBtn = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, settings.FoxitPrintOkBtnId));
                 if (okPrintBtn != null)
                 {
                     Thread.Sleep(delayNormal);
@@ -588,10 +651,21 @@ namespace PrintTrackerApp.Services
                     for (int s = 0; s < 150; s++) // Max 30 seconds wait
                     {
                         if (token.IsCancellationRequested) return false;
+                        
+                        try 
+                        { 
+                            if (foxitProcess.HasExited) 
+                            {
+                                Debug.WriteLine("Foxit process closed/crashed before printing finished.");
+                                return false; 
+                            }
+                        } 
+                        catch { }
 
                         AutomationElementCollection windows = root.FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ProcessIdProperty, foxitProcess.Id));
                         
-                        // If Foxit has 1 or 0 windows, it means no modal dialogs (Print or Printing...) are open.
+                        // If Foxit has 1 window left, it means no modal dialogs (Print or Printing...) are open.
+                        // If 0 windows, it means it closed.
                         if (windows.Count <= 1)
                         {
                             // Double check that the Print dialog is actually gone

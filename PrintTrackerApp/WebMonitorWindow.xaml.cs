@@ -18,11 +18,11 @@ namespace PrintTrackerApp
 
         public event EventHandler<string>? OnScrapedStatusReceived;
 
-        public WebMonitorWindow(string printerIp, int refreshIntervalSeconds = 3)
+        public WebMonitorWindow(string printerIp, int refreshIntervalSeconds = 2)
         {
             InitializeComponent();
             _printerIp = printerIp;
-            int seconds = refreshIntervalSeconds > 0 ? refreshIntervalSeconds : 3;
+            int seconds = refreshIntervalSeconds > 0 ? refreshIntervalSeconds : 2;
             _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
             _pollTimer.Tick += PollTimer_Tick;
             InitializeAsync();
@@ -65,19 +65,31 @@ namespace PrintTrackerApp
                                 if (results.length > 0) {
                                     var dataString = results.join(';');
                                     
-                                    // 2. Try to maximize 'Display Items' dropdown to show more jobs (Ricoh usually has 5 to 20)
+                                    // 2. Try to maximize 'Display Items' dropdown to show more jobs (Ricoh usually has 5 to 20 or up to 100)
                                     var selects = doc.querySelectorAll('select');
                                     var changedDropdown = false;
                                     for (var k = 0; k < selects.length; k++) {
                                         var opts = selects[k].options;
                                         if (opts && opts.length >= 2) {
-                                            var hasTen = false;
-                                            var hasTwenty = false;
+                                            var isNumericDropdown = true;
                                             for(var o = 0; o < opts.length; o++) {
-                                                if (opts[o].text.includes('10')) hasTen = true;
-                                                if (opts[o].text.includes('20')) hasTwenty = true;
+                                                if (!opts[o].text.trim().match(/^\d+$/)) {
+                                                    isNumericDropdown = false;
+                                                    break;
+                                                }
                                             }
-                                            if (hasTen && hasTwenty) {
+                                            
+                                            if (!isNumericDropdown) {
+                                                var hasTen = false;
+                                                var hasTwenty = false;
+                                                for(var o = 0; o < opts.length; o++) {
+                                                    if (opts[o].text.includes('10')) hasTen = true;
+                                                    if (opts[o].text.includes('20')) hasTwenty = true;
+                                                }
+                                                if (hasTen && hasTwenty) isNumericDropdown = true;
+                                            }
+
+                                            if (isNumericDropdown) {
                                                 var lastIdx = opts.length - 1;
                                                 if (selects[k].selectedIndex !== lastIdx) {
                                                     selects[k].selectedIndex = lastIdx;
@@ -132,13 +144,22 @@ namespace PrintTrackerApp
                                             }
                                         }
 
-                                        if (refreshBtn) {
-                                            triggerClick(refreshBtn);
-                                        } else if (firstBtn) {
-                                            triggerClick(firstBtn);
+                                        // Cycle through up to 3 pages to catch older jobs that were pushed down
+                                        var cycleMax = 3;
+                                        win.top.pageCycleDepth = (win.top.pageCycleDepth || 0) + 1;
+                                        
+                                        if (win.top.pageCycleDepth < cycleMax && nextBtn) {
+                                            triggerClick(nextBtn);
                                         } else {
-                                            // Fallback to reload if no buttons found to ensure we always get newest data
-                                            try { win.location.reload(); } catch(e) {}
+                                            win.top.pageCycleDepth = 0;
+                                            if (firstBtn) {
+                                                triggerClick(firstBtn);
+                                            } else if (refreshBtn) {
+                                                triggerClick(refreshBtn);
+                                            } else {
+                                                // Fallback to reload if no buttons found to ensure we always get newest data
+                                                try { win.location.reload(); } catch(e) {}
+                                            }
                                         }
                                     }
                                     return dataString; // Successfully found and processed the data frame

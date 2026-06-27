@@ -431,6 +431,7 @@ namespace PrintTrackerApp
                     txtSentToPrinterCount.Text = "0";
                     txtDuplicateCount.Text = "0";
                     txtErrorFilesCount.Text = "0";
+                    txtPrintCompleteCount.Text = "0";
                     return;
                 }
 
@@ -445,7 +446,7 @@ namespace PrintTrackerApp
                     int totalSubCount = 0;
                     HashSet<string> uniqueBaseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     
-                    string[] printedFolders = { "Storing Complete", "Complete Print", "Processing" };
+                    string[] printedFolders = { "Storing Complete", "Complete Print", "Processing", "Print Complete", "Successfully Printed" };
                     foreach (var folder in printedFolders)
                     {
                         string dirPath = System.IO.Path.Combine(_appSettings.SourceFolderPath, folder);
@@ -489,6 +490,19 @@ namespace PrintTrackerApp
                         catch { }
                     }
                     txtSentToPrinterCount.Text = sentToPrinterCount.ToString();
+
+                    // Count Print Complete files
+                    int printCompleteCount = 0;
+                    string printCompleteDir = System.IO.Path.Combine(_appSettings.SourceFolderPath, "Print Complete");
+                    if (System.IO.Directory.Exists(printCompleteDir))
+                    {
+                        try
+                        {
+                            printCompleteCount = System.IO.Directory.GetFiles(printCompleteDir, "*.pdf").Length;
+                        }
+                        catch { }
+                    }
+                    txtPrintCompleteCount.Text = printCompleteCount.ToString();
 
                     // Count Error files: any subfolder except active states and "Storing Complete"
                     int errorCount = 0;
@@ -1895,11 +1909,38 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                 {
                     try { printDialog.SetFocus(); } catch { }
                     Thread.Sleep(300);
-                    System.Windows.Forms.SendKeys.SendWait("%c");
-                    Thread.Sleep(200);
-                    System.Windows.Forms.SendKeys.SendWait(dynamicCopies.ToString());
-                    Thread.Sleep(200);
-                    System.Windows.MessageBox.Show($"Copies set to {dynamicCopies} via SendKeys.");
+                    
+                    AutomationElement copiesTextBox = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "10408"));
+                    AutomationElement copiesSpinner = printDialog.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "10590"));
+                    
+                    if (copiesTextBox != null)
+                    {
+                        AutoPrintService.SetTextElement(copiesTextBox, dynamicCopies.ToString());
+                        System.Windows.MessageBox.Show($"Copies set to {dynamicCopies} via UI Automation (TextBox ID: 10408).");
+                    }
+                    else if (copiesSpinner != null)
+                    {
+                        if (copiesSpinner.TryGetCurrentPattern(System.Windows.Automation.RangeValuePattern.Pattern, out object rangePattern))
+                        {
+                            ((System.Windows.Automation.RangeValuePattern)rangePattern).SetValue(dynamicCopies);
+                        }
+                        else
+                        {
+                            try { copiesSpinner.SetFocus(); } catch { }
+                            Thread.Sleep(200);
+                            System.Windows.Forms.SendKeys.SendWait("^{HOME}^+{END}{BACKSPACE}");
+                            System.Windows.Forms.SendKeys.SendWait(dynamicCopies.ToString());
+                        }
+                        System.Windows.MessageBox.Show($"Copies set to {dynamicCopies} via UI Automation (Spinner ID: 10590).");
+                    }
+                    else
+                    {
+                        System.Windows.Forms.SendKeys.SendWait("%c");
+                        Thread.Sleep(200);
+                        System.Windows.Forms.SendKeys.SendWait(dynamicCopies.ToString());
+                        Thread.Sleep(200);
+                        System.Windows.MessageBox.Show($"Copies set to {dynamicCopies} via SendKeys. (Could not find ID 10408 or 10590)");
+                    }
                 }
                 else
                 {
@@ -2171,6 +2212,15 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             UpdateVerificationPanel();
         }
 
+        private void BtnShowPrintComplete_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new ErrorFilesWindow(_appSettings.SourceFolderPath, ErrorWindowMode.PrintComplete, RemoveJobsBeforeMove);
+            window.Owner = this;
+            window.ShowDialog();
+            
+            UpdateVerificationPanel();
+        }
+
         private void BtnAdvancedAutoPrintSettings_Click(object sender, RoutedEventArgs e)
         {
             var advancedWindow = new AdvancedAutoPrintSettingsWindow(_appSettings);
@@ -2178,6 +2228,40 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             if (advancedWindow.ShowDialog() == true)
             {
                 _appSettings = SettingsManager.LoadSettings();
+            }
+        }
+
+        private void MenuItemDeleteJob_Click(object sender, RoutedEventArgs e)
+        {
+            if (dgPrintJobs.SelectedItems != null && dgPrintJobs.SelectedItems.Count > 0)
+            {
+                var result = System.Windows.MessageBox.Show($"Are you sure you want to delete {dgPrintJobs.SelectedItems.Count} selected job(s)?", "Confirm Delete", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+                if (result == System.Windows.MessageBoxResult.Yes)
+                {
+                    var itemsToRemove = dgPrintJobs.SelectedItems.Cast<PrintTrackerApp.Models.PrintJobInfo>().ToList();
+                    foreach (var item in itemsToRemove)
+                    {
+                        _printJobs.Remove(item);
+                    }
+                    CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                }
+            }
+        }
+
+        private void MenuItemCancelMenu_Click(object sender, RoutedEventArgs e)
+        {
+            if (dgPrintJobs.SelectedItems != null && dgPrintJobs.SelectedItems.Count > 0)
+            {
+                var result = System.Windows.MessageBox.Show($"Are you sure you want to mark {dgPrintJobs.SelectedItems.Count} selected job(s) as Cancelled?", "Confirm Cancel", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
+                if (result == System.Windows.MessageBoxResult.Yes)
+                {
+                    var itemsToCancel = dgPrintJobs.SelectedItems.Cast<PrintTrackerApp.Models.PrintJobInfo>().ToList();
+                    foreach (var item in itemsToCancel)
+                    {
+                        item.Status = "Cancelled";
+                    }
+                    CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                }
             }
         }
 

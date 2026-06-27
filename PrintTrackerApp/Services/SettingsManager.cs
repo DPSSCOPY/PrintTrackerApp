@@ -7,12 +7,24 @@ using PrintTrackerApp.Models;
 
 namespace PrintTrackerApp.Services
 {
+    public class PrinterProfile
+    {
+        public string ProfileName { get; set; } = "Default SAVIN";
+        public string FoxitPropertiesWindowName { get; set; } = "Properties";
+        public string FoxitJobDetailsWindowName { get; set; } = "Job Type Details";
+        public string SavinDetailsBtnId { get; set; } = "1018";
+        public string SavinUserIdTextBoxId { get; set; } = "1004";
+        public string SavinFileNameTextBoxId { get; set; } = "1007";
+        public string SavinDetailsOkBtnId { get; set; } = "1";
+        public string SavinPropertiesOkBtnId { get; set; } = "1";
+    }
+
     public class AppSettings
     {
         public string CsvExportPath { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         public string PrinterIp { get; set; } = "192.168.1.75";
         public string PrinterName { get; set; } = "SAVIN MP 7502";
-        public int RefreshIntervalSeconds { get; set; } = 3;
+        public int RefreshIntervalSeconds { get; set; } = 1;
         public string SourceFolderPath { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         public List<AppNotification> Notifications { get; set; } = new List<AppNotification>();
         
@@ -29,6 +41,27 @@ namespace PrintTrackerApp.Services
         public int BatchSize { get; set; } = 5;
         public bool EnableUiStepDelay { get; set; } = false;
         public int UiStepDelayMs { get; set; } = 300;
+
+        // Foxit UI Automation Settings
+        public string FoxitPrintWindowName { get; set; } = "Print";
+        public string FoxitPrintOkBtnId { get; set; } = "1";
+        public string FoxitPropertiesBtnId { get; set; } = "10380";
+        public string FoxitCopiesSpinnerId { get; set; } = "10590";
+        public string FoxitPagesRadioBtnId { get; set; } = "10433";
+        public string FoxitPagesTextBoxId { get; set; } = "10415";
+        public string FoxitCopiesTextBoxId { get; set; } = "10408";
+        public string FoxitShortEdgeRadioBtnId { get; set; } = "10431";
+
+        // SAVIN Printer Driver Automation Settings (Legacy - Kept for migration)
+        public string SavinDetailsBtnId { get; set; } = "1018";
+        public string SavinUserIdTextBoxId { get; set; } = "1004";
+        public string SavinFileNameTextBoxId { get; set; } = "1007";
+        public string SavinDetailsOkBtnId { get; set; } = "1";
+        public string SavinPropertiesOkBtnId { get; set; } = "1";
+
+        // Printer Profiles
+        public List<PrinterProfile> PrinterProfiles { get; set; } = new List<PrinterProfile>();
+        public string ActivePrinterProfileName { get; set; } = "Default SAVIN";
         
         // Priority Printing Settings
         public bool EnablePriority1 { get; set; } = false;
@@ -65,7 +98,27 @@ namespace PrintTrackerApp.Services
                 try
                 {
                     string json = File.ReadAllText(SettingsFile);
-                    return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                    AppSettings loadedSettings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                    
+                    // Migration: If no profiles exist, create a default one from legacy properties
+                    if (loadedSettings.PrinterProfiles == null || loadedSettings.PrinterProfiles.Count == 0)
+                    {
+                        loadedSettings.PrinterProfiles = new List<PrinterProfile>();
+                        loadedSettings.PrinterProfiles.Add(new PrinterProfile
+                        {
+                            ProfileName = "Default SAVIN",
+                            FoxitPropertiesWindowName = "Properties",
+                            FoxitJobDetailsWindowName = "Job Type Details",
+                            SavinDetailsBtnId = loadedSettings.SavinDetailsBtnId ?? "1018",
+                            SavinUserIdTextBoxId = loadedSettings.SavinUserIdTextBoxId ?? "1004",
+                            SavinFileNameTextBoxId = loadedSettings.SavinFileNameTextBoxId ?? "1007",
+                            SavinDetailsOkBtnId = loadedSettings.SavinDetailsOkBtnId ?? "1",
+                            SavinPropertiesOkBtnId = loadedSettings.SavinPropertiesOkBtnId ?? "1"
+                        });
+                        loadedSettings.ActivePrinterProfileName = "Default SAVIN";
+                    }
+
+                    return loadedSettings;
                 }
                 catch { }
             }

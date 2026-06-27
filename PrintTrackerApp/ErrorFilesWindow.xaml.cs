@@ -51,7 +51,8 @@ namespace PrintTrackerApp
     public enum ErrorWindowMode
     {
         ErrorFiles,
-        SentToPrinter
+        SentToPrinter,
+        PrintComplete
     }
 
     public partial class ErrorFilesWindow : Window
@@ -74,6 +75,11 @@ namespace PrintTrackerApp
             {
                 this.Title = "Sent to Printer Files Manager";
                 txtTitle.Text = "Manage Sent to Printer Files";
+            }
+            else if (_mode == ErrorWindowMode.PrintComplete)
+            {
+                this.Title = "Print Complete Files Manager";
+                txtTitle.Text = "Manage Print Complete Files";
             }
 
             dataGridFiles.ItemsSource = _errorFiles;
@@ -109,9 +115,10 @@ namespace PrintTrackerApp
             if (string.IsNullOrEmpty(_sourceFolderPath) || !Directory.Exists(_sourceFolderPath))
                 return;
 
-            if (_mode == ErrorWindowMode.SentToPrinter)
+            if (_mode == ErrorWindowMode.SentToPrinter || _mode == ErrorWindowMode.PrintComplete)
             {
-                string folderPath = Path.Combine(_sourceFolderPath, "Sent to Printer");
+                string targetSubfolder = _mode == ErrorWindowMode.SentToPrinter ? "Sent to Printer" : "Print Complete";
+                string folderPath = Path.Combine(_sourceFolderPath, targetSubfolder);
                 if (Directory.Exists(folderPath))
                 {
                     var files = Directory.GetFiles(folderPath, "*.pdf");
@@ -121,7 +128,7 @@ namespace PrintTrackerApp
                         {
                             FileName = Path.GetFileName(file),
                             FilePath = file,
-                            StatusFolder = "Sent to Printer",
+                            StatusFolder = targetSubfolder,
                             FailedTime = File.GetLastWriteTime(file)
                         };
                         info.UpdateDuration();
