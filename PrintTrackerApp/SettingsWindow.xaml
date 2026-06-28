@@ -88,6 +88,7 @@
                     </Grid>
                 </StackPanel>
 
+
                 <StackPanel Margin="0,0,0,15">
                     <TextBlock Text="Web Monitor Refresh Interval (Seconds):" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
                     <ComboBox x:Name="cmbRefreshInterval" Padding="6" BorderBrush="#D1D5DB">

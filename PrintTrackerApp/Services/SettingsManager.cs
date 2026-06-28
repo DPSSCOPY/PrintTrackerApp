@@ -19,8 +19,16 @@ namespace PrintTrackerApp.Services
         public string SavinPropertiesOkBtnId { get; set; } = "1";
     }
 
+    public class CustomDateFilter
+    {
+        public string Name { get; set; } = "Week 1";
+        public DateTime StartDate { get; set; } = DateTime.Now.Date;
+        public DateTime EndDate { get; set; } = DateTime.Now.Date;
+    }
+
     public class AppSettings
     {
+        public List<CustomDateFilter> CustomDateFilters { get; set; } = new List<CustomDateFilter>();
         public string CsvExportPath { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         public string PrinterIp { get; set; } = "192.168.1.75";
         public string PrinterName { get; set; } = "SAVIN MP 7502";

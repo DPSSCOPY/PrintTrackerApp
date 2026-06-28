@@ -31,7 +31,8 @@ namespace PrintTrackerApp
                 DailyReportTime = settings.DailyReportTime,
                 NotifySentToPrinter = settings.NotifySentToPrinter,
                 NotifyStoringCompleted = settings.NotifyStoringCompleted,
-                NotifyPrintCompleted = settings.NotifyPrintCompleted
+                NotifyPrintCompleted = settings.NotifyPrintCompleted,
+                CustomDateFilters = settings.CustomDateFilters != null ? new System.Collections.Generic.List<Services.CustomDateFilter>(settings.CustomDateFilters) : new System.Collections.Generic.List<Services.CustomDateFilter>()
             };
 
             txtPrinterIp.Text = CurrentSettings.PrinterIp;
@@ -114,6 +115,7 @@ namespace PrintTrackerApp
                 }
             }
         }
+
 
         private void BtnSave_Click(object sender, RoutedEventArgs e)
         {

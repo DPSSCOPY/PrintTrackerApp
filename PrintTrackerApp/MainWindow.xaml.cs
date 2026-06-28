@@ -198,6 +198,8 @@ namespace PrintTrackerApp
                 _printJobs.Add(job);
             }
 
+            teacherDashboard.InitializeData(_printJobs, _appSettings.CsvExportPath);
+
             // Also load the existing web monitor history so it's not overwritten and deleted on restart
             _webMonitorHistoryJobs = CsvLogger.LoadWebMonitorRawFromCsv(_appSettings.CsvExportPath);
 
@@ -2346,6 +2348,57 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                     }
                     CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
                 }
+            }
+        }
+
+        private void DgPrintJobs_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+        {
+            if (System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Control)
+            {
+                e.Handled = true;
+                double zoomStep = 0.1;
+                if (e.Delta > 0)
+                {
+                    dgScale.ScaleX += zoomStep;
+                    dgScale.ScaleY += zoomStep;
+                }
+                else
+                {
+                    if (dgScale.ScaleX > 0.5) // limit min zoom to 50%
+                    {
+                        dgScale.ScaleX -= zoomStep;
+                        dgScale.ScaleY -= zoomStep;
+                    }
+                }
+            }
+        }
+
+        private void DataGrid_MouseDoubleClick_AutoFit(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (sender is System.Windows.Controls.Primitives.DataGridColumnHeader header)
+            {
+                if (header.Column != null)
+                {
+                    header.Column.Width = new System.Windows.Controls.DataGridLength(1, System.Windows.Controls.DataGridLengthUnitType.Auto);
+                    e.Handled = true;
+                }
+            }
+            else if (sender is System.Windows.Controls.DataGridCell cell)
+            {
+                if (cell.Column != null)
+                {
+                    cell.Column.Width = new System.Windows.Controls.DataGridLength(1, System.Windows.Controls.DataGridLengthUnitType.Auto);
+                    e.Handled = true;
+                }
+            }
+        }
+
+        private void MainTabControl_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (e.Source is System.Windows.Controls.TabControl && tabDashboard != null && tabDashboard.IsSelected)
+            {
+                // Re-initialize with the latest jobs if the user switches to the Dashboard tab
+                teacherDashboard.InitializeData(_printJobs, _appSettings.CsvExportPath);
             }
         }
 

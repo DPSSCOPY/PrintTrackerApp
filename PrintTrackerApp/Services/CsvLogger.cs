@@ -159,6 +159,67 @@ namespace PrintTrackerApp.Services
             return jobs;
         }
 
+        public static List<PrintJobInfo> LoadJobsFromCsvForDateRange(string folderPath, DateTime startDate, DateTime endDate)
+        {
+            var allJobs = new List<PrintJobInfo>();
+            try
+            {
+                if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath))
+                    return allJobs;
+
+                // Ensure time components don't interfere
+                startDate = startDate.Date;
+                endDate = endDate.Date.AddDays(1).AddTicks(-1);
+
+                var files = Directory.GetFiles(folderPath, "PrintLog_*.csv");
+                foreach (var filePath in files)
+                {
+                    string fileName = Path.GetFileNameWithoutExtension(filePath);
+                    string datePart = fileName.Replace("PrintLog_", "");
+                    if (DateTime.TryParse(datePart, out DateTime fileDate))
+                    {
+                        if (fileDate.Date >= startDate.Date && fileDate.Date <= endDate.Date)
+                        {
+                            using (var reader = new StreamReader(filePath, Encoding.UTF8))
+                            {
+                                string header = reader.ReadLine();
+                                while (!reader.EndOfStream)
+                                {
+                                    var line = reader.ReadLine();
+                                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                                    var parts = ParseCsvLine(line);
+                                    if (parts.Count >= 9)
+                                    {
+                                        allJobs.Add(new PrintJobInfo
+                                        {
+                                            Timestamp = parts[0],
+                                            DocumentName = parts[1],
+                                            WebFileName = parts[2],
+                                            RicohUserId = parts[3],
+                                            TotalPages = int.TryParse(parts[4], out int p) ? p : 1,
+                                            Copies = int.TryParse(parts[5], out int c) ? c : 1,
+                                            Owner = parts[6],
+                                            PrinterName = parts[7],
+                                            Status = parts[8],
+                                            JobId = Guid.NewGuid().ToString(),
+                                            WebJobId = parts.Count >= 10 && int.TryParse(parts[9], out int wid) ? wid : -1
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Error loading CSV date range: " + ex.Message);
+            }
+
+            return allJobs.OrderByDescending(j => j.Timestamp).ToList();
+        }
+
         public static Dictionary<int, string[]> LoadWebMonitorRawFromCsv(string folderPath)
         {
             var dict = new Dictionary<int, string[]>();
@@ -209,7 +270,95 @@ namespace PrintTrackerApp.Services
             return dict;
         }
 
-        private static List<string> ParseCsvLine(string line)
+        public static List<PrintJobInfo> LoadExternalCsvLog(string filePath, out string errorMessage)
+        {
+            errorMessage = "";
+            var jobs = new List<PrintJobInfo>();
+            try
+            {
+                if (!File.Exists(filePath)) 
+                {
+                    errorMessage = "File not found.";
+                    return jobs;
+                }
+                using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var reader = new StreamReader(fs, Encoding.UTF8, true))
+                {
+                    string header = reader.ReadLine() ?? "";
+                    string firstLineSample = header;
+                    char delimiter = ',';
+                    if (!header.Contains(",") && header.Contains(";")) delimiter = ';';
+                    else if (!header.Contains(",") && header.Contains("\t")) delimiter = '\t';
+                    
+                    var headerParts = ParseCsvLine(header, delimiter);
+                    int timeIdx = headerParts.FindIndex(h => h.Trim().Equals("Time", StringComparison.OrdinalIgnoreCase));
+                    int userIdx = headerParts.FindIndex(h => h.Trim().Equals("User", StringComparison.OrdinalIgnoreCase));
+                    int pagesIdx = headerParts.FindIndex(h => h.Trim().Equals("Pages", StringComparison.OrdinalIgnoreCase));
+                    int copiesIdx = headerParts.FindIndex(h => h.Trim().Equals("Copies", StringComparison.OrdinalIgnoreCase));
+                    int printerIdx = headerParts.FindIndex(h => h.Trim().Equals("Printer", StringComparison.OrdinalIgnoreCase));
+                    int docNameIdx = headerParts.FindIndex(h => h.Trim().Equals("Document Name", StringComparison.OrdinalIgnoreCase));
+
+                    // Fallback to hardcoded indices if header is missing or unrecognized
+                    if (timeIdx == -1 && docNameIdx == -1)
+                    {
+                        if (headerParts.Count == 5)
+                        {
+                            timeIdx = 0; userIdx = -1; pagesIdx = 1; copiesIdx = 2; printerIdx = 3; docNameIdx = 4;
+                        }
+                        else
+                        {
+                            timeIdx = 0; userIdx = 1; pagesIdx = 2; copiesIdx = 3; printerIdx = 4; docNameIdx = 5;
+                        }
+                    }
+
+                    int lineCount = 1;
+                    int maxCols = headerParts.Count;
+                    
+                    while (!reader.EndOfStream)
+                    {
+                        var line = reader.ReadLine();
+                        lineCount++;
+                        if (string.IsNullOrWhiteSpace(line)) continue;
+                        
+                        if (lineCount == 2) firstLineSample = line;
+                        
+                        var parts = ParseCsvLine(line, delimiter);
+                        if (parts.Count > maxCols) maxCols = parts.Count;
+                        
+                        if (parts.Count < 2) continue; // Skip totally invalid lines
+
+                        string GetPart(int idx) => (idx >= 0 && idx < parts.Count) ? parts[idx].Trim() : "";
+
+                        jobs.Add(new PrintJobInfo
+                        {
+                            Timestamp = GetPart(timeIdx),
+                            Owner = GetPart(userIdx),
+                            TotalPages = int.TryParse(GetPart(pagesIdx), out int pages) ? pages : 1,
+                            Copies = int.TryParse(GetPart(copiesIdx), out int copies) ? copies : 1,
+                            PrinterName = GetPart(printerIdx),
+                            DocumentName = GetPart(docNameIdx),
+                            WebFileName = GetPart(docNameIdx)
+                        });
+                    }
+                    
+                    if (jobs.Count == 0)
+                    {
+                        errorMessage = $"Read {lineCount} lines. Max cols found: {maxCols}. Delimiter: '{delimiter}'.\nFirst line: {firstLineSample}";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                System.Diagnostics.Debug.WriteLine("Error loading external CSV: " + ex.Message);
+            }
+            
+            // External logs are usually chronological, so reverse to show newest first
+            jobs.Reverse();
+            return jobs;
+        }
+
+        private static List<string> ParseCsvLine(string line, char delimiter = ',')
         {
             var result = new List<string>();
             bool inQuotes = false;
@@ -230,7 +379,7 @@ namespace PrintTrackerApp.Services
                         inQuotes = !inQuotes;
                     }
                 }
-                else if (c == ',' && !inQuotes)
+                else if (c == delimiter && !inQuotes)
                 {
                     result.Add(currentField.ToString());
                     currentField.Clear();

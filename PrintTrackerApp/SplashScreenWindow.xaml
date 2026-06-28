@@ -23,8 +23,87 @@
 
                 <!-- Left Side: Icon and Print Auto -->
                 <StackPanel Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <Image Source="pack://application:,,,/icon.png" Width="100" Height="100" Stretch="Uniform" Margin="0,0,0,10"/>
-                    <TextBlock Text="Print Auto" Foreground="#FBD415" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" />
+                    <!-- Animated Printer Icon -->
+                    <Grid Width="100" Height="100" Margin="0,0,0,10">
+                        <Grid.Triggers>
+                            <EventTrigger RoutedEvent="Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard RepeatBehavior="Forever">
+                                        <DoubleAnimation Storyboard.TargetName="AnimatedPaper" Storyboard.TargetProperty="Height" From="0" To="25" Duration="0:0:1.5" />
+                                        <DoubleAnimation Storyboard.TargetName="AnimatedPaper" Storyboard.TargetProperty="(Canvas.Top)" From="38" To="45" Duration="0:0:1.5" />
+                                        <DoubleAnimation Storyboard.TargetName="AnimatedPaper" Storyboard.TargetProperty="Opacity" From="1" To="0" BeginTime="0:0:1.2" Duration="0:0:0.3" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Grid.Triggers>
+                        <!-- Background Circle -->
+                        <Ellipse Fill="#0D6EFD" Width="100" Height="100"/>
+                        
+                        <Canvas Width="60" Height="60" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <!-- Top Paper (Input) -->
+                            <Rectangle Fill="White" Width="30" Height="15" Canvas.Left="15" Canvas.Top="10" RadiusX="2" RadiusY="2" />
+                            
+                            <!-- Printer Body -->
+                            <Path Fill="White" Data="M 5,25 L 55,25 C 57.76,25 60,27.24 60,30 L 60,45 C 60,47.76 57.76,50 55,50 L 5,50 C 2.24,50 0,47.76 0,45 L 0,30 C 0,27.24 2.24,25 5,25 Z" />
+                            
+                            <!-- Detail Lines on Printer -->
+                            <Rectangle Fill="#E0E0E0" Width="10" Height="2" Canvas.Left="10" Canvas.Top="30" RadiusX="1" RadiusY="1"/>
+                            <Ellipse Fill="#4CAF50" Width="4" Height="4" Canvas.Left="46" Canvas.Top="30" />
+                            
+                            <!-- Printer opening -->
+                            <Rectangle Fill="#0D6EFD" Width="40" Height="10" Canvas.Left="10" Canvas.Top="40" />
+
+                            <!-- Printing Paper (Animated) -->
+                            <Border x:Name="AnimatedPaper" Background="White" Width="30" Height="0" Canvas.Left="15" Canvas.Top="38" BorderBrush="#E0E0E0" BorderThickness="1,0,1,1">
+                                <StackPanel Margin="3,2,3,2">
+                                    <Rectangle Fill="#A9A9B0" Height="2" Margin="0,2,0,0"/>
+                                    <Rectangle Fill="#A9A9B0" Height="2" Margin="0,2,0,0"/>
+                                    <Rectangle Fill="#A9A9B0" Height="2" Margin="0,2,0,0" Width="15" HorizontalAlignment="Left"/>
+                                </StackPanel>
+                            </Border>
+                        </Canvas>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <StackPanel.Resources>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="#FBD415"/>
+                                <Setter Property="FontSize" Value="24"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                                <Setter Property="RenderTransform">
+                                    <Setter.Value>
+                                        <TranslateTransform Y="0"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </StackPanel.Resources>
+                        <StackPanel.Triggers>
+                            <EventTrigger RoutedEvent="Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="W1" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-5" AutoReverse="True" Duration="0:0:0.3" BeginTime="0:0:0.0" RepeatBehavior="Forever"/>
+                                        <DoubleAnimation Storyboard.TargetName="W2" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-5" AutoReverse="True" Duration="0:0:0.3" BeginTime="0:0:0.1" RepeatBehavior="Forever"/>
+                                        <DoubleAnimation Storyboard.TargetName="W3" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-5" AutoReverse="True" Duration="0:0:0.3" BeginTime="0:0:0.2" RepeatBehavior="Forever"/>
+                                        <DoubleAnimation Storyboard.TargetName="W4" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-5" AutoReverse="True" Duration="0:0:0.3" BeginTime="0:0:0.3" RepeatBehavior="Forever"/>
+                                        <DoubleAnimation Storyboard.TargetName="W5" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-5" AutoReverse="True" Duration="0:0:0.3" BeginTime="0:0:0.4" RepeatBehavior="Forever"/>
+                                        <DoubleAnimation Storyboard.TargetName="W6" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-5" AutoReverse="True" Duration="0:0:0.3" BeginTime="0:0:0.6" RepeatBehavior="Forever"/>
+                                        <DoubleAnimation Storyboard.TargetName="W7" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-5" AutoReverse="True" Duration="0:0:0.3" BeginTime="0:0:0.7" RepeatBehavior="Forever"/>
+                                        <DoubleAnimation Storyboard.TargetName="W8" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-5" AutoReverse="True" Duration="0:0:0.3" BeginTime="0:0:0.8" RepeatBehavior="Forever"/>
+                                        <DoubleAnimation Storyboard.TargetName="W9" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-5" AutoReverse="True" Duration="0:0:0.3" BeginTime="0:0:0.9" RepeatBehavior="Forever"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </StackPanel.Triggers>
+                        <TextBlock x:Name="W1" Text="P" />
+                        <TextBlock x:Name="W2" Text="r" />
+                        <TextBlock x:Name="W3" Text="i" />
+                        <TextBlock x:Name="W4" Text="n" />
+                        <TextBlock x:Name="W5" Text="t" />
+                        <TextBlock Text=" " Width="6" />
+                        <TextBlock x:Name="W6" Text="A" />
+                        <TextBlock x:Name="W7" Text="u" />
+                        <TextBlock x:Name="W8" Text="t" />
+                        <TextBlock x:Name="W9" Text="o" />
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- Middle Separator -->

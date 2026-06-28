@@ -1,6 +1,6 @@
-Update Version 1.0.7 Features:
-- Added Multi-Printer Profiles (e.g., RICOH MP 9003, SAVIN Main).
-- Improved Auto-Print UI capture and stability.
-- Added a new loading screen when launching the application.
-- Simplified update window to easily view update features.
-- Minor bug fixes and performance improvements.
+Update Version 1.0.11 Features:
+- Integrated the Teacher Dashboard directly into the main window as a new Tab for seamless navigation.
+- Added Data Zoom In/Out capability (Ctrl + Mouse Wheel) to the Dashboard data tables.
+- Implemented an "Unmatched Files" feature to track and view print jobs with malformed or missing teacher/level names.
+- Enhanced print log matching logic to more accurately handle different file naming conventions.
+- Minor UI layout fixes and performance improvements.
