@@ -1105,7 +1105,37 @@ namespace PrintTrackerApp
                                    _appSettings.RefreshIntervalSeconds != sw.CurrentSettings.RefreshIntervalSeconds;
                 
                 string oldPath = _appSettings.CsvExportPath;
-                _appSettings = sw.CurrentSettings;
+                
+                // Reload to avoid overwriting any fields modified by child windows (e.g. Foxit IDs)
+                var latestSettings = SettingsManager.LoadSettings();
+                
+                // Manually merge fields updated in SettingsWindow
+                latestSettings.PrinterIp = sw.CurrentSettings.PrinterIp;
+                latestSettings.PrinterName = sw.CurrentSettings.PrinterName;
+                latestSettings.CsvExportPath = sw.CurrentSettings.CsvExportPath;
+                latestSettings.SourceFolderPath = sw.CurrentSettings.SourceFolderPath;
+                latestSettings.EnablePriority1 = sw.CurrentSettings.EnablePriority1;
+                latestSettings.Priority1Prefixes = sw.CurrentSettings.Priority1Prefixes;
+                latestSettings.EnablePriority2 = sw.CurrentSettings.EnablePriority2;
+                latestSettings.Priority2Prefixes = sw.CurrentSettings.Priority2Prefixes;
+                latestSettings.EnablePriority3 = sw.CurrentSettings.EnablePriority3;
+                latestSettings.Priority3Prefixes = sw.CurrentSettings.Priority3Prefixes;
+                latestSettings.TelegramBotUrl = sw.CurrentSettings.TelegramBotUrl;
+                latestSettings.TelegramBotToken = sw.CurrentSettings.TelegramBotToken;
+                latestSettings.TelegramChatId = sw.CurrentSettings.TelegramChatId;
+                latestSettings.DailyReportTime = sw.CurrentSettings.DailyReportTime;
+                latestSettings.NotifySentToPrinter = sw.CurrentSettings.NotifySentToPrinter;
+                latestSettings.NotifyStoringCompleted = sw.CurrentSettings.NotifyStoringCompleted;
+                latestSettings.NotifyPrintCompleted = sw.CurrentSettings.NotifyPrintCompleted;
+                latestSettings.EnableAutoShutdown = sw.CurrentSettings.EnableAutoShutdown;
+                latestSettings.AutoShutdownMode = sw.CurrentSettings.AutoShutdownMode;
+                latestSettings.AutoShutdownDelayMinutes = sw.CurrentSettings.AutoShutdownDelayMinutes;
+                latestSettings.AutoShutdownTime = sw.CurrentSettings.AutoShutdownTime;
+                latestSettings.RefreshIntervalSeconds = sw.CurrentSettings.RefreshIntervalSeconds;
+                latestSettings.FoxitWindowStyle = sw.CurrentSettings.FoxitWindowStyle;
+                latestSettings.DelayBetweenPrints = sw.CurrentSettings.DelayBetweenPrints;
+                
+                _appSettings = latestSettings;
                 SettingsManager.SaveSettings(_appSettings);
                 
                 // Reset daily report tracking so it can trigger immediately if the new time matches current time
@@ -1310,8 +1340,12 @@ namespace PrintTrackerApp
                         Title = "Sent to Printer",
                         Message = "All files in your folder have been successfully sent to the printer."
                     };
-                    _appSettings.Notifications.Insert(0, notification);
+                    
+                    var currentSettings = SettingsManager.LoadSettings();
+                    currentSettings.Notifications.Insert(0, notification);
+                    _appSettings = currentSettings;
                     SettingsManager.SaveSettings(_appSettings);
+                    
                     elNewNotification.Visibility = Visibility.Visible;
                     
                     if (_appSettings.NotifySentToPrinter)
@@ -1659,8 +1693,11 @@ namespace PrintTrackerApp
 
         private void BtnSaveSettings_Click(object sender, RoutedEventArgs e)
         {
-            _appSettings.SourceFolderPath = txtWatchFolder.Text;
-            _appSettings.FoxitPath = txtFoxitPath.Text;
+            var latestSettings = SettingsManager.LoadSettings();
+            latestSettings.SourceFolderPath = txtWatchFolder.Text;
+            latestSettings.FoxitPath = txtFoxitPath.Text;
+            _appSettings = latestSettings;
+            
             SettingsManager.SaveSettings(_appSettings);
             CustomAlertWindow.ShowMessage("Success", "Settings saved successfully.", AlertType.Information);
         }
@@ -2370,6 +2407,8 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
 
         private void BtnAdvancedAutoPrintSettings_Click(object sender, RoutedEventArgs e)
         {
+            // Ensure we pass the absolute latest settings (including any UI IDs updated)
+            _appSettings = SettingsManager.LoadSettings();
             var advancedWindow = new AdvancedAutoPrintSettingsWindow(_appSettings);
             advancedWindow.Owner = this;
             if (advancedWindow.ShowDialog() == true)

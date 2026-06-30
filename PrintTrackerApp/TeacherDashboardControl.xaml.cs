@@ -189,7 +189,7 @@ namespace PrintTrackerApp
             }
         }
 
-        private void ReloadFilteredData(DateTime start, DateTime end)
+        private async void ReloadFilteredData(DateTime start, DateTime end)
         {
             if (_currentJobs == null) return;
 
@@ -204,8 +204,8 @@ namespace PrintTrackerApp
                 }
             }
 
-            // 2. Load from CSV history
-            var historyJobs = Services.CsvLogger.LoadJobsFromCsvForDateRange(_csvExportPath, start, end);
+            // 2. Load from CSV history (Offload to background thread to prevent UI freezing)
+            var historyJobs = await Task.Run(() => Services.CsvLogger.LoadJobsFromCsvForDateRange(_csvExportPath, start, end));
 
             // 3. Merge avoiding duplicates
             var memoryKeys = new HashSet<string>(allJobs.Select(j => $"{j.Timestamp}_{j.DocumentName}_{j.Owner}"));
