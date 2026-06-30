@@ -1,3 +1,6 @@
+Update Version 1.0.13 Features:
+- Bug Fix: "Files Waiting" count now correctly ignores hidden system files (e.g. desktop.ini, Thumbs.db) and exclusively counts PDF files.
+
 Update Version 1.0.12 Features:
 - Integrated the Teacher Dashboard directly into the main window as a new Tab for seamless navigation.
 - Added Data Zoom In/Out capability (Ctrl + Mouse Wheel) to the Dashboard data tables.

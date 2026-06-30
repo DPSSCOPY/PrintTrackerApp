@@ -526,8 +526,8 @@ namespace PrintTrackerApp
 
                 try
                 {
-                    // Count all files in the source folder, excluding the Complete Print subfolder
-                    var files = System.IO.Directory.GetFiles(_appSettings.SourceFolderPath);
+                    // Count all PDF files in the source folder, excluding the Complete Print subfolder
+                    var files = System.IO.Directory.GetFiles(_appSettings.SourceFolderPath, "*.pdf");
                     int currentCount = files.Length;
                     txtPendingCount.Text = currentCount.ToString();
 
