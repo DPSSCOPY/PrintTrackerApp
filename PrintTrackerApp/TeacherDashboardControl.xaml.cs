@@ -139,21 +139,6 @@ namespace PrintTrackerApp
                 {
                     // Default is today
                 }
-                else if (content == "This Week")
-                {
-                    int diff = (7 + (DateTime.Now.DayOfWeek - DayOfWeek.Monday)) % 7;
-                    start = DateTime.Now.AddDays(-1 * diff).Date;
-                    end = start.AddDays(6).Date;
-                }
-                else if (content == "This Month")
-                {
-                    start = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
-                    end = start.AddMonths(1).AddDays(-1).Date;
-                }
-                else if (content == "All Time")
-                {
-                    start = new DateTime(2000, 1, 1);
-                }
                 else if (content == "Custom Range")
                 {
                     custom = true;
@@ -323,7 +308,7 @@ namespace PrintTrackerApp
             // Apply exemptions from Schedule Manager
             ApplyExemptionsFromManager(start, end);
 
-            // Calculate Grades dynamically based on number of weeks
+            // Calculate Grades dynamically based on number of weeks (minimum 1 week)
             int weeks = (int)Math.Ceiling(totalDurationDays / 7.0);
             if (weeks == 0) weeks = 1;
             

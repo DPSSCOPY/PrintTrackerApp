@@ -31,11 +31,30 @@ namespace PrintTrackerApp.Services
                 // Overwrite the file to ensure updates (like Copies and Status) are reflected
                 using (var writer = new StreamWriter(filePath, append: false, Encoding.UTF8))
                 {
-                    // Write header
-                    writer.WriteLine("Time,Document Name,Hold Print Name,User ID,Pages,Copies,User,Printer Name,Status");
+                    var jobsList = jobs.Reverse().ToList();
+                    
+                    // Discover dynamic keys
+                    var dynamicKeys = new List<string>();
+                    foreach (var job in jobsList)
+                    {
+                        if (job.DynamicProperties != null)
+                        {
+                            foreach (var key in job.DynamicProperties.Keys)
+                            {
+                                if (!dynamicKeys.Contains(key)) dynamicKeys.Add(key);
+                            }
+                        }
+                    }
 
-                    // Write rows (oldest first or newest first? The list is newest first, so let's reverse to append order)
-                    foreach (var job in jobs.Reverse())
+                    // Write header
+                    string header = "Time,Document Name,Hold Print Name,User ID,Pages,Copies,User,Printer Name,Status,WebJobId";
+                    if (dynamicKeys.Count > 0)
+                    {
+                        header += "," + string.Join(",", dynamicKeys.Select(k => EscapeCsv(k)));
+                    }
+                    writer.WriteLine(header);
+
+                    foreach (var job in jobsList)
                     {
                         string time = EscapeCsv(job.Timestamp);
                         string docName = EscapeCsv(job.DocumentName);
@@ -48,7 +67,15 @@ namespace PrintTrackerApp.Services
                         string status = EscapeCsv(job.Status);
                         string webJobId = job.WebJobId.ToString();
 
-                        writer.WriteLine($"{time},{docName},{webFileName},{userId},{pages},{copies},{user},{printer},{status},{webJobId}");
+                        string line = $"{time},{docName},{webFileName},{userId},{pages},{copies},{user},{printer},{status},{webJobId}";
+                        
+                        foreach (var key in dynamicKeys)
+                        {
+                            string val = job.DynamicProperties != null && job.DynamicProperties.ContainsKey(key) ? job.DynamicProperties[key] : "";
+                            line += $",{EscapeCsv(val)}";
+                        }
+
+                        writer.WriteLine(line);
                     }
                 }
             }
@@ -124,7 +151,14 @@ namespace PrintTrackerApp.Services
 
                 using (var reader = new StreamReader(filePath, Encoding.UTF8))
                 {
-                    string header = reader.ReadLine(); // skip header
+                    string header = reader.ReadLine();
+                    var headerParts = ParseCsvLine(header);
+                    var dynamicHeaders = new List<string>();
+                    for (int i = 10; i < headerParts.Count; i++)
+                    {
+                        dynamicHeaders.Add(headerParts[i]);
+                    }
+                    
                     while (!reader.EndOfStream)
                     {
                         var line = reader.ReadLine();
@@ -133,7 +167,7 @@ namespace PrintTrackerApp.Services
                         var parts = ParseCsvLine(line);
                         if (parts.Count >= 9)
                         {
-                            jobs.Add(new PrintJobInfo
+                            var job = new PrintJobInfo
                             {
                                 Timestamp = parts[0],
                                 DocumentName = parts[1],
@@ -146,7 +180,14 @@ namespace PrintTrackerApp.Services
                                 Status = parts[8],
                                 JobId = Guid.NewGuid().ToString(),
                                 WebJobId = parts.Count >= 10 && int.TryParse(parts[9], out int wid) ? wid : -1
-                            });
+                            };
+                            
+                            for (int i = 10; i < parts.Count && (i - 10) < dynamicHeaders.Count; i++)
+                            {
+                                job.DynamicProperties[dynamicHeaders[i - 10]] = parts[i];
+                            }
+                            
+                            jobs.Add(job);
                         }
                     }
                 }
@@ -185,6 +226,13 @@ namespace PrintTrackerApp.Services
                             using (var reader = new StreamReader(filePath, Encoding.UTF8))
                             {
                                 string header = reader.ReadLine();
+                                var headerParts = ParseCsvLine(header);
+                                var dynamicHeaders = new List<string>();
+                                for (int i = 10; i < headerParts.Count; i++)
+                                {
+                                    dynamicHeaders.Add(headerParts[i]);
+                                }
+
                                 while (!reader.EndOfStream)
                                 {
                                     var line = reader.ReadLine();
@@ -193,7 +241,7 @@ namespace PrintTrackerApp.Services
                                     var parts = ParseCsvLine(line);
                                     if (parts.Count >= 9)
                                     {
-                                        allJobs.Add(new PrintJobInfo
+                                        var job = new PrintJobInfo
                                         {
                                             Timestamp = parts[0],
                                             DocumentName = parts[1],
@@ -206,7 +254,14 @@ namespace PrintTrackerApp.Services
                                             Status = parts[8],
                                             JobId = Guid.NewGuid().ToString(),
                                             WebJobId = parts.Count >= 10 && int.TryParse(parts[9], out int wid) ? wid : -1
-                                        });
+                                        };
+                                        
+                                        for (int i = 10; i < parts.Count && (i - 10) < dynamicHeaders.Count; i++)
+                                        {
+                                            job.DynamicProperties[dynamicHeaders[i - 10]] = parts[i];
+                                        }
+                                        
+                                        allJobs.Add(job);
                                     }
                                 }
                             }

@@ -1,10 +1,12 @@
 using System;
 using System.ComponentModel;
+using System.Collections.Generic;
 
 namespace PrintTrackerApp.Models
 {
     public class PrintJobInfo : INotifyPropertyChanged
     {
+        public Dictionary<string, string> DynamicProperties { get; set; } = new Dictionary<string, string>();
         public string JobId { get; set; } = string.Empty;
         public string Timestamp { get; set; } = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         private string _documentName = string.Empty;

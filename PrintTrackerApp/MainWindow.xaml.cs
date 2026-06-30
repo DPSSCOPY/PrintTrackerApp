@@ -55,8 +55,83 @@ namespace PrintTrackerApp
         private AutoUpdaterDotNET.UpdateInfoEventArgs _pendingUpdate;
         private System.Windows.Threading.DispatcherTimer _updateReminderTimer;
 
-        private Stack<EditAction> _undoStack = new Stack<EditAction>();
-        private Stack<EditAction> _redoStack = new Stack<EditAction>();
+        private PrintTrackerApp.Services.UndoManager _undoManager = new PrintTrackerApp.Services.UndoManager();
+        private PrintTrackerApp.Services.UndoBatch _currentUndoBatch;
+        private System.Windows.Threading.DispatcherTimer _autoScrollTimer;
+        private System.Windows.Controls.ScrollViewer _scrollViewer;
+
+        private bool _isDraggingFill = false;
+        private System.Windows.Controls.DataGridCellInfo _fillStartCellInfo;
+        private object _fillSourceValue;
+        private int _fillStartRowIdx = -1;
+        private int _fillStartColIdx = -1;
+
+        private static T FindVisualChild<T>(System.Windows.DependencyObject parent) where T : System.Windows.DependencyObject
+        {
+            if (parent == null) return null;
+            for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+                if (child != null && child is T) return (T)child;
+                T childOfChild = FindVisualChild<T>(child);
+                if (childOfChild != null) return childOfChild;
+            }
+            return null;
+        }
+
+        private static T FindVisualParent<T>(System.Windows.DependencyObject child) where T : System.Windows.DependencyObject
+        {
+            var parentObject = System.Windows.Media.VisualTreeHelper.GetParent(child);
+            if (parentObject == null) return null;
+            T parent = parentObject as T;
+            if (parent != null) return parent;
+            return FindVisualParent<T>(parentObject);
+        }
+
+        private System.Windows.Controls.DataGridCell GetCellFromPoint(System.Windows.Point point)
+        {
+            var hit = System.Windows.Media.VisualTreeHelper.HitTest(dgPrintJobs, point);
+            if (hit == null) return null;
+            return FindVisualParent<System.Windows.Controls.DataGridCell>(hit.VisualHit);
+        }
+        
+        private object GetPrintJobValue(PrintJobInfo job, string bindingPath)
+        {
+            if (bindingPath.StartsWith("DynamicProperties["))
+            {
+                string key = bindingPath.Substring(18).TrimEnd(']');
+                job.DynamicProperties.TryGetValue(key, out string v);
+                return v;
+            }
+            else
+            {
+                var prop = typeof(PrintJobInfo).GetProperty(bindingPath);
+                return prop?.GetValue(job);
+            }
+        }
+
+        private void SetPrintJobValue(PrintJobInfo job, string bindingPath, object value, bool skipRefresh = false)
+        {
+            if (bindingPath.StartsWith("DynamicProperties["))
+            {
+                string key = bindingPath.Substring(18).TrimEnd(']');
+                job.DynamicProperties[key] = value?.ToString() ?? "";
+                if (!skipRefresh) dgPrintJobs.Items.Refresh(); 
+            }
+            else
+            {
+                var prop = typeof(PrintJobInfo).GetProperty(bindingPath);
+                if (prop != null && prop.CanWrite)
+                {
+                    try { prop.SetValue(job, Convert.ChangeType(value, prop.PropertyType)); } catch {}
+                }
+            }
+            
+            if (bindingPath == "Status" && value != null)
+            {
+                _ = System.Threading.Tasks.Task.Run(() => UpdateFileStatusLocation(job, value.ToString()));
+            }
+        }
 
         // Batch Printing State
         private System.Collections.Generic.List<PrintJobInfo> _currentBatchJobs = new System.Collections.Generic.List<PrintJobInfo>();
@@ -68,6 +143,9 @@ namespace PrintTrackerApp
         {
             _autoPrintService = new AutoPrintService();
             _autoPrintService.StatusChanged += AutoPrintService_StatusChanged;
+            _autoScrollTimer = new System.Windows.Threading.DispatcherTimer();
+            _autoScrollTimer.Interval = TimeSpan.FromMilliseconds(50);
+            _autoScrollTimer.Tick += AutoScrollTimer_Tick;
             _autoPrintService.FileProcessingStarted += AutoPrintService_FileProcessingStarted;
             _autoPrintService.FileProcessingCompleted += AutoPrintService_FileProcessingCompleted;
             _autoPrintService.QueueEmpty += AutoPrintService_QueueEmpty;
@@ -84,7 +162,29 @@ namespace PrintTrackerApp
 
             _notifyIcon = new System.Windows.Forms.NotifyIcon();
             _notifyIcon.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName);
+            _notifyIcon.Text = "Ricoh Print Tracker (Running)";
             _notifyIcon.Visible = true;
+            _notifyIcon.DoubleClick += (s, e) => 
+            {
+                this.Show();
+                this.WindowState = WindowState.Normal;
+                this.Activate();
+            };
+
+            var contextMenu = new System.Windows.Forms.ContextMenuStrip();
+            contextMenu.Items.Add("Open Print Tracker", null, (s, e) => 
+            {
+                this.Show();
+                this.WindowState = WindowState.Normal;
+                this.Activate();
+            });
+            contextMenu.Items.Add("Quit", null, (s, e) => 
+            {
+                _notifyIcon.Visible = false;
+                _notifyIcon.Dispose();
+                Environment.Exit(0);
+            });
+            _notifyIcon.ContextMenuStrip = contextMenu;
 
             _printJobs = new ObservableCollection<PrintJobInfo>();
             dgPrintJobs.ItemsSource = _printJobs;
@@ -113,6 +213,13 @@ namespace PrintTrackerApp
             // _timeCheckTimer.Interval = TimeSpan.FromSeconds(30);
             // _timeCheckTimer.Tick += TimeCheckTimer_Tick;
             // _timeCheckTimer.Start();
+        }
+
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            e.Cancel = true;
+            this.Hide();
+            _notifyIcon.ShowBalloonTip(2000, "Print Tracker", "Application is still running in the background.", System.Windows.Forms.ToolTipIcon.Info);
         }
 
         private void TimeCheckTimer_Tick(object? sender, EventArgs e)
@@ -2493,6 +2600,156 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             }
         }
         
+        private void AutoScrollTimer_Tick(object sender, EventArgs e)
+        {
+            if (!_isDraggingFill || _scrollViewer == null) return;
+            var point = System.Windows.Input.Mouse.GetPosition(dgPrintJobs);
+            double zone = 30;
+            if (point.Y < zone) _scrollViewer.LineUp();
+            else if (point.Y > dgPrintJobs.ActualHeight - zone) _scrollViewer.LineDown();
+            
+            if (point.X < zone) _scrollViewer.LineLeft();
+            else if (point.X > dgPrintJobs.ActualWidth - zone) _scrollViewer.LineRight();
+        }
+
+        private void DgPrintJobs_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (_isDraggingFill)
+            {
+                var point = e.GetPosition(dgPrintJobs);
+                var currentCell = GetCellFromPoint(point);
+                if (currentCell != null)
+                {
+                    var colIdx = currentCell.Column.DisplayIndex;
+                    var rowView = currentCell.DataContext as PrintJobInfo;
+                    if (rowView != null)
+                    {
+                        var rowIdx = dgPrintJobs.Items.IndexOf(rowView);
+                        if (rowIdx >= 0)
+                        {
+                            int minRow = Math.Min(_fillStartRowIdx, rowIdx);
+                            int maxRow = Math.Max(_fillStartRowIdx, rowIdx);
+                            int minCol = Math.Min(_fillStartColIdx, colIdx);
+                            int maxCol = Math.Max(_fillStartColIdx, colIdx);
+
+                            dgPrintJobs.SelectedCells.Clear();
+                            for (int r = minRow; r <= maxRow; r++)
+                            {
+                                var item = dgPrintJobs.Items[r];
+                                for (int c = minCol; c <= maxCol; c++)
+                                {
+                                    var col = dgPrintJobs.Columns.FirstOrDefault(x => x.DisplayIndex == c);
+                                    if (col != null)
+                                    {
+                                        dgPrintJobs.SelectedCells.Add(new System.Windows.Controls.DataGridCellInfo(item, col));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
+            var cell = GetCellFromPoint(e.GetPosition(dgPrintJobs));
+            if (cell != null && cell.IsSelected && !cell.Column.IsReadOnly)
+            {
+                var cellPoint = e.GetPosition(cell);
+                if (cellPoint.X >= cell.ActualWidth - 10 && cellPoint.Y >= cell.ActualHeight - 10)
+                {
+                    System.Windows.Input.Mouse.OverrideCursor = System.Windows.Input.Cursors.Cross;
+                    return;
+                }
+            }
+            System.Windows.Input.Mouse.OverrideCursor = null;
+        }
+
+        private void DgPrintJobs_PreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (System.Windows.Input.Mouse.OverrideCursor == System.Windows.Input.Cursors.Cross)
+            {
+                var cell = GetCellFromPoint(e.GetPosition(dgPrintJobs));
+                if (cell != null && !cell.Column.IsReadOnly)
+                {
+                    var rowView = cell.DataContext as PrintJobInfo;
+                    if (rowView != null)
+                    {
+                        _isDraggingFill = true;
+                        _scrollViewer = FindVisualChild<System.Windows.Controls.ScrollViewer>(dgPrintJobs);
+                        _autoScrollTimer.Start();
+                        
+                        _fillStartCellInfo = new System.Windows.Controls.DataGridCellInfo(cell);
+                        _fillStartColIdx = cell.Column.DisplayIndex;
+                        _fillStartRowIdx = dgPrintJobs.Items.IndexOf(rowView);
+
+                        string bindingPath = (cell.Column.ClipboardContentBinding as System.Windows.Data.Binding)?.Path?.Path 
+                                             ?? ((cell.Column as System.Windows.Controls.DataGridTextColumn)?.Binding as System.Windows.Data.Binding)?.Path?.Path;
+                        
+                        if (!string.IsNullOrEmpty(bindingPath))
+                        {
+                            _fillSourceValue = GetPrintJobValue(rowView, bindingPath);
+                        }
+
+                        e.Handled = true;
+                        dgPrintJobs.CaptureMouse();
+                    }
+                }
+            }
+        }
+
+        private void DgPrintJobs_PreviewMouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (_isDraggingFill)
+            {
+                _isDraggingFill = false;
+                _autoScrollTimer.Stop();
+                dgPrintJobs.ReleaseMouseCapture();
+                System.Windows.Input.Mouse.OverrideCursor = null;
+
+                if (_fillSourceValue != null)
+                {
+                    _currentUndoBatch = new PrintTrackerApp.Services.UndoBatch();
+                    bool requiresRefresh = false;
+
+                    foreach (var cellInfo in dgPrintJobs.SelectedCells)
+                    {
+                        if (cellInfo.Column.IsReadOnly) continue;
+                        
+                        var rowView = cellInfo.Item as PrintJobInfo;
+                        if (rowView != null)
+                        {
+                            string bindingPath = (cellInfo.Column.ClipboardContentBinding as System.Windows.Data.Binding)?.Path?.Path 
+                                                 ?? ((cellInfo.Column as System.Windows.Controls.DataGridTextColumn)?.Binding as System.Windows.Data.Binding)?.Path?.Path;
+                            if (!string.IsNullOrEmpty(bindingPath))
+                            {
+                                object oldVal = GetPrintJobValue(rowView, bindingPath);
+                                if (!Equals(oldVal, _fillSourceValue))
+                                {
+                                    if (bindingPath.StartsWith("DynamicProperties[")) requiresRefresh = true;
+                                    var jobCapture = rowView;
+                                    var pathCapture = bindingPath;
+                                    var oldCapture = oldVal;
+                                    var newCapture = _fillSourceValue;
+                                    
+                                    _currentUndoBatch.UndoActions.Add(() => SetPrintJobValue(jobCapture, pathCapture, oldCapture, false));
+                                    _currentUndoBatch.RedoActions.Add(() => SetPrintJobValue(jobCapture, pathCapture, newCapture, false));
+                                    
+                                    SetPrintJobValue(rowView, bindingPath, _fillSourceValue, true);
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (_currentUndoBatch.UndoActions.Count > 0)
+                        _undoManager.AddBatch(_currentUndoBatch);
+                    _currentUndoBatch = null;
+
+                    if (requiresRefresh) dgPrintJobs.Items.Refresh();
+                    if (_historicalPrintJobs == null) CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                }
+            }
+        }
+        
         private void DgPrintJobs_CellEditEnding(object sender, System.Windows.Controls.DataGridCellEditEndingEventArgs e)
         {
             if (e.EditAction == System.Windows.Controls.DataGridEditAction.Commit)
@@ -2504,35 +2761,22 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                 if (column?.Binding is System.Windows.Data.Binding binding)
                 {
                     string propertyName = binding.Path.Path;
-                    var property = typeof(PrintJobInfo).GetProperty(propertyName);
-                    if (property != null)
+                    object oldValue = GetPrintJobValue(job, propertyName);
+
+                    Dispatcher.InvokeAsync(() =>
                     {
-                        object oldValue = property.GetValue(job);
-                        object newValue = null;
-
-                        if (e.EditingElement is System.Windows.Controls.TextBox textBox)
-                        {
-                            newValue = textBox.Text;
-                        }
-
-                        if (property.PropertyType == typeof(int) && newValue is string str)
-                        {
-                            if (int.TryParse(str, out int parsed))
-                                newValue = parsed;
-                            else
-                                newValue = oldValue;
-                        }
-
+                        object newValue = GetPrintJobValue(job, propertyName);
                         if (!Equals(oldValue, newValue))
                         {
-                            _undoStack.Push(new EditAction
-                            {
-                                Job = job,
-                                PropertyName = propertyName,
-                                OldValue = oldValue,
-                                NewValue = newValue
-                            });
-                            _redoStack.Clear();
+                            var batch = new PrintTrackerApp.Services.UndoBatch();
+                            var jobCapture = job;
+                            var pathCapture = propertyName;
+                            var oldCapture = oldValue;
+                            var newCapture = newValue;
+                            
+                            batch.UndoActions.Add(() => SetPrintJobValue(jobCapture, pathCapture, oldCapture, true));
+                            batch.RedoActions.Add(() => SetPrintJobValue(jobCapture, pathCapture, newCapture, true));
+                            _undoManager.AddBatch(batch);
 
                             if (propertyName == "Status")
                             {
@@ -2540,16 +2784,12 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                                 _ = System.Threading.Tasks.Task.Run(() => UpdateFileStatusLocation(job, newStatus));
                             }
 
-                            // Use Dispatcher.InvokeAsync to update CSV after property is actually updated
-                            Dispatcher.InvokeAsync(() =>
+                            if (_historicalPrintJobs == null)
                             {
-                                if (_historicalPrintJobs == null)
-                                {
-                                    CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
-                                }
-                            }, System.Windows.Threading.DispatcherPriority.Background);
+                                CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                            }
                         }
-                    }
+                    }, System.Windows.Threading.DispatcherPriority.Background);
                 }
             }
         }
@@ -2558,49 +2798,66 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
         {
             if (System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Control)
             {
-                if (e.Key == System.Windows.Input.Key.Z)
+                if (e.Key == System.Windows.Input.Key.C)
                 {
+                    System.Windows.Input.ApplicationCommands.Copy.Execute(null, dgPrintJobs);
                     e.Handled = true;
-                    if (_undoStack.Count > 0)
-                    {
-                        var action = _undoStack.Pop();
-                        var property = typeof(PrintJobInfo).GetProperty(action.PropertyName);
-                        if (property != null)
-                        {
-                            property.SetValue(action.Job, action.OldValue);
-                            
-                            if (action.PropertyName == "Status")
-                            {
-                                string newStatus = action.OldValue?.ToString() ?? "";
-                                _ = System.Threading.Tasks.Task.Run(() => UpdateFileStatusLocation(action.Job, newStatus));
-                            }
-                            
-                            _redoStack.Push(action);
-                            if (_historicalPrintJobs == null) CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
-                        }
-                    }
                 }
-                else if (e.Key == System.Windows.Input.Key.Y)
+                else if (e.Key == System.Windows.Input.Key.V)
                 {
-                    e.Handled = true;
-                    if (_redoStack.Count > 0)
+                    string clipboardData = System.Windows.Clipboard.GetText();
+                    if (!string.IsNullOrEmpty(clipboardData) && dgPrintJobs.CurrentCell.Item != null)
                     {
-                        var action = _redoStack.Pop();
-                        var property = typeof(PrintJobInfo).GetProperty(action.PropertyName);
-                        if (property != null)
+                        string[] rows = clipboardData.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                        int startRowIdx = dgPrintJobs.Items.IndexOf(dgPrintJobs.CurrentCell.Item);
+                        int startColIdx = dgPrintJobs.CurrentCell.Column.DisplayIndex;
+
+                        var batch = new PrintTrackerApp.Services.UndoBatch();
+                        bool requiresRefresh = false;
+
+                        for (int r = 0; r < rows.Length; r++)
                         {
-                            property.SetValue(action.Job, action.NewValue);
-                            
-                            if (action.PropertyName == "Status")
+                            if (startRowIdx + r >= dgPrintJobs.Items.Count) break;
+                            var rowView = dgPrintJobs.Items[startRowIdx + r] as PrintJobInfo;
+                            if (rowView == null) continue;
+
+                            string[] cells = rows[r].Split('\t');
+                            for (int c = 0; c < cells.Length; c++)
                             {
-                                string newStatus = action.NewValue?.ToString() ?? "";
-                                _ = System.Threading.Tasks.Task.Run(() => UpdateFileStatusLocation(action.Job, newStatus));
+                                var col = dgPrintJobs.Columns.FirstOrDefault(x => x.DisplayIndex == startColIdx + c);
+                                if (col == null || col.IsReadOnly) continue;
+
+                                string bindingPath = (col.ClipboardContentBinding as System.Windows.Data.Binding)?.Path?.Path 
+                                                     ?? ((col as System.Windows.Controls.DataGridTextColumn)?.Binding as System.Windows.Data.Binding)?.Path?.Path;
+                                
+                                if (!string.IsNullOrEmpty(bindingPath))
+                                {
+                                    object oldVal = GetPrintJobValue(rowView, bindingPath);
+                                    if (!Equals(oldVal, cells[c]))
+                                    {
+                                        if (bindingPath.StartsWith("DynamicProperties[")) requiresRefresh = true;
+                                        var jobCapture = rowView;
+                                        var pathCapture = bindingPath;
+                                        var oldCapture = oldVal;
+                                        var newCapture = cells[c];
+                                        
+                                        batch.UndoActions.Add(() => SetPrintJobValue(jobCapture, pathCapture, oldCapture, false));
+                                        batch.RedoActions.Add(() => SetPrintJobValue(jobCapture, pathCapture, newCapture, false));
+                                        
+                                        SetPrintJobValue(rowView, bindingPath, cells[c], true);
+                                    }
+                                }
                             }
-                            
-                            _undoStack.Push(action);
+                        }
+                        
+                        if (batch.UndoActions.Count > 0)
+                        {
+                            _undoManager.AddBatch(batch);
+                            if (requiresRefresh) dgPrintJobs.Items.Refresh();
                             if (_historicalPrintJobs == null) CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
                         }
                     }
+                    e.Handled = true;
                 }
             }
         }
@@ -2682,6 +2939,87 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             // Force refresh filter
             TxtSearch_TextChanged(null, null);
         }
+        private void MenuItemAddColumn_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new InputDialog("Add Column");
+            dialog.Owner = this;
+            if (dialog.ShowDialog() == true)
+            {
+                string columnName = dialog.InputText;
+                var newCol = new System.Windows.Controls.DataGridTextColumn
+                {
+                    Header = columnName,
+                    Binding = new System.Windows.Data.Binding($"DynamicProperties[{columnName}]") 
+                    { 
+                        Mode = System.Windows.Data.BindingMode.TwoWay, 
+                        UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged 
+                    }
+                };
+                dgPrintJobs.Columns.Add(newCol);
+            }
+        }
+        private void MenuItemAddBlankRow_Click(object sender, RoutedEventArgs e)
+        {
+            var newJob = new PrintJobInfo
+            {
+                JobId = Guid.NewGuid().ToString(),
+                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                DocumentName = "",
+                WebFileName = "",
+                RicohUserId = "",
+                TotalPages = 1,
+                Copies = 1,
+                Owner = "",
+                PrinterName = "",
+                Status = "Manual Entry"
+            };
+            
+            if (_historicalPrintJobs != null)
+            {
+                _historicalPrintJobs.Insert(0, newJob);
+            }
+            else
+            {
+                _printJobs.Insert(0, newJob);
+            }
+            
+            dgPrintJobs.SelectedIndex = 0;
+            dgPrintJobs.Focus();
+        }
 
+        private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Control)
+            {
+                if (e.Key == System.Windows.Input.Key.Z)
+                {
+                    _undoManager.Undo();
+                    dgPrintJobs.Items.Refresh();
+                    if (_historicalPrintJobs == null) CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                    e.Handled = true;
+                }
+                else if (e.Key == System.Windows.Input.Key.Y)
+                {
+                    _undoManager.Redo();
+                    dgPrintJobs.Items.Refresh();
+                    if (_historicalPrintJobs == null) CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                    e.Handled = true;
+                }
+                else if (e.Key == System.Windows.Input.Key.S)
+                {
+                    e.Handled = true;
+                    if (_historicalPrintJobs != null)
+                    {
+                        CsvLogger.ExportJobsToCsv(_historicalPrintJobs, _appSettings.CsvExportPath);
+                    }
+                    else
+                    {
+                        CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                    }
+                    
+                    System.Windows.MessageBox.Show("Saved successfully.", "Save", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+        }
     }
 }

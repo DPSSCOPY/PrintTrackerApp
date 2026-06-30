@@ -13,6 +13,7 @@ namespace PrintTrackerApp
         {
             InitializeComponent();
             Filters = new ObservableCollection<CustomDateFilter>();
+            Filters.CollectionChanged += Filters_CollectionChanged;
             if (existingFilters != null)
             {
                 foreach(var f in existingFilters) 
@@ -56,6 +57,40 @@ namespace PrintTrackerApp
             {
                 System.Windows.MessageBox.Show("Please select a start date first.", "Information", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
             }
+        }
+
+        private void Filters_CollectionChanged(object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            Dispatcher.InvokeAsync(() => {
+                UpdateMonthlyDateRange();
+            }, System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        private void UpdateMonthlyDateRange()
+        {
+            var monthlyFilter = System.Linq.Enumerable.FirstOrDefault(Filters, f => f.Name == "Monthly");
+            if (monthlyFilter != null)
+            {
+                var weekFilters = System.Linq.Enumerable.ToList(System.Linq.Enumerable.Where(Filters, f => f.Name != null && f.Name.StartsWith("Week", StringComparison.OrdinalIgnoreCase)));
+                if (weekFilters.Count > 0)
+                {
+                    DateTime minDate = System.Linq.Enumerable.Min(weekFilters, f => f.StartDate);
+                    DateTime maxDate = System.Linq.Enumerable.Max(weekFilters, f => f.EndDate);
+                    if (monthlyFilter.StartDate != minDate || monthlyFilter.EndDate != maxDate)
+                    {
+                        monthlyFilter.StartDate = minDate;
+                        monthlyFilter.EndDate = maxDate;
+                        dgFilters.Items.Refresh();
+                    }
+                }
+            }
+        }
+
+        private void dgFilters_CellEditEnding(object sender, System.Windows.Controls.DataGridCellEditEndingEventArgs e)
+        {
+            Dispatcher.InvokeAsync(() => {
+                UpdateMonthlyDateRange();
+            }, System.Windows.Threading.DispatcherPriority.Background);
         }
     }
 }

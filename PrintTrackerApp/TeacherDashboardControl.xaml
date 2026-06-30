@@ -88,9 +88,6 @@
                 <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,5,10" Foreground="#1F2937" FontWeight="SemiBold"/>
                 <ComboBox x:Name="cmbDateFilter" Width="120" SelectionChanged="CmbDateFilter_SelectionChanged" SelectedIndex="0" Margin="0,0,5,10" VerticalAlignment="Center">
                     <ComboBoxItem Content="Today"/>
-                    <ComboBoxItem Content="This Week"/>
-                    <ComboBoxItem Content="This Month"/>
-                    <ComboBoxItem Content="All Time"/>
                     <ComboBoxItem Content="Custom Range"/>
                 </ComboBox>
                 <Button Content="⚙️" ToolTip="Manage Custom Date Ranges" Background="Transparent" BorderThickness="0" Padding="5,0" Margin="0,0,5,10" FontSize="16" Click="BtnManageCustomRanges_Click" VerticalAlignment="Center"/>

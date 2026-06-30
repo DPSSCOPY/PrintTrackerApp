@@ -71,7 +71,7 @@
             </StackPanel>
         </Grid>
 
-        <DataGrid x:Name="dgFilters" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="True" CanUserDeleteRows="True" Margin="0,0,0,15" Background="White" RowBackground="White" AlternatingRowBackground="#F9FAFB">
+        <DataGrid x:Name="dgFilters" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="True" CanUserDeleteRows="True" Margin="0,0,0,15" Background="White" RowBackground="White" AlternatingRowBackground="#F9FAFB" CellEditEnding="dgFilters_CellEditEnding">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Range Name (e.g., Week 1)" Binding="{Binding Name}" Width="*"/>
                 <DataGridTemplateColumn Header="Start Date" Width="130">
