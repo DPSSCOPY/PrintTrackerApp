@@ -139,6 +139,89 @@ namespace PrintTrackerApp
         private bool _isWaitingForBatch = false;
         private DateTime _batchWaitStartTime;
 
+        private System.IO.FileSystemWatcher _csvWatcher;
+        private bool _isAppModifyingCsv = false;
+        private DateTime _lastCsvChangeTime = DateTime.MinValue;
+
+        private void SetupCsvWatcher()
+        {
+            if (string.IsNullOrWhiteSpace(_appSettings?.CsvExportPath) || !System.IO.Directory.Exists(_appSettings.CsvExportPath))
+                return;
+
+            if (_csvWatcher != null)
+            {
+                _csvWatcher.EnableRaisingEvents = false;
+                _csvWatcher.Dispose();
+            }
+
+            _csvWatcher = new System.IO.FileSystemWatcher(_appSettings.CsvExportPath, "PrintLog_*.csv");
+            _csvWatcher.NotifyFilter = System.IO.NotifyFilters.LastWrite;
+            _csvWatcher.Changed += CsvWatcher_Changed;
+            _csvWatcher.EnableRaisingEvents = true;
+        }
+
+        private async void CsvWatcher_Changed(object sender, System.IO.FileSystemEventArgs e)
+        {
+            if ((DateTime.Now - _lastCsvChangeTime).TotalMilliseconds < 1000) return;
+            if (_isAppModifyingCsv) return;
+            
+            _lastCsvChangeTime = DateTime.Now;
+            
+            // Wait briefly for external editor to finish saving
+            await System.Threading.Tasks.Task.Delay(1000);
+            if (_isAppModifyingCsv) return; 
+
+            // Read jobs in background to avoid blocking UI and allow retries
+            System.Collections.Generic.List<PrintJobInfo> loadedJobs = null;
+            for (int i = 0; i < 3; i++)
+            {
+                try
+                {
+                    loadedJobs = CsvLogger.LoadJobsFromCsv(_appSettings.CsvExportPath);
+                    // If it succeeded without throwing inside, break
+                    if (loadedJobs != null) break;
+                }
+                catch
+                {
+                    await System.Threading.Tasks.Task.Delay(500);
+                }
+            }
+
+            if (loadedJobs == null) return;
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    _printJobs.Clear();
+                    foreach (var job in loadedJobs)
+                    {
+                        _printJobs.Add(job);
+                    }
+                    teacherDashboard.InitializeData(_printJobs, _appSettings.CsvExportPath);
+                    dgPrintJobs.Items.Refresh();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error updating UI from CSV: {ex.Message}");
+                }
+            });
+        }
+
+        private void ExportJobsToCsvSafely(IEnumerable<PrintJobInfo> jobs, string path)
+        {
+            if (jobs == null || string.IsNullOrWhiteSpace(path)) return;
+            _isAppModifyingCsv = true;
+            try
+            {
+                CsvLogger.ExportJobsToCsv(jobs, path);
+            }
+            finally
+            {
+                System.Threading.Tasks.Task.Delay(1500).ContinueWith(_ => _isAppModifyingCsv = false);
+            }
+        }
+
         public MainWindow()
         {
             _autoPrintService = new AutoPrintService();
@@ -317,6 +400,7 @@ namespace PrintTrackerApp
             }
 
             teacherDashboard.InitializeData(_printJobs, _appSettings.CsvExportPath);
+            SetupCsvWatcher();
 
             // Also load the existing web monitor history so it's not overwritten and deleted on restart
             _webMonitorHistoryJobs = CsvLogger.LoadWebMonitorRawFromCsv(_appSettings.CsvExportPath);
@@ -443,7 +527,7 @@ namespace PrintTrackerApp
                     _currentActiveJob = job;
                 }
                 
-                CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
 
                 if (_appSettings.EnableBatchPrinting && _autoPrintService != null && _autoPrintService.IsRunning)
                 {
@@ -472,7 +556,7 @@ namespace PrintTrackerApp
                     if (!job.IsPdfPageCountAccurate && e.TotalPages > job.TotalPages)
                     {
                         job.TotalPages = e.TotalPages;
-                        CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                        ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                     }
                 }
             });
@@ -1079,7 +1163,7 @@ namespace PrintTrackerApp
                                     });
                                 }
                                 
-                                CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                                ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                             }
                         }
                     }
@@ -1254,7 +1338,7 @@ namespace PrintTrackerApp
 
                 if (oldPath != _appSettings.CsvExportPath)
                 {
-                    CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                    ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                 }
 
                 if (needRestart)
@@ -1988,7 +2072,7 @@ namespace PrintTrackerApp
                                 
                                 _printJobs.Insert(0, fallbackJob);
                                 if (_currentActiveJob == null) _currentActiveJob = fallbackJob;
-                                CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                                ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                             }
                         });
                     });
@@ -2481,7 +2565,7 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
 
             if (jobsToRemove.Count > 0)
             {
-                CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
             }
         }
 
@@ -2536,7 +2620,7 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                     {
                         _printJobs.Remove(item);
                     }
-                    CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                    ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                 }
             }
         }
@@ -2553,7 +2637,7 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                     {
                         item.Status = "Cancelled";
                     }
-                    CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                    ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                 }
             }
         }
@@ -2745,7 +2829,7 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                     _currentUndoBatch = null;
 
                     if (requiresRefresh) dgPrintJobs.Items.Refresh();
-                    if (_historicalPrintJobs == null) CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                    if (_historicalPrintJobs == null) ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                 }
             }
         }
@@ -2786,7 +2870,7 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
 
                             if (_historicalPrintJobs == null)
                             {
-                                CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                                ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                             }
                         }
                     }, System.Windows.Threading.DispatcherPriority.Background);
@@ -2854,7 +2938,7 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                         {
                             _undoManager.AddBatch(batch);
                             if (requiresRefresh) dgPrintJobs.Items.Refresh();
-                            if (_historicalPrintJobs == null) CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                            if (_historicalPrintJobs == null) ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                         }
                     }
                     e.Handled = true;
@@ -2995,14 +3079,14 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                 {
                     _undoManager.Undo();
                     dgPrintJobs.Items.Refresh();
-                    if (_historicalPrintJobs == null) CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                    if (_historicalPrintJobs == null) ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                     e.Handled = true;
                 }
                 else if (e.Key == System.Windows.Input.Key.Y)
                 {
                     _undoManager.Redo();
                     dgPrintJobs.Items.Refresh();
-                    if (_historicalPrintJobs == null) CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                    if (_historicalPrintJobs == null) ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                     e.Handled = true;
                 }
                 else if (e.Key == System.Windows.Input.Key.S)
@@ -3010,11 +3094,11 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                     e.Handled = true;
                     if (_historicalPrintJobs != null)
                     {
-                        CsvLogger.ExportJobsToCsv(_historicalPrintJobs, _appSettings.CsvExportPath);
+                        ExportJobsToCsvSafely(_historicalPrintJobs, _appSettings.CsvExportPath);
                     }
                     else
                     {
-                        CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                        ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                     }
                     
                     System.Windows.MessageBox.Show("Saved successfully.", "Save", MessageBoxButton.OK, MessageBoxImage.Information);

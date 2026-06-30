@@ -149,7 +149,7 @@ namespace PrintTrackerApp.Services
                 if (!File.Exists(filePath))
                     return jobs;
 
-                using (var reader = new StreamReader(filePath, Encoding.UTF8))
+                using (var reader = new StreamReader(new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite), Encoding.UTF8))
                 {
                     string header = reader.ReadLine();
                     var headerParts = ParseCsvLine(header);
@@ -223,7 +223,7 @@ namespace PrintTrackerApp.Services
                     {
                         if (fileDate.Date >= startDate.Date && fileDate.Date <= endDate.Date)
                         {
-                            using (var reader = new StreamReader(filePath, Encoding.UTF8))
+                            using (var reader = new StreamReader(new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite), Encoding.UTF8))
                             {
                                 string header = reader.ReadLine();
                                 var headerParts = ParseCsvLine(header);
@@ -291,7 +291,7 @@ namespace PrintTrackerApp.Services
                 if (!File.Exists(filePath))
                     return dict;
 
-                using (var reader = new StreamReader(filePath, Encoding.UTF8))
+                using (var reader = new StreamReader(new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite), Encoding.UTF8))
                 {
                     string header = reader.ReadLine(); // skip header
                     while (!reader.EndOfStream)
