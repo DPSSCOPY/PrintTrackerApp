@@ -1,3 +1,15 @@
+Update Version 1.0.15 Features:
+- Added Background Print Tracking mode to silently run at system startup.
+- Prevent duplicate instances from running; opening the app brings the background instance to the front.
+- Disabled UAC prompt (Run as Administrator) to allow silent background start. Print Spooler folder permissions are now configured via the Installer.
+- Modified close behavior to minimize the app to the System Tray instead of exiting, ensuring no print logs are missed.
+
+Update Version 1.0.14 Features:
+- Added Data Grid cell Block Fill (Drag to Copy) functionality for fast data entry in Teacher Dashboard.
+- Added Undo/Redo capability for Edit and Block Fill actions.
+- Fixed 5-Week month calculation to correctly dynamically grade based on actual duration when weeks are deleted.
+- Made grading thresholds (20/25 days) automatically adjust according to the active month duration.
+
 Update Version 1.0.13 Features:
 - Bug Fix: "Files Waiting" count now correctly ignores hidden system files (e.g. desktop.ini, Thumbs.db) and exclusively counts PDF files.
 
