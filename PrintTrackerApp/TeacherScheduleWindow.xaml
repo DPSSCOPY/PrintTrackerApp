@@ -1,0 +1,74 @@
+<Window x:Class="PrintTrackerApp.TeacherScheduleWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Teacher Schedule Settings" Height="600" Width="1000"
+        WindowStartupLocation="CenterOwner" Background="#F8FAFC" FontFamily="Noto Sans Khmer, Arial">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <Grid Margin="0,0,0,15">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            
+            <TextBlock Text="Teacher Schedule Settings" FontWeight="Bold" FontSize="18" Foreground="#1E293B" VerticalAlignment="Center"/>
+            
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="#666666" FontWeight="SemiBold"/>
+                <ComboBox x:Name="cmbDateFilter" Width="100" Margin="0,0,15,0" SelectionChanged="CmbDateFilter_SelectionChanged"/>
+                
+                <TextBlock Text="Week Range:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <DatePicker x:Name="dpStart" Width="110" SelectedDateChanged="DatePicker_SelectedDateChanged"/>
+                <TextBlock Text=" - " VerticalAlignment="Center" Margin="5,0"/>
+                <DatePicker x:Name="dpEnd" Width="110" SelectedDateChanged="DatePicker_SelectedDateChanged"/>
+                
+                <TextBlock Text="Search:" VerticalAlignment="Center" Margin="20,0,10,0"/>
+                <TextBox x:Name="txtSearch" Width="150" VerticalAlignment="Center" TextChanged="TxtSearch_TextChanged"/>
+            </StackPanel>
+        </Grid>
+        
+        <TabControl x:Name="tabCategory" Grid.Row="1" SelectionChanged="TabCategory_SelectionChanged" Background="Transparent" BorderThickness="0" Margin="0,0,0,5">
+            <TabItem Header="All Teachers" FontSize="15" FontWeight="SemiBold"/>
+            <TabItem Header="FT" FontSize="15" FontWeight="SemiBold"/>
+            <TabItem Header="PT" FontSize="15" FontWeight="SemiBold"/>
+            <TabItem Header="KH" FontSize="15" FontWeight="SemiBold"/>
+        </TabControl>
+        
+        <DataGrid x:Name="dgSchedule" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" 
+                  HeadersVisibility="Column" Background="White" RowHeight="30" FontSize="14"
+                  VirtualizingPanel.IsVirtualizing="True">
+            <DataGrid.Resources>
+                <Style TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="#E5E7EB"/>
+                    <Setter Property="FontWeight" Value="Bold"/>
+                    <Setter Property="Padding" Value="5,5"/>
+                </Style>
+            </DataGrid.Resources>
+            <!-- Columns are dynamically generated in code-behind -->
+        </DataGrid>
+        
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
+            <TextBlock x:Name="txtStatus" Text="" Foreground="Green" VerticalAlignment="Center" Margin="0,0,15,0"/>
+            <Button Content="Save Settings" Background="#107C41" Foreground="White" FontWeight="Bold" Width="140" Height="35" Cursor="Hand" BorderThickness="0" Click="BtnSave_Click" Margin="0,0,10,0">
+                <Button.Resources>
+                    <Style TargetType="Border">
+                        <Setter Property="CornerRadius" Value="4"/>
+                    </Style>
+                </Button.Resources>
+            </Button>
+            <Button Content="Close" Background="#94A3B8" Foreground="White" FontWeight="Bold" Width="100" Height="35" Cursor="Hand" BorderThickness="0" Click="BtnClose_Click">
+                <Button.Resources>
+                    <Style TargetType="Border">
+                        <Setter Property="CornerRadius" Value="4"/>
+                    </Style>
+                </Button.Resources>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>

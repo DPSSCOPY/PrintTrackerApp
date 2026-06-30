@@ -61,47 +61,48 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Text="Teacher Print Statistics" FontSize="20" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Center"/>
+            <TextBlock Text="Teacher Print Statistics" FontSize="20" FontWeight="Bold" Foreground="#1F2937" VerticalAlignment="Top" Margin="0,5,20,0"/>
             
-            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+            <WrapPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                 <Grid Margin="0,0,10,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <Button Content="Upload Excel" Background="#0078D4" Foreground="White" Padding="15,5" BorderThickness="0" Click="BtnUploadExcel_Click"/>
+                    <Button Content="Upload Teacher Data" Background="#0078D4" Foreground="White" Padding="15,5" BorderThickness="0" Click="BtnUploadExcel_Click"/>
                     <Grid Grid.Column="1" Margin="5,0,0,0">
                         <Button x:Name="btnRefreshExcel" Content="↻" Background="Transparent" Foreground="#0078D4" FontSize="18" FontWeight="Bold" Padding="5,0" BorderThickness="0" ToolTip="Refresh Excel Data" Visibility="Collapsed" Click="BtnRefreshExcel_Click"/>
                         <Ellipse x:Name="elExcelChangedIndicator" Width="8" Height="8" Fill="Red" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,2,0" Visibility="Collapsed" ToolTip="File modified on disk"/>
                     </Grid>
                 </Grid>
                 
-                <Button x:Name="btnUnmatchedFiles" Content="Unmatched Files (0)" Background="#D83B01" Foreground="White" Padding="15,5" Margin="0,0,10,0" BorderThickness="0" Visibility="Collapsed" Click="BtnUnmatchedFiles_Click"/>
-                <Button Content="Upload CSV Log" Background="#107C41" Foreground="White" Padding="15,5" Margin="0,0,10,0" BorderThickness="0" Click="BtnUploadCsv_Click"/>
-                <Button x:Name="btnResetData" Content="Reset Data" Background="#D83B01" Foreground="White" Padding="15,5" Margin="0,0,10,0" BorderThickness="0" Visibility="Collapsed" Click="BtnResetData_Click"/>
-                <TextBlock x:Name="txtDataSource" Text="Data Source: App Log" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="#666666" FontStyle="Italic"/>
+                <Button x:Name="btnUnmatchedFiles" Content="Unmatched Files (0)" Background="#D83B01" Foreground="White" Padding="15,5" Margin="0,0,10,10" BorderThickness="0" Visibility="Collapsed" Click="BtnUnmatchedFiles_Click"/>
+                <Button Content="Upload Print History" Background="#107C41" Foreground="White" Padding="15,5" Margin="0,0,10,10" BorderThickness="0" Click="BtnUploadCsv_Click"/>
+                <Button x:Name="btnResetData" Content="Reset Data" Background="#D83B01" Foreground="White" Padding="15,5" Margin="0,0,10,10" BorderThickness="0" Visibility="Collapsed" Click="BtnResetData_Click"/>
+                <TextBlock x:Name="txtDataSource" Text="Data Source: App Log" VerticalAlignment="Center" Margin="0,0,10,10" Foreground="#666666" FontStyle="Italic"/>
                 
-                <TextBlock Text="Search:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                <TextBox x:Name="txtSearch" Width="150" VerticalAlignment="Center" Margin="0,0,10,0" TextChanged="TxtSearch_TextChanged"/>
+                <TextBlock Text="Search:" VerticalAlignment="Center" Margin="0,0,5,10" Foreground="#1F2937" FontWeight="SemiBold"/>
+                <TextBox x:Name="txtSearch" Width="150" VerticalAlignment="Center" Margin="0,0,10,10" TextChanged="TxtSearch_TextChanged"/>
                 
-                <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                <ComboBox x:Name="cmbDateFilter" Width="120" SelectionChanged="CmbDateFilter_SelectionChanged" SelectedIndex="0" Margin="0,0,5,0">
+                <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,5,10" Foreground="#1F2937" FontWeight="SemiBold"/>
+                <ComboBox x:Name="cmbDateFilter" Width="120" SelectionChanged="CmbDateFilter_SelectionChanged" SelectedIndex="0" Margin="0,0,5,10" VerticalAlignment="Center">
                     <ComboBoxItem Content="Today"/>
                     <ComboBoxItem Content="This Week"/>
                     <ComboBoxItem Content="This Month"/>
                     <ComboBoxItem Content="All Time"/>
                     <ComboBoxItem Content="Custom Range"/>
                 </ComboBox>
-                <Button Content="⚙️" ToolTip="Manage Custom Date Ranges" Background="Transparent" BorderThickness="0" Padding="5,0" Margin="0,0,10,0" FontSize="16" Click="BtnManageCustomRanges_Click"/>
+                <Button Content="⚙️" ToolTip="Manage Custom Date Ranges" Background="Transparent" BorderThickness="0" Padding="5,0" Margin="0,0,5,10" FontSize="16" Click="BtnManageCustomRanges_Click" VerticalAlignment="Center"/>
                 
-                <StackPanel x:Name="spCustomDate" Orientation="Horizontal" Visibility="Collapsed">
+                <Button Content="📅 Schedule Settings" Background="#1E40AF" Foreground="White" Padding="15,5" Margin="0,0,10,10" BorderThickness="0" Click="BtnScheduleSettings_Click" VerticalAlignment="Center"/>
+                
+                <StackPanel x:Name="spCustomDate" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,0,10" VerticalAlignment="Center">
                     <DatePicker x:Name="dpStartDate" Width="100" Margin="0,0,5,0" SelectedDateChanged="DpDate_SelectedDateChanged"/>
                     <TextBlock Text="-" VerticalAlignment="Center" Margin="0,0,5,0"/>
                     <DatePicker x:Name="dpEndDate" Width="100" SelectedDateChanged="DpDate_SelectedDateChanged"/>
                 </StackPanel>
-            </StackPanel>
+            </WrapPanel>
         </Grid>
         
         <TabControl Grid.Row="1" PreviewMouseWheel="TabControl_PreviewMouseWheel">
@@ -138,8 +139,7 @@
                         <DataGridTextColumn Header="Session" Binding="{Binding Session}" Width="100" IsReadOnly="True"/>
                         <DataGridTemplateColumn Header="Grade" Width="60" CellTemplate="{StaticResource GradeTemplate}"/>
                         <DataGridTextColumn Header="Jobs" Binding="{Binding JobCount}" Width="80" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Total Pages" Binding="{Binding TotalPages}" Width="100" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Total Page Copies" Binding="{Binding TotalPageCopies}" Width="150" IsReadOnly="True"/>
+                        <DataGridTextColumn Header="Total Pages" x:Name="colTotalPages" Binding="{Binding TotalPages}" Width="100" IsReadOnly="True"/>
                     </DataGrid.Columns>
                 </DataGrid>
             </TabItem>

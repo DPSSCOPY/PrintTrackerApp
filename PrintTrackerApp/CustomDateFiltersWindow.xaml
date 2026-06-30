@@ -67,7 +67,7 @@
             <StackPanel Grid.Column="1" Orientation="Horizontal">
                 <TextBlock Text="Auto-Generate from:" VerticalAlignment="Center" Margin="0,0,5,0" Foreground="#4B5563"/>
                 <DatePicker x:Name="dpAutoStart" Width="120" Margin="0,0,5,0"/>
-                <Button Content="Generate 4 Weeks" Style="{StaticResource SecondaryButton}" Padding="10,5" Click="BtnAutoGenerate_Click"/>
+                <Button Content="Generate 5 Weeks" Style="{StaticResource SecondaryButton}" Padding="10,5" Click="BtnAutoGenerate_Click"/>
             </StackPanel>
         </Grid>
 

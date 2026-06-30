@@ -49,7 +49,8 @@ namespace PrintTrackerApp
                 Filters.Add(new CustomDateFilter { Name = "Week 2", StartDate = start.AddDays(7), EndDate = start.AddDays(11) });
                 Filters.Add(new CustomDateFilter { Name = "Week 3", StartDate = start.AddDays(14), EndDate = start.AddDays(18) });
                 Filters.Add(new CustomDateFilter { Name = "Week 4", StartDate = start.AddDays(21), EndDate = start.AddDays(25) });
-                Filters.Add(new CustomDateFilter { Name = "Monthly", StartDate = start, EndDate = start.AddDays(25) }); // Covers 4 weeks Mon-Fri
+                Filters.Add(new CustomDateFilter { Name = "Week 5", StartDate = start.AddDays(28), EndDate = start.AddDays(32) });
+                Filters.Add(new CustomDateFilter { Name = "Monthly", StartDate = start, EndDate = start.AddDays(32) }); // Covers 5 weeks Mon-Fri
             }
             else
             {

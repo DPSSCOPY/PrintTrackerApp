@@ -17,6 +17,14 @@ using PdfSharp.Pdf.IO;
 
 namespace PrintTrackerApp
 {
+    public class EditAction
+    {
+        public PrintJobInfo Job { get; set; }
+        public string PropertyName { get; set; }
+        public object OldValue { get; set; }
+        public object NewValue { get; set; }
+    }
+
     public partial class MainWindow : Window
     {
         private readonly ObservableCollection<PrintJobInfo> _printJobs;
@@ -46,6 +54,9 @@ namespace PrintTrackerApp
         private System.Threading.CancellationTokenSource? _shutdownDelayCts;
         private AutoUpdaterDotNET.UpdateInfoEventArgs _pendingUpdate;
         private System.Windows.Threading.DispatcherTimer _updateReminderTimer;
+
+        private Stack<EditAction> _undoStack = new Stack<EditAction>();
+        private Stack<EditAction> _redoStack = new Stack<EditAction>();
 
         // Batch Printing State
         private System.Collections.Generic.List<PrintJobInfo> _currentBatchJobs = new System.Collections.Generic.List<PrintJobInfo>();
@@ -450,6 +461,56 @@ namespace PrintTrackerApp
         {
             Dispatcher.Invoke(() =>
             {
+
+                if (_historicalPrintJobs != null)
+                {
+                    // Update stats based on historical data
+                    txtPendingCount.Text = "0"; // Historical data doesn't have "Files Waiting" in a folder
+
+                    var successStatuses = new[] { "Storing Complete", "Complete Print", "Processing", "Print Complete", "Successfully Printed" };
+                    var successJobs = _historicalPrintJobs.Where(j => successStatuses.Any(s => (j.Status ?? "").Contains(s, StringComparison.OrdinalIgnoreCase))).ToList();
+                    
+                    int totalSubCount = successJobs.Count;
+                    var uniqueBaseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    
+                    foreach (var job in successJobs)
+                    {
+                        string name = job.DocumentName ?? "";
+                        if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                            name = name.Substring(0, name.Length - 4);
+                            
+                        var match = System.Text.RegularExpressions.Regex.Match(name, @"_(\d{6})$");
+                        if (match.Success) 
+                        {
+                            name = name.Substring(0, name.Length - 7);
+                        }
+                        uniqueBaseNames.Add(name);
+                    }
+
+                    int actualCount = uniqueBaseNames.Count;
+                    int duplicateCount = totalSubCount - actualCount;
+
+                    txtSubfolderCount.Text = actualCount.ToString();
+                    txtDuplicateCount.Text = duplicateCount.ToString();
+
+                    txtSentToPrinterCount.Text = _historicalPrintJobs.Count(j => (j.Status ?? "").Contains("Sent to Printer", StringComparison.OrdinalIgnoreCase)).ToString();
+                    txtPrintCompleteCount.Text = _historicalPrintJobs.Count(j => (j.Status ?? "").Contains("Print Complete", StringComparison.OrdinalIgnoreCase) || (j.Status ?? "").Contains("Successfully Printed", StringComparison.OrdinalIgnoreCase)).ToString();
+
+                    var errorJobs = _historicalPrintJobs.Where(j => 
+                    {
+                        var status = j.Status ?? "";
+                        bool isSuccessOrActive = successStatuses.Any(s => status.Contains(s, StringComparison.OrdinalIgnoreCase)) 
+                            || status.Contains("Sent to Printer", StringComparison.OrdinalIgnoreCase)
+                            || status.Contains("Printing", StringComparison.OrdinalIgnoreCase)
+                            || status.Contains("Storing", StringComparison.OrdinalIgnoreCase)
+                            || status.Contains("Spooling", StringComparison.OrdinalIgnoreCase);
+                        return !isSuccessOrActive;
+                    }).ToList();
+
+                    txtErrorFilesCount.Text = errorJobs.Count.ToString();
+                    return;
+                }
+
                 int completedToday = _printJobs.Count(j => j.Status.Contains("Complete", StringComparison.OrdinalIgnoreCase) || j.Status.Contains("Printed", StringComparison.OrdinalIgnoreCase));
 
                 if (string.IsNullOrWhiteSpace(_appSettings.SourceFolderPath) || !System.IO.Directory.Exists(_appSettings.SourceFolderPath))
@@ -2392,6 +2453,118 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                 }
             }
         }
+        
+        private void DgPrintJobs_CellEditEnding(object sender, System.Windows.Controls.DataGridCellEditEndingEventArgs e)
+        {
+            if (e.EditAction == System.Windows.Controls.DataGridEditAction.Commit)
+            {
+                var job = e.Row.Item as PrintJobInfo;
+                if (job == null) return;
+                
+                var column = e.Column as System.Windows.Controls.DataGridBoundColumn;
+                if (column?.Binding is System.Windows.Data.Binding binding)
+                {
+                    string propertyName = binding.Path.Path;
+                    var property = typeof(PrintJobInfo).GetProperty(propertyName);
+                    if (property != null)
+                    {
+                        object oldValue = property.GetValue(job);
+                        object newValue = null;
+
+                        if (e.EditingElement is System.Windows.Controls.TextBox textBox)
+                        {
+                            newValue = textBox.Text;
+                        }
+
+                        if (property.PropertyType == typeof(int) && newValue is string str)
+                        {
+                            if (int.TryParse(str, out int parsed))
+                                newValue = parsed;
+                            else
+                                newValue = oldValue;
+                        }
+
+                        if (!Equals(oldValue, newValue))
+                        {
+                            _undoStack.Push(new EditAction
+                            {
+                                Job = job,
+                                PropertyName = propertyName,
+                                OldValue = oldValue,
+                                NewValue = newValue
+                            });
+                            _redoStack.Clear();
+
+                            if (propertyName == "Status")
+                            {
+                                string newStatus = newValue?.ToString() ?? "";
+                                _ = System.Threading.Tasks.Task.Run(() => UpdateFileStatusLocation(job, newStatus));
+                            }
+
+                            // Use Dispatcher.InvokeAsync to update CSV after property is actually updated
+                            Dispatcher.InvokeAsync(() =>
+                            {
+                                if (_historicalPrintJobs == null)
+                                {
+                                    CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                                }
+                            }, System.Windows.Threading.DispatcherPriority.Background);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void DgPrintJobs_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Control)
+            {
+                if (e.Key == System.Windows.Input.Key.Z)
+                {
+                    e.Handled = true;
+                    if (_undoStack.Count > 0)
+                    {
+                        var action = _undoStack.Pop();
+                        var property = typeof(PrintJobInfo).GetProperty(action.PropertyName);
+                        if (property != null)
+                        {
+                            property.SetValue(action.Job, action.OldValue);
+                            
+                            if (action.PropertyName == "Status")
+                            {
+                                string newStatus = action.OldValue?.ToString() ?? "";
+                                _ = System.Threading.Tasks.Task.Run(() => UpdateFileStatusLocation(action.Job, newStatus));
+                            }
+                            
+                            _redoStack.Push(action);
+                            if (_historicalPrintJobs == null) CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                        }
+                    }
+                }
+                else if (e.Key == System.Windows.Input.Key.Y)
+                {
+                    e.Handled = true;
+                    if (_redoStack.Count > 0)
+                    {
+                        var action = _redoStack.Pop();
+                        var property = typeof(PrintJobInfo).GetProperty(action.PropertyName);
+                        if (property != null)
+                        {
+                            property.SetValue(action.Job, action.NewValue);
+                            
+                            if (action.PropertyName == "Status")
+                            {
+                                string newStatus = action.NewValue?.ToString() ?? "";
+                                _ = System.Threading.Tasks.Task.Run(() => UpdateFileStatusLocation(action.Job, newStatus));
+                            }
+                            
+                            _undoStack.Push(action);
+                            if (_historicalPrintJobs == null) CsvLogger.ExportJobsToCsv(_printJobs, _appSettings.CsvExportPath);
+                        }
+                    }
+                }
+            }
+        }
 
         private void MainTabControl_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
@@ -2413,5 +2586,63 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             if (_autoPrintService != null && _autoPrintService.IsRunning) { _autoPrintService.Stop(); }
             base.OnClosed(e);
         }
+
+        private ObservableCollection<PrintJobInfo> _historicalPrintJobs;
+
+        private void BtnLoadHistoricalLog_Click(object sender, RoutedEventArgs e)
+        {
+            var openFileDialog = new Microsoft.Win32.OpenFileDialog();
+            openFileDialog.Filter = "Supported Files|*.csv;*.xlsx;*.xls|CSV Files|*.csv|Excel Files|*.xls;*.xlsx";
+            openFileDialog.Multiselect = true;
+            if (openFileDialog.ShowDialog() == true)
+            {
+                var allExternalJobs = new List<PrintJobInfo>();
+                var errorMessages = new List<string>();
+
+                foreach (var fileName in openFileDialog.FileNames)
+                {
+                    string errorMessage;
+                    var externalJobs = PrintTrackerApp.Services.CsvLogger.LoadExternalCsvLog(fileName, out errorMessage);
+                    if (externalJobs.Count > 0)
+                    {
+                        allExternalJobs.AddRange(externalJobs);
+                    }
+                    if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        errorMessages.Add($"{System.IO.Path.GetFileName(fileName)}: {errorMessage}");
+                    }
+                }
+
+                if (allExternalJobs.Count > 0)
+                {
+                    // Sort by newest first, as per usual
+                    allExternalJobs = allExternalJobs.OrderByDescending(j => j.Timestamp).ToList();
+                    
+                    _historicalPrintJobs = new ObservableCollection<PrintJobInfo>(allExternalJobs);
+                    dgPrintJobs.ItemsSource = _historicalPrintJobs;
+                    btnResetLiveLog.Visibility = Visibility.Visible;
+                    
+                    // Force refresh filter
+                    TxtSearch_TextChanged(null, null);
+                    UpdateVerificationPanel();
+                }
+
+                if (errorMessages.Count > 0)
+                {
+                    System.Windows.MessageBox.Show($"Some errors occurred:\n{string.Join("\n", errorMessages)}", "Warnings", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+        }
+
+        private void BtnResetLiveLog_Click(object sender, RoutedEventArgs e)
+        {
+            _historicalPrintJobs = null;
+            dgPrintJobs.ItemsSource = _printJobs;
+            btnResetLiveLog.Visibility = Visibility.Collapsed;
+            
+            // Force refresh filter
+            TxtSearch_TextChanged(null, null);
+        }
+
     }
 }

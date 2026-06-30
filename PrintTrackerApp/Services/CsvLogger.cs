@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
+using ExcelDataReader;
 using PrintTrackerApp.Models;
 
 namespace PrintTrackerApp.Services
@@ -281,6 +283,79 @@ namespace PrintTrackerApp.Services
                     errorMessage = "File not found.";
                     return jobs;
                 }
+
+                if (filePath.EndsWith(".xls", StringComparison.OrdinalIgnoreCase) || 
+                    filePath.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) ||
+                    filePath.EndsWith(".xlsm", StringComparison.OrdinalIgnoreCase))
+                {
+                    using (var stream = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    {
+                        using (var reader = ExcelDataReader.ExcelReaderFactory.CreateReader(stream))
+                        {
+                            var result = reader.AsDataSet(new ExcelDataReader.ExcelDataSetConfiguration()
+                            {
+                                ConfigureDataTable = (dataReader) => new ExcelDataReader.ExcelDataTableConfiguration()
+                                {
+                                    UseHeaderRow = true
+                                }
+                            });
+                            
+                            if (result.Tables.Count > 0)
+                            {
+                                var table = result.Tables[0];
+                                
+                                int timeIdx = -1, userIdx = -1, pagesIdx = -1, copiesIdx = -1, printerIdx = -1, docNameIdx = -1, statusIdx = -1, ricohIdx = -1;
+                                
+                                for (int i = 0; i < table.Columns.Count; i++)
+                                {
+                                    string h = table.Columns[i].ColumnName.Trim();
+                                    if (h.Equals("Time", StringComparison.OrdinalIgnoreCase) || h.Equals("Timestamp", StringComparison.OrdinalIgnoreCase)) timeIdx = i;
+                                    else if (h.Equals("User", StringComparison.OrdinalIgnoreCase) || h.Equals("Owner", StringComparison.OrdinalIgnoreCase)) userIdx = i;
+                                    else if (h.Equals("Pages", StringComparison.OrdinalIgnoreCase) || h.Equals("TotalPages", StringComparison.OrdinalIgnoreCase)) pagesIdx = i;
+                                    else if (h.Equals("Copies", StringComparison.OrdinalIgnoreCase)) copiesIdx = i;
+                                    else if (h.Equals("Printer Name", StringComparison.OrdinalIgnoreCase) || h.Equals("Printer", StringComparison.OrdinalIgnoreCase)) printerIdx = i;
+                                    else if (h.Equals("Document Name", StringComparison.OrdinalIgnoreCase)) docNameIdx = i;
+                                    else if (h.Equals("Status", StringComparison.OrdinalIgnoreCase)) statusIdx = i;
+                                    else if (h.Equals("User ID (Hold)", StringComparison.OrdinalIgnoreCase) || h.Equals("User ID", StringComparison.OrdinalIgnoreCase) || h.Equals("RicohUserId", StringComparison.OrdinalIgnoreCase)) ricohIdx = i;
+                                }
+
+                                foreach (System.Data.DataRow row in table.Rows)
+                                {
+                                    string time = timeIdx >= 0 ? row[timeIdx]?.ToString() ?? "" : "";
+                                    if (string.IsNullOrWhiteSpace(time)) continue; // skip empty rows
+
+                                    string user = userIdx >= 0 ? row[userIdx]?.ToString() ?? "" : "";
+                                    string docName = docNameIdx >= 0 ? row[docNameIdx]?.ToString() ?? "" : "";
+                                    string printer = printerIdx >= 0 ? row[printerIdx]?.ToString() ?? "" : "";
+                                    string status = statusIdx >= 0 ? row[statusIdx]?.ToString() ?? "Unknown" : "Unknown";
+                                    string ricohId = ricohIdx >= 0 ? row[ricohIdx]?.ToString() ?? "" : "";
+                                    
+                                    int pages = 1;
+                                    if (pagesIdx >= 0 && int.TryParse(row[pagesIdx]?.ToString(), out int p)) pages = p;
+                                    
+                                    int copies = 1;
+                                    if (copiesIdx >= 0 && int.TryParse(row[copiesIdx]?.ToString(), out int c)) copies = c;
+
+                                    jobs.Add(new PrintJobInfo
+                                    {
+                                        Timestamp = time,
+                                        DocumentName = docName,
+                                        RicohUserId = ricohId,
+                                        TotalPages = pages,
+                                        Copies = copies,
+                                        Owner = user,
+                                        PrinterName = printer,
+                                        Status = status,
+                                        JobId = Guid.NewGuid().ToString()
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    return jobs;
+                }
+
+
                 using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                 using (var reader = new StreamReader(fs, Encoding.UTF8, true))
                 {
@@ -291,12 +366,15 @@ namespace PrintTrackerApp.Services
                     else if (!header.Contains(",") && header.Contains("\t")) delimiter = '\t';
                     
                     var headerParts = ParseCsvLine(header, delimiter);
-                    int timeIdx = headerParts.FindIndex(h => h.Trim().Equals("Time", StringComparison.OrdinalIgnoreCase));
-                    int userIdx = headerParts.FindIndex(h => h.Trim().Equals("User", StringComparison.OrdinalIgnoreCase));
-                    int pagesIdx = headerParts.FindIndex(h => h.Trim().Equals("Pages", StringComparison.OrdinalIgnoreCase));
+                    int timeIdx = headerParts.FindIndex(h => h.Trim().Equals("Time", StringComparison.OrdinalIgnoreCase) || h.Trim().Equals("Timestamp", StringComparison.OrdinalIgnoreCase));
+                    int userIdx = headerParts.FindIndex(h => h.Trim().Equals("User", StringComparison.OrdinalIgnoreCase) || h.Trim().Equals("Owner", StringComparison.OrdinalIgnoreCase));
+                    int pagesIdx = headerParts.FindIndex(h => h.Trim().Equals("Pages", StringComparison.OrdinalIgnoreCase) || h.Trim().Equals("TotalPages", StringComparison.OrdinalIgnoreCase));
                     int copiesIdx = headerParts.FindIndex(h => h.Trim().Equals("Copies", StringComparison.OrdinalIgnoreCase));
-                    int printerIdx = headerParts.FindIndex(h => h.Trim().Equals("Printer", StringComparison.OrdinalIgnoreCase));
+                    int printerIdx = headerParts.FindIndex(h => h.Trim().Equals("Printer Name", StringComparison.OrdinalIgnoreCase) || h.Trim().Equals("Printer", StringComparison.OrdinalIgnoreCase));
                     int docNameIdx = headerParts.FindIndex(h => h.Trim().Equals("Document Name", StringComparison.OrdinalIgnoreCase));
+                    int holdNameIdx = headerParts.FindIndex(h => h.Trim().Equals("Hold Print Name", StringComparison.OrdinalIgnoreCase) || h.Trim().Equals("WebFileName", StringComparison.OrdinalIgnoreCase));
+                    int ricohIdIdx = headerParts.FindIndex(h => h.Trim().Equals("User ID (Hold)", StringComparison.OrdinalIgnoreCase) || h.Trim().Equals("User ID", StringComparison.OrdinalIgnoreCase) || h.Trim().Equals("RicohUserId", StringComparison.OrdinalIgnoreCase));
+                    int statusIdx = headerParts.FindIndex(h => h.Trim().Equals("Status", StringComparison.OrdinalIgnoreCase));
 
                     // Fallback to hardcoded indices if header is missing or unrecognized
                     if (timeIdx == -1 && docNameIdx == -1)
@@ -337,7 +415,10 @@ namespace PrintTrackerApp.Services
                             Copies = int.TryParse(GetPart(copiesIdx), out int copies) ? copies : 1,
                             PrinterName = GetPart(printerIdx),
                             DocumentName = GetPart(docNameIdx),
-                            WebFileName = GetPart(docNameIdx)
+                            WebFileName = holdNameIdx >= 0 ? GetPart(holdNameIdx) : GetPart(docNameIdx),
+                            RicohUserId = ricohIdIdx >= 0 ? GetPart(ricohIdIdx) : "",
+                            Status = statusIdx >= 0 ? GetPart(statusIdx) : "Unknown",
+                            JobId = Guid.NewGuid().ToString()
                         });
                     }
                     

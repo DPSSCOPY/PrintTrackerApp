@@ -27,6 +27,10 @@ namespace PrintTrackerApp
         private string _currentExcelPath;
         private DateTime _lastExcelWriteTime;
         private System.Windows.Threading.DispatcherTimer _excelCheckTimer;
+        
+        private DateTime _currentStart;
+        private DateTime _currentEnd;
+        private int _currentDurationDays;
 
         public TeacherDashboardControl()
         {
@@ -63,9 +67,14 @@ namespace PrintTrackerApp
             _originalJobs = printJobs;
             _csvExportPath = csvExportPath;
 
-            // Initialization triggers CmbDateFilter_SelectionChanged implicitly if it's set in XAML,
-            // but just to be sure we load for today:
-            ReloadFilteredData(DateTime.Now.Date, DateTime.Now.Date);
+            if (cmbDateFilter.SelectedItem is System.Windows.Controls.ComboBoxItem item && item.Content != null)
+            {
+                CmbDateFilter_SelectionChanged(this, null);
+            }
+            else
+            {
+                ReloadFilteredData(DateTime.Now.Date, DateTime.Now.Date);
+            }
         }
 
         private string GetConfigFilePath()
@@ -134,10 +143,12 @@ namespace PrintTrackerApp
                 {
                     int diff = (7 + (DateTime.Now.DayOfWeek - DayOfWeek.Monday)) % 7;
                     start = DateTime.Now.AddDays(-1 * diff).Date;
+                    end = start.AddDays(6).Date;
                 }
                 else if (content == "This Month")
                 {
                     start = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+                    end = start.AddMonths(1).AddDays(-1).Date;
                 }
                 else if (content == "All Time")
                 {
@@ -208,11 +219,19 @@ namespace PrintTrackerApp
             }
 
             int duration = (end.Date - start.Date).Days + 1;
-            LoadData(allJobs, duration);
+            LoadData(allJobs, duration, start, end);
         }
 
-        private void LoadData(IEnumerable<PrintJobInfo> printJobs, int totalDurationDays = 1)
+        private void LoadData(IEnumerable<PrintJobInfo> printJobs, int totalDurationDays = 1, DateTime? filterStart = null, DateTime? filterEnd = null)
         {
+            DateTime start = filterStart ?? DateTime.Now.Date;
+            DateTime end = filterEnd ?? DateTime.Now.Date;
+            _currentStart = start;
+            _currentEnd = end;
+            _currentDurationDays = totalDurationDays;
+
+            GenerateDynamicColumns(start, end);
+
             _statsDict.Clear();
             _unmatchedJobs.Clear();
 
@@ -280,6 +299,11 @@ namespace PrintTrackerApp
                             if (!string.IsNullOrEmpty(jobDate))
                             {
                                 _statsDict[key].PrintDays.Add(jobDate);
+                                if (!_statsDict[key].DailyPages.ContainsKey(jobDate))
+                                {
+                                    _statsDict[key].DailyPages[jobDate] = 0;
+                                }
+                                _statsDict[key].DailyPages[jobDate] += job.TotalPages;
                             }
                             
                             _statsDict[key].Jobs.Add(job);
@@ -296,13 +320,16 @@ namespace PrintTrackerApp
                 }
             }
 
+            // Apply exemptions from Schedule Manager
+            ApplyExemptionsFromManager(start, end);
+
             // Calculate Grades dynamically based on number of weeks
             int weeks = (int)Math.Ceiling(totalDurationDays / 7.0);
             if (weeks == 0) weeks = 1;
             
             foreach (var stat in _statsDict.Values)
             {
-                int activeDays = stat.PrintDays.Count;
+                int activeDays = stat.PrintDays.Union(stat.ExemptedDates).Count();
                 
                 if (activeDays >= 4 * weeks) stat.Grade = "A";
                 else if (activeDays >= 3 * weeks) stat.Grade = "B";
@@ -314,6 +341,60 @@ namespace PrintTrackerApp
             dgStats.ItemsSource = _statsDict.Values.OrderBy(s => s.TeacherName).ThenBy(s => s.Level).ToList();
             RefreshExcelTabs();
             UpdateUnmatchedJobsUI();
+        }
+
+        private void GenerateDynamicColumns(DateTime start, DateTime end)
+        {
+            if (dgStats == null || dgStats.Columns == null) return;
+
+            int totalPagesIndex = -1;
+            int jobsIndex = -1;
+            for (int i = 0; i < dgStats.Columns.Count; i++)
+            {
+                var header = dgStats.Columns[i].Header?.ToString();
+                if (header == "Total Pages") totalPagesIndex = i;
+                if (header == "Jobs") jobsIndex = i;
+            }
+
+            if (totalPagesIndex == -1 || jobsIndex == -1) return;
+
+            // Remove existing dynamic columns between Jobs and Total Pages
+            while (totalPagesIndex > jobsIndex + 1)
+            {
+                dgStats.Columns.RemoveAt(jobsIndex + 1);
+                totalPagesIndex--;
+            }
+
+            // Insert new dynamic columns
+            int insertIndex = jobsIndex + 1;
+            for (DateTime dt = start; dt <= end; dt = dt.AddDays(1))
+            {
+                // Skip weekends to keep table clean (optional, but requested by teachers usually)
+                // Let's include all days to be safe since they might teach on weekends
+                string dateStr = dt.ToString("yyyy-MM-dd");
+                string headerStr = dt.ToString("dd-MMM");
+                
+                var style = new System.Windows.Style(typeof(System.Windows.Controls.TextBlock));
+                style.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.TextAlignmentProperty, System.Windows.TextAlignment.Center));
+                style.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.VerticalAlignmentProperty, System.Windows.VerticalAlignment.Center));
+                style.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.PaddingProperty, new System.Windows.Thickness(5, 0, 5, 0)));
+
+                var column = new System.Windows.Controls.DataGridTextColumn
+                {
+                    Header = headerStr,
+                    Binding = new System.Windows.Data.Binding($"DailyPages[{dateStr}]")
+                    {
+                        TargetNullValue = ""
+                    },
+                    Width = new System.Windows.Controls.DataGridLength(1, System.Windows.Controls.DataGridLengthUnitType.Auto),
+                    MinWidth = 60,
+                    IsReadOnly = true,
+                    ElementStyle = style
+                };
+                
+                dgStats.Columns.Insert(insertIndex, column);
+                insertIndex++;
+            }
         }
 
         private void ParseDocumentName(string docName, out string level, out string teacher, out string session)
@@ -627,6 +708,10 @@ namespace PrintTrackerApp
                             grade = bestMatch.Grade;
                             bestMatch.IsMatched = true;
                         }
+                        else
+                        {
+                            grade = CalculateGradeFromExemptionsOnly(teacherName, level);
+                        }
                     }
                 }
                 else
@@ -639,6 +724,10 @@ namespace PrintTrackerApp
                     {
                         grade = bestMatch.Grade;
                         bestMatch.IsMatched = true;
+                    }
+                    else
+                    {
+                        grade = CalculateGradeFromExemptionsOnly(teacherName, level);
                     }
                 }
 
@@ -699,6 +788,139 @@ namespace PrintTrackerApp
                 btnUnmatchedFiles.Content = $"Unmatched Files ({_unmatchedJobs.Count})";
                 btnUnmatchedFiles.Visibility = _unmatchedJobs.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             }
+        }
+
+        private void BtnScheduleSettings_Click(object sender, RoutedEventArgs e)
+        {
+            var teachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
+            ExtractTeachersFromTable(_ftTable, "FT", teachers);
+            ExtractTeachersFromTable(_ptTable, "PT", teachers);
+            ExtractTeachersFromTable(_khTable, "KH", teachers);
+
+            var window = new TeacherScheduleWindow(teachers);
+            window.Owner = Window.GetWindow(this);
+            window.ShowDialog();
+            
+            // Reload data after settings close because schedules might have changed
+            CmbDateFilter_SelectionChanged(this, null);
+        }
+
+        private void ExtractTeachersFromTable(DataTable table, string tabType, System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier> teachers)
+        {
+            if (table == null) return;
+            int startRow = (tabType == "KH") ? 2 : 1;
+            for (int i = startRow; i < table.Rows.Count; i++)
+            {
+                DataRow row = table.Rows[i];
+                var no = row[0]?.ToString();
+                if (string.IsNullOrWhiteSpace(no)) continue;
+
+                string rawTeacher = row[1]?.ToString() ?? "";
+                string rawLevel = table.Columns.Count > 2 ? (row[2]?.ToString() ?? "") : "";
+
+                string teacherName = rawTeacher.Trim();
+                string level = rawLevel.Trim();
+                
+                if (tabType == "PT")
+                {
+                    var parts = rawTeacher.Split('-');
+                    if (parts.Length >= 3)
+                    {
+                        teacherName = parts[0].Trim();
+                        level = parts[1].Trim();
+                    }
+                }
+
+                var tId = new TeacherScheduleWindow.TeacherIdentifier { Name = teacherName, Level = level, Category = tabType };
+                if (!teachers.Any(t => t.Name == tId.Name && t.Level == tId.Level))
+                {
+                    teachers.Add(tId);
+                }
+            }
+        }
+
+        private void ApplyExemptionsFromManager(DateTime start, DateTime end)
+        {
+            if (_statsDict == null) return;
+
+            var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
+            
+            var excelTeachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
+            ExtractTeachersFromTable(_ftTable, "FT", excelTeachers);
+            ExtractTeachersFromTable(_ptTable, "PT", excelTeachers);
+            ExtractTeachersFromTable(_khTable, "KH", excelTeachers);
+
+            foreach (var stat in _statsDict.Values)
+            {
+                stat.ExemptedDates.Clear();
+                
+                var matchingExcel = excelTeachers.FirstOrDefault(et => et.Level == stat.Level && IsNameMatch(et.Name, stat.TeacherName, strict: false));
+                string key = "";
+                
+                if (matchingExcel != null)
+                {
+                    key = $"{matchingExcel.Name}_{matchingExcel.Level}";
+                }
+                else
+                {
+                    key = $"{stat.TeacherName}_{stat.Level}";
+                }
+
+                if (manager.Schedules.ContainsKey(key))
+                {
+                    for (DateTime date = _currentStart.Date; date <= _currentEnd.Date; date = date.AddDays(1))
+                    {
+                        string dateStr = date.ToString("yyyy-MM-dd");
+                        if (manager.Schedules[key].ContainsKey(dateStr))
+                        {
+                            string status = manager.Schedules[key][dateStr];
+                            if (status == "no teach" || status == "exam")
+                            {
+                                stat.ExemptedDates.Add(dateStr);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private string CalculateGradeFromExemptionsOnly(string teacherName, string level)
+        {
+            var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
+            string key = $"{teacherName}_{level}";
+            int exemptedCount = 0;
+
+            if (manager.Schedules.ContainsKey(key))
+            {
+                for (DateTime date = _currentStart.Date; date <= _currentEnd.Date; date = date.AddDays(1))
+                {
+                    string dateStr = date.ToString("yyyy-MM-dd");
+                    if (manager.Schedules[key].ContainsKey(dateStr))
+                    {
+                        string status = manager.Schedules[key][dateStr];
+                        if (status == "no teach" || status == "exam")
+                        {
+                            exemptedCount++;
+                        }
+                    }
+                }
+            }
+
+            int teachDaysCount = _currentDurationDays - exemptedCount;
+            if (teachDaysCount > 0)
+            {
+                // If they had ANY teaching days but printed 0 times, they fail.
+                return "E";
+            }
+
+            int weeks = (int)Math.Ceiling(_currentDurationDays / 7.0);
+            if (weeks == 0) weeks = 1;
+
+            if (exemptedCount >= 4 * weeks) return "A";
+            if (exemptedCount >= 3 * weeks) return "B";
+            if (exemptedCount >= 2 * weeks) return "C";
+            if (exemptedCount >= 1 * weeks) return "D";
+            return "E";
         }
 
         private void BtnUnmatchedFiles_Click(object sender, RoutedEventArgs e)

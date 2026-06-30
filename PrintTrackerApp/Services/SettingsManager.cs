@@ -98,15 +98,30 @@ namespace PrintTrackerApp.Services
 
     public static class SettingsManager
     {
-        private static readonly string SettingsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+        private static readonly string AppDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
+        private static readonly string SettingsFile = Path.Combine(AppDataFolder, "appsettings.json");
+        private static readonly string LegacySettingsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
 
         public static AppSettings LoadSettings()
         {
-            if (File.Exists(SettingsFile))
+            // Migrate legacy settings if AppData settings don't exist yet
+            if (!File.Exists(SettingsFile) && File.Exists(LegacySettingsFile))
             {
                 try
                 {
-                    string json = File.ReadAllText(SettingsFile);
+                    Directory.CreateDirectory(AppDataFolder);
+                    File.Copy(LegacySettingsFile, SettingsFile);
+                }
+                catch { }
+            }
+
+            string fileToLoad = File.Exists(SettingsFile) ? SettingsFile : (File.Exists(LegacySettingsFile) ? LegacySettingsFile : null);
+
+            if (fileToLoad != null)
+            {
+                try
+                {
+                    string json = File.ReadAllText(fileToLoad);
                     AppSettings loadedSettings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
                     
                     // Migration: If no profiles exist, create a default one from legacy properties
@@ -138,6 +153,11 @@ namespace PrintTrackerApp.Services
         {
             try
             {
+                if (!Directory.Exists(AppDataFolder))
+                {
+                    Directory.CreateDirectory(AppDataFolder);
+                }
+                
                 string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(SettingsFile, json);
             }

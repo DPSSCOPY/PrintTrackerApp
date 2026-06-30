@@ -212,9 +212,13 @@ namespace PrintTrackerApp.Services
                             }
                             
                             // Also ensure all Foxit processes are completely dead as requested
-                            foreach (var p in Process.GetProcessesByName("FoxitPDFReader"))
+                            var foxitNames = new string[] { "FoxitPDFReader", "FoxitReader", "FoxitPDFEditor" };
+                            foreach (var fn in foxitNames)
                             {
-                                try { p.Kill(); } catch { }
+                                foreach (var p in Process.GetProcessesByName(fn))
+                                {
+                                    try { p.Kill(); } catch { }
+                                }
                             }
 
                             Thread.Sleep(5000);
@@ -595,18 +599,26 @@ namespace PrintTrackerApp.Services
                 if (savinProps == null) return false;
 
                 // 8. Click 'Details...' 
-                AutomationElement detailsBtn = savinProps.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinDetailsBtnId));
-                if (detailsBtn != null)
+                AutomationElement detailsBtn = WaitForElementById(savinProps, activeProfile.SavinDetailsBtnId, token);
+                if (detailsBtn == null)
                 {
-                    Thread.Sleep(delayNormal);
-                    InvokeElement(detailsBtn);
+                    Debug.WriteLine("Failed to find Details button. Aborting print to guarantee 100% accuracy.");
+                    return false;
+                }
 
-                    // 9. Wait for Details window
-                    AutomationElement? detailsWindow = WaitForKeyWindow(savinProps, activeProfile.FoxitJobDetailsWindowName, token, true);
-                    if (detailsWindow != null)
-                    {
-                        // Set User ID 
-                AutomationElement userIdEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinUserIdTextBoxId));
+                Thread.Sleep(delayNormal);
+                InvokeElement(detailsBtn);
+
+                // 9. Wait for Details window
+                AutomationElement? detailsWindow = WaitForKeyWindow(savinProps, activeProfile.FoxitJobDetailsWindowName, token, true);
+                if (detailsWindow == null)
+                {
+                    Debug.WriteLine("Failed to find Details window. Aborting print.");
+                    return false;
+                }
+
+                // Set User ID 
+                AutomationElement userIdEdit = WaitForElementById(detailsWindow, activeProfile.SavinUserIdTextBoxId, token);
                 if (userIdEdit == null)
                 {
                     Debug.WriteLine("Failed to find User ID TextBox. Aborting print.");
@@ -619,7 +631,7 @@ namespace PrintTrackerApp.Services
                 }
 
                 // Set File Name
-                AutomationElement fileNameEdit = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinFileNameTextBoxId));
+                AutomationElement fileNameEdit = WaitForElementById(detailsWindow, activeProfile.SavinFileNameTextBoxId, token);
                 if (fileNameEdit == null)
                 {
                     Debug.WriteLine("Failed to find File Name TextBox. Aborting print.");
@@ -630,17 +642,16 @@ namespace PrintTrackerApp.Services
                     Debug.WriteLine("Failed to verify File Name text was set. Aborting print.");
                     return false;
                 }
-                            Thread.Sleep(delayNormal);
-                        
-                        // Click 'OK' on Details window
-                        AutomationElement okDetailsBtn = detailsWindow.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, activeProfile.SavinDetailsOkBtnId));
-                        if (okDetailsBtn != null)
-                        {
-                            Thread.Sleep(delayNormal);
-                            InvokeElement(okDetailsBtn);
-                            Thread.Sleep(delayNormal);
-                        }
-                    }
+                
+                Thread.Sleep(delayNormal);
+            
+                // Click 'OK' on Details window
+                AutomationElement okDetailsBtn = WaitForElementById(detailsWindow, activeProfile.SavinDetailsOkBtnId, token, 2000);
+                if (okDetailsBtn != null)
+                {
+                    Thread.Sleep(delayNormal);
+                    InvokeElement(okDetailsBtn);
+                    Thread.Sleep(delayNormal);
                 }
 
                 // 10. Click 'OK' on SAVIN Properties window
@@ -755,6 +766,19 @@ namespace PrintTrackerApp.Services
                     else if (!contains && window.Current.Name.Equals(titleSubstring, StringComparison.OrdinalIgnoreCase))
                         return window;
                 }
+                Thread.Sleep(200);
+            }
+            return null;
+        }
+
+        public static AutomationElement? WaitForElementById(AutomationElement parent, string automationId, CancellationToken token, int maxWaitMs = 5000)
+        {
+            if (string.IsNullOrEmpty(automationId)) return null;
+            for (int i = 0; i < (maxWaitMs / 200); i++)
+            {
+                if (token.IsCancellationRequested) return null;
+                AutomationElement element = parent.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, automationId));
+                if (element != null) return element;
                 Thread.Sleep(200);
             }
             return null;
