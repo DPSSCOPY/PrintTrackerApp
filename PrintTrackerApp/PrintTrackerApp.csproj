@@ -9,9 +9,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>icon.ico</ApplicationIcon>
-    <Version>1.0.15.0</Version>
-    <FileVersion>1.0.15.0</FileVersion>
-    <AssemblyVersion>1.0.15.0</AssemblyVersion>
+    <Version>1.0.16.0</Version>
+    <FileVersion>1.0.16.0</FileVersion>
+    <AssemblyVersion>1.0.16.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +22,7 @@
     <PackageReference Include="Autoupdater.NET.Official" Version="1.9.2" />
     <PackageReference Include="ExcelDataReader" Version="3.9.0" />
     <PackageReference Include="ExcelDataReader.DataSet" Version="3.9.0" />
+    <PackageReference Include="Google.Apis.Sheets.v4" Version="1.75.0.4178" />
     <PackageReference Include="Lextm.SharpSnmpLib" Version="12.5.2" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4022.49" />
     <PackageReference Include="PdfSharp" Version="6.2.4" />

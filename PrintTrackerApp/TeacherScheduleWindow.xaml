@@ -41,7 +41,7 @@
         </TabControl>
         
         <DataGrid x:Name="dgSchedule" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" 
-                  HeadersVisibility="Column" Background="White" RowHeight="30" FontSize="14"
+                  CanUserSortColumns="False" HeadersVisibility="Column" Background="White" RowHeight="30" FontSize="14"
                   VirtualizingPanel.IsVirtualizing="True" SelectionUnit="CellOrRowHeader"
                   PreviewKeyDown="DgSchedule_PreviewKeyDown" 
                   PreviewMouseMove="DgSchedule_PreviewMouseMove"

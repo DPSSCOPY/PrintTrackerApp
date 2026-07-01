@@ -1311,6 +1311,7 @@ namespace PrintTrackerApp
                 latestSettings.Priority2Prefixes = sw.CurrentSettings.Priority2Prefixes;
                 latestSettings.EnablePriority3 = sw.CurrentSettings.EnablePriority3;
                 latestSettings.Priority3Prefixes = sw.CurrentSettings.Priority3Prefixes;
+                latestSettings.GoogleSpreadsheetId = sw.CurrentSettings.GoogleSpreadsheetId;
                 latestSettings.TelegramBotUrl = sw.CurrentSettings.TelegramBotUrl;
                 latestSettings.TelegramBotToken = sw.CurrentSettings.TelegramBotToken;
                 latestSettings.TelegramChatId = sw.CurrentSettings.TelegramChatId;
@@ -1940,7 +1941,14 @@ namespace PrintTrackerApp
             if (_autoPrintService.IsPaused)
             {
                 _runStopwatch.Stop();
-                AutoPrintService_StatusChanged(this, "Paused");
+                if (_autoPrintService.IsPrinting)
+                {
+                    AutoPrintService_StatusChanged(this, "Pausing after current print...");
+                }
+                else
+                {
+                    AutoPrintService_StatusChanged(this, "Paused");
+                }
             }
             else
             {
@@ -2610,13 +2618,25 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
 
         private void MenuItemDeleteJob_Click(object sender, RoutedEventArgs e)
         {
-            if (dgPrintJobs.SelectedItems != null && dgPrintJobs.SelectedItems.Count > 0)
+            var itemsToRemove = new HashSet<PrintTrackerApp.Models.PrintJobInfo>();
+            if (dgPrintJobs.SelectedItems != null)
             {
-                var result = System.Windows.MessageBox.Show($"Are you sure you want to delete {dgPrintJobs.SelectedItems.Count} selected job(s)?", "Confirm Delete", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+                foreach (var item in dgPrintJobs.SelectedItems.OfType<PrintTrackerApp.Models.PrintJobInfo>()) itemsToRemove.Add(item);
+            }
+            if (dgPrintJobs.SelectedCells != null)
+            {
+                foreach (var cell in dgPrintJobs.SelectedCells)
+                {
+                    if (cell.Item is PrintTrackerApp.Models.PrintJobInfo job) itemsToRemove.Add(job);
+                }
+            }
+
+            if (itemsToRemove.Count > 0)
+            {
+                var result = System.Windows.MessageBox.Show($"Are you sure you want to delete {itemsToRemove.Count} selected job(s)?", "Confirm Delete", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
                 if (result == System.Windows.MessageBoxResult.Yes)
                 {
-                    var itemsToRemove = dgPrintJobs.SelectedItems.Cast<PrintTrackerApp.Models.PrintJobInfo>().ToList();
-                    foreach (var item in itemsToRemove)
+                    foreach (var item in itemsToRemove.ToList())
                     {
                         _printJobs.Remove(item);
                     }
@@ -2627,13 +2647,25 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
 
         private void MenuItemCancelMenu_Click(object sender, RoutedEventArgs e)
         {
-            if (dgPrintJobs.SelectedItems != null && dgPrintJobs.SelectedItems.Count > 0)
+            var itemsToCancel = new HashSet<PrintTrackerApp.Models.PrintJobInfo>();
+            if (dgPrintJobs.SelectedItems != null)
             {
-                var result = System.Windows.MessageBox.Show($"Are you sure you want to mark {dgPrintJobs.SelectedItems.Count} selected job(s) as Cancelled?", "Confirm Cancel", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
+                foreach (var item in dgPrintJobs.SelectedItems.OfType<PrintTrackerApp.Models.PrintJobInfo>()) itemsToCancel.Add(item);
+            }
+            if (dgPrintJobs.SelectedCells != null)
+            {
+                foreach (var cell in dgPrintJobs.SelectedCells)
+                {
+                    if (cell.Item is PrintTrackerApp.Models.PrintJobInfo job) itemsToCancel.Add(job);
+                }
+            }
+
+            if (itemsToCancel.Count > 0)
+            {
+                var result = System.Windows.MessageBox.Show($"Are you sure you want to mark {itemsToCancel.Count} selected job(s) as Cancelled?", "Confirm Cancel", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
                 if (result == System.Windows.MessageBoxResult.Yes)
                 {
-                    var itemsToCancel = dgPrintJobs.SelectedItems.Cast<PrintTrackerApp.Models.PrintJobInfo>().ToList();
-                    foreach (var item in itemsToCancel)
+                    foreach (var item in itemsToCancel.ToList())
                     {
                         item.Status = "Cancelled";
                     }
@@ -2880,6 +2912,14 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
 
         private void DgPrintJobs_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
+            if (e.Key == System.Windows.Input.Key.Delete)
+            {
+                // Let the user delete via keyboard
+                MenuItemDeleteJob_Click(sender, new RoutedEventArgs());
+                e.Handled = true;
+                return;
+            }
+
             if (System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Control)
             {
                 if (e.Key == System.Windows.Input.Key.C)

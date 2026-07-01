@@ -29,19 +29,35 @@
                             <DataTrigger Binding="{Binding Grade}" Value="Exam">
                                 <Setter Property="Background" Value="#9C27B0"/>
                             </DataTrigger>
+                            <DataTrigger Binding="{Binding Grade}" Value="No Teach">
+                                <Setter Property="Background" Value="#607D8B"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Grade}" Value="Exam/No Teach">
+                                <Setter Property="Background" Value="#795548"/>
+                            </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
-                <TextBlock Text="{Binding Grade}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Grade}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="4,2" TextWrapping="Wrap" TextAlignment="Center">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
                             <Setter Property="Foreground" Value="White"/>
+                            <Setter Property="FontSize" Value="14"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding Grade}" Value="C">
                                     <Setter Property="Foreground" Value="Black"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding Grade}" Value="D">
                                     <Setter Property="Foreground" Value="Black"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Grade}" Value="Exam">
+                                    <Setter Property="FontSize" Value="11"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Grade}" Value="No Teach">
+                                    <Setter Property="FontSize" Value="11"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Grade}" Value="Exam/No Teach">
+                                    <Setter Property="FontSize" Value="10"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
@@ -69,9 +85,13 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <Button Content="Upload Teacher Data" Background="#0078D4" Foreground="White" Padding="15,5" BorderThickness="0" Click="BtnUploadExcel_Click"/>
-                    <Grid Grid.Column="1" Margin="5,0,0,0">
+                    
+                    <Button Grid.Column="1" Content="Export to Google Sheets" Background="#107C41" Foreground="White" Padding="15,5" Margin="5,0,0,0" BorderThickness="0" Click="BtnExportGoogleSheets_Click"/>
+                    
+                    <Grid Grid.Column="2" Margin="5,0,0,0">
                         <Button x:Name="btnRefreshExcel" Content="↻" Background="Transparent" Foreground="#0078D4" FontSize="18" FontWeight="Bold" Padding="5,0" BorderThickness="0" ToolTip="Refresh Excel Data" Visibility="Collapsed" Click="BtnRefreshExcel_Click"/>
                         <Ellipse x:Name="elExcelChangedIndicator" Width="8" Height="8" Fill="Red" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,2,0" Visibility="Collapsed" ToolTip="File modified on disk"/>
                     </Grid>
@@ -108,7 +128,7 @@
             </TabControl.LayoutTransform>
             <TabItem Header="All Data">
                 <DataGrid x:Name="dgStats" AutoGenerateColumns="False" CanUserAddRows="False" 
-                          Background="White" RowHeight="30" HeadersVisibility="Column" 
+                          CanUserSortColumns="False" Background="White" RowHeight="30" HeadersVisibility="Column" 
                           ScrollViewer.HorizontalScrollBarVisibility="Auto">
                     <DataGrid.Resources>
                         <Style TargetType="DataGridColumnHeader">
@@ -134,7 +154,7 @@
                         </DataGridTextColumn>
                         <DataGridTextColumn Header="Level / Class" Binding="{Binding Level}" Width="120" IsReadOnly="True"/>
                         <DataGridTextColumn Header="Session" Binding="{Binding Session}" Width="100" IsReadOnly="True"/>
-                        <DataGridTemplateColumn Header="Grade" Width="60" CellTemplate="{StaticResource GradeTemplate}"/>
+                        <DataGridTemplateColumn Header="Grade" Width="80" CellTemplate="{StaticResource GradeTemplate}"/>
                         <DataGridTextColumn Header="Jobs" Binding="{Binding JobCount}" Width="80" IsReadOnly="True"/>
                         <DataGridTextColumn Header="Total Pages" x:Name="colTotalPages" Binding="{Binding TotalPages}" Width="100" IsReadOnly="True"/>
                     </DataGrid.Columns>

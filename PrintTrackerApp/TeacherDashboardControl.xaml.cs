@@ -316,7 +316,32 @@ namespace PrintTrackerApp
             {
                 int activeDays = stat.PrintDays.Union(stat.ExemptedDates).Count();
                 
-                if (activeDays >= 4 * weeks) stat.Grade = "A";
+                if (stat.ExemptedDates.Count >= totalDurationDays)
+                {
+                    var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
+                    string key = $"{stat.TeacherName}_{stat.Level}";
+                    bool hasExam = false;
+                    bool hasNoTeach = false;
+
+                    if (manager.Schedules.ContainsKey(key))
+                    {
+                        for (DateTime date = start.Date; date <= end.Date; date = date.AddDays(1))
+                        {
+                            string dateStr = date.ToString("yyyy-MM-dd");
+                            if (manager.Schedules[key].ContainsKey(dateStr))
+                            {
+                                string s = manager.Schedules[key][dateStr]?.ToLower();
+                                if (s == "exam") hasExam = true;
+                                if (s == "no teach") hasNoTeach = true;
+                            }
+                        }
+                    }
+                    if (hasExam && hasNoTeach) stat.Grade = "Exam/No Teach";
+                    else if (hasExam) stat.Grade = "Exam";
+                    else if (hasNoTeach) stat.Grade = "No Teach";
+                    else stat.Grade = "Exam/No Teach";
+                }
+                else if (activeDays >= 4 * weeks) stat.Grade = "A";
                 else if (activeDays >= 3 * weeks) stat.Grade = "B";
                 else if (activeDays >= 2 * weeks) stat.Grade = "C";
                 else if (activeDays >= 1 * weeks) stat.Grade = "D";
@@ -651,80 +676,7 @@ namespace PrintTrackerApp
 
         private void PopulateExcelGrid(Grid container, DataTable table, string tabType)
         {
-            var records = new List<TeacherExcelRecord>();
-            // Skip first two rows as they are usually headers in the template
-            int startRow = (tabType == "KH") ? 2 : 1; // Assuming FT/PT has 1 header row, KH has 2
-
-            string searchText = txtSearch?.Text?.ToLower()?.Trim() ?? "";
-
-            for (int i = startRow; i < table.Rows.Count; i++)
-            {
-                DataRow row = table.Rows[i];
-                var no = row[0]?.ToString();
-                if (string.IsNullOrWhiteSpace(no)) continue;
-
-                string rawTeacher = row[1]?.ToString() ?? "";
-                string rawLevel = table.Columns.Count > 2 ? (row[2]?.ToString() ?? "") : "";
-
-                if (!string.IsNullOrEmpty(searchText))
-                {
-                    if (!rawTeacher.ToLower().Contains(searchText) && !rawLevel.ToLower().Contains(searchText))
-                    {
-                        continue;
-                    }
-                }
-
-                string teacherName = rawTeacher;
-                string level = rawLevel;
-                string grade = "";
-
-                if (tabType == "PT")
-                {
-                    var parts = rawTeacher.Split('-');
-                    if (parts.Length >= 3)
-                    {
-                        teacherName = parts[0].Trim();
-                        level = parts[1].Trim();
-                        string session = parts[2].Trim();
-                        
-                        var bestMatch = FindBestMatch(teacherName, level, session);
-                        if (bestMatch != null) 
-                        {
-                            grade = bestMatch.Grade;
-                            bestMatch.IsMatched = true;
-                        }
-                        else
-                        {
-                            grade = CalculateGradeFromExemptionsOnly(teacherName, level);
-                        }
-                    }
-                }
-                else
-                {
-                    teacherName = rawTeacher.Trim();
-                    level = rawLevel.Trim();
-
-                    var bestMatch = FindBestMatch(teacherName, level, null);
-                    if (bestMatch != null) 
-                    {
-                        grade = bestMatch.Grade;
-                        bestMatch.IsMatched = true;
-                    }
-                    else
-                    {
-                        grade = CalculateGradeFromExemptionsOnly(teacherName, level);
-                    }
-                }
-
-                records.Add(new TeacherExcelRecord
-                {
-                    No = no,
-                    TeacherName = rawTeacher,
-                    Level = rawLevel,
-                    Grade = string.IsNullOrEmpty(grade) ? "E" : grade,
-                    JobsTooltip = (tabType == "PT" ? FindBestMatch(teacherName, level, rawTeacher.Split('-').Length >= 3 ? rawTeacher.Split('-')[2].Trim() : null)?.JobsTooltip : FindBestMatch(teacherName, level, null)?.JobsTooltip) ?? ""
-                });
-            }
+            var records = GetRecordsForTab(table, tabType, false);
 
             container.Children.Clear();
             container.ColumnDefinitions.Clear();
@@ -742,6 +694,7 @@ namespace PrintTrackerApp
                 {
                     AutoGenerateColumns = false,
                     CanUserAddRows = false,
+                    CanUserSortColumns = false,
                     Margin = new Thickness(2),
                     HeadersVisibility = DataGridHeadersVisibility.Column,
                     RowHeight = 25,
@@ -757,7 +710,7 @@ namespace PrintTrackerApp
                     grid.Columns.Add(new DataGridTextColumn { Header = "Level", Binding = new System.Windows.Data.Binding("Level"), Width = DataGridLength.Auto });
                 }
 
-                var gradeCol = new DataGridTemplateColumn { Header = "Grade", Width = 50 };
+                var gradeCol = new DataGridTemplateColumn { Header = "Grade", Width = 80 };
                 gradeCol.CellTemplate = (DataTemplate)this.FindResource("GradeTemplate");
                 grid.Columns.Add(gradeCol);
 
@@ -859,7 +812,7 @@ namespace PrintTrackerApp
                         if (manager.Schedules[key].ContainsKey(dateStr))
                         {
                             string status = manager.Schedules[key][dateStr];
-                            if (status == "no teach" || status == "exam")
+                            if (status?.ToLower() == "no teach" || status?.ToLower() == "exam")
                             {
                                 stat.ExemptedDates.Add(dateStr);
                             }
@@ -874,6 +827,8 @@ namespace PrintTrackerApp
             var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
             string key = $"{teacherName}_{level}";
             int exemptedCount = 0;
+            bool hasExam = false;
+            bool hasNoTeach = false;
 
             if (manager.Schedules.ContainsKey(key))
             {
@@ -883,9 +838,11 @@ namespace PrintTrackerApp
                     if (manager.Schedules[key].ContainsKey(dateStr))
                     {
                         string status = manager.Schedules[key][dateStr];
-                        if (status == "no teach" || status == "exam")
+                        if (status?.ToLower() == "no teach" || status?.ToLower() == "exam")
                         {
                             exemptedCount++;
+                            if (status?.ToLower() == "exam") hasExam = true;
+                            if (status?.ToLower() == "no teach") hasNoTeach = true;
                         }
                     }
                 }
@@ -897,15 +854,13 @@ namespace PrintTrackerApp
                 // If they had ANY teaching days but printed 0 times, they fail.
                 return "E";
             }
-
-            int weeks = (int)Math.Ceiling(_currentDurationDays / 7.0);
-            if (weeks == 0) weeks = 1;
-
-            if (exemptedCount >= 4 * weeks) return "A";
-            if (exemptedCount >= 3 * weeks) return "B";
-            if (exemptedCount >= 2 * weeks) return "C";
-            if (exemptedCount >= 1 * weeks) return "D";
-            return "E";
+            
+            // All days were exempted
+            if (hasExam && hasNoTeach) return "Exam/No Teach";
+            if (hasExam) return "Exam";
+            if (hasNoTeach) return "No Teach";
+            
+            return "Exam/No Teach";
         }
 
         private void BtnUnmatchedFiles_Click(object sender, RoutedEventArgs e)
@@ -1015,6 +970,209 @@ namespace PrintTrackerApp
                 if (uiScale.ScaleY > 3.0) uiScale.ScaleY = 3.0;
 
                 e.Handled = true;
+            }
+        }
+        private List<TeacherExcelRecord> GetRecordsForTab(System.Data.DataTable table, string tabType, bool ignoreSearch)
+        {
+            var records = new List<TeacherExcelRecord>();
+            int startRow = (tabType == "KH") ? 2 : 1; 
+            string searchText = ignoreSearch ? "" : (txtSearch?.Text?.ToLower()?.Trim() ?? "");
+
+            for (int i = startRow; i < table.Rows.Count; i++)
+            {
+                System.Data.DataRow row = table.Rows[i];
+                var no = row[0]?.ToString();
+                if (string.IsNullOrWhiteSpace(no)) continue;
+
+                string rawTeacher = row[1]?.ToString() ?? "";
+                string rawLevel = table.Columns.Count > 2 ? (row[2]?.ToString() ?? "") : "";
+
+                if (!string.IsNullOrEmpty(searchText))
+                {
+                    if (!rawTeacher.ToLower().Contains(searchText) && !rawLevel.ToLower().Contains(searchText))
+                    {
+                        continue;
+                    }
+                }
+
+                string teacherName = rawTeacher;
+                string level = rawLevel;
+                string grade = "";
+
+                if (tabType == "PT")
+                {
+                    var parts = rawTeacher.Split('-');
+                    if (parts.Length >= 3)
+                    {
+                        teacherName = parts[0].Trim();
+                        level = parts[1].Trim();
+                        string session = parts[2].Trim();
+                        
+                        var bestMatch = FindBestMatch(teacherName, level, session);
+                        if (bestMatch != null) 
+                        {
+                            grade = bestMatch.Grade;
+                            bestMatch.IsMatched = true;
+                        }
+                        else
+                        {
+                            grade = CalculateGradeFromExemptionsOnly(teacherName, level);
+                        }
+                    }
+                }
+                else
+                {
+                    teacherName = rawTeacher.Trim();
+                    level = rawLevel.Trim();
+
+                    var bestMatch = FindBestMatch(teacherName, level, null);
+                    if (bestMatch != null) 
+                    {
+                        grade = bestMatch.Grade;
+                        bestMatch.IsMatched = true;
+                    }
+                    else
+                    {
+                        grade = CalculateGradeFromExemptionsOnly(teacherName, level);
+                    }
+                }
+
+                records.Add(new TeacherExcelRecord
+                {
+                    No = no,
+                    TeacherName = rawTeacher,
+                    Level = rawLevel,
+                    Grade = string.IsNullOrEmpty(grade) ? "E" : grade,
+                    JobsTooltip = (tabType == "PT" ? FindBestMatch(teacherName, level, rawTeacher.Split('-').Length >= 3 ? rawTeacher.Split('-')[2].Trim() : null)?.JobsTooltip : FindBestMatch(teacherName, level, null)?.JobsTooltip) ?? ""
+                });
+            }
+            return records;
+        }
+
+        private async void BtnExportGoogleSheets_Click(object sender, RoutedEventArgs e)
+        {
+            var settings = PrintTrackerApp.Services.SettingsManager.LoadSettings();
+            string spreadsheetId = settings.GoogleSpreadsheetId;
+            if (string.IsNullOrWhiteSpace(spreadsheetId))
+            {
+                System.Windows.MessageBox.Show("Please configure the Google Spreadsheet ID in Settings.", "Configuration Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string appDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
+            string credentialsPath = System.IO.Path.Combine(appDataFolder, "google_credentials.json");
+            if (!System.IO.File.Exists(credentialsPath))
+            {
+                System.Windows.MessageBox.Show($"Could not find 'google_credentials.json' at {credentialsPath}.", "Credentials Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                var btn = sender as System.Windows.Controls.Button;
+                if (btn != null) btn.IsEnabled = false;
+
+                var service = new PrintTrackerApp.Services.GoogleSheetsService(spreadsheetId, credentialsPath);
+
+                var tabs = new[] { ("FT", _ftTable), ("PT", _ptTable), ("KH", _khTable) };
+                
+                foreach (var (tabName, table) in tabs)
+                {
+                    if (table == null) continue;
+                    var records = GetRecordsForTab(table, tabName, true); // ignore UI search
+                    
+                    int columns = 4;
+                    int itemsPerColumn = (int)Math.Ceiling(records.Count / (double)columns);
+                    var sheetData = new List<IList<object>>();
+                    var sheetNotes = new List<IList<string>>();
+
+                    // Build Header Row (Row 0)
+                    var headerRow = new List<object>();
+                    var headerNotes = new List<string>();
+                    for (int c = 0; c < columns; c++)
+                    {
+                        if (tabName == "PT")
+                        {
+                            headerRow.Add("Teacher"); headerNotes.Add("");
+                            headerRow.Add("Grade"); headerNotes.Add("");
+                        }
+                        else
+                        {
+                            headerRow.Add("Teacher"); headerNotes.Add("");
+                            headerRow.Add("Level / Class"); headerNotes.Add("");
+                            headerRow.Add("Grade"); headerNotes.Add("");
+                        }
+                        if (c < columns - 1)
+                        {
+                            headerRow.Add(""); // spacer column
+                            headerNotes.Add("");
+                        }
+                    }
+                    sheetData.Add(headerRow);
+                    sheetNotes.Add(headerNotes);
+
+                    // Build Data Rows
+                    for (int r = 0; r < itemsPerColumn; r++)
+                    {
+                        var row = new List<object>();
+                        var noteRow = new List<string>();
+                        for (int c = 0; c < columns; c++)
+                        {
+                            int recordIndex = c * itemsPerColumn + r;
+                            if (recordIndex < records.Count)
+                            {
+                                var rec = records[recordIndex];
+                                string teacherNote = !string.IsNullOrWhiteSpace(rec.JobsTooltip) ? rec.JobsTooltip.TrimEnd('\r', '\n') : "";
+                                if (tabName == "PT")
+                                {
+                                    row.Add(rec.TeacherName); noteRow.Add(teacherNote);
+                                    row.Add(rec.Grade); noteRow.Add("");
+                                }
+                                else
+                                {
+                                    row.Add(rec.TeacherName); noteRow.Add(teacherNote);
+                                    row.Add(rec.Level); noteRow.Add("");
+                                    row.Add(rec.Grade); noteRow.Add("");
+                                }
+                            }
+                            else
+                            {
+                                if (tabName == "PT")
+                                {
+                                    row.Add(""); noteRow.Add("");
+                                    row.Add(""); noteRow.Add("");
+                                }
+                                else
+                                {
+                                    row.Add(""); noteRow.Add("");
+                                    row.Add(""); noteRow.Add("");
+                                    row.Add(""); noteRow.Add("");
+                                }
+                            }
+                            if (c < columns - 1)
+                            {
+                                row.Add(""); // spacer column
+                                noteRow.Add("");
+                            }
+                        }
+                        sheetData.Add(row);
+                        sheetNotes.Add(noteRow);
+                    }
+
+                    await service.ClearSheetAsync(tabName);
+                    await service.WriteAndFormatDashboardDataAsync(tabName, sheetData, sheetNotes);
+                }
+
+                System.Windows.MessageBox.Show("Successfully exported to Google Sheets!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Error exporting to Google Sheets: {ex.Message}", "Export Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                var btn = sender as System.Windows.Controls.Button;
+                if (btn != null) btn.IsEnabled = true;
             }
         }
     }

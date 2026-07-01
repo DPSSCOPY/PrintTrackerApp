@@ -1,0 +1,347 @@
+using Google.Apis.Auth.OAuth2;
+using Google.Apis.Services;
+using Google.Apis.Sheets.v4;
+using Google.Apis.Sheets.v4.Data;
+using SheetColor = Google.Apis.Sheets.v4.Data.Color;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading.Tasks;
+
+namespace PrintTrackerApp.Services
+{
+    public class GoogleSheetsService
+    {
+        private static readonly string[] Scopes = { SheetsService.Scope.Spreadsheets };
+        private readonly string _applicationName = "Print Tracker App";
+        private readonly SheetsService _service;
+        private readonly string _spreadsheetId;
+
+        public GoogleSheetsService(string spreadsheetId, string credentialsPath)
+        {
+            _spreadsheetId = spreadsheetId;
+
+            GoogleCredential credential;
+            using (var stream = new FileStream(credentialsPath, FileMode.Open, FileAccess.Read))
+            {
+                credential = GoogleCredential.FromStream(stream).CreateScoped(Scopes);
+            }
+
+            _service = new SheetsService(new BaseClientService.Initializer()
+            {
+                HttpClientInitializer = credential,
+                ApplicationName = _applicationName,
+            });
+        }
+
+        public async Task<int> EnsureSheetExistsAsync(string sheetName)
+        {
+            var spreadsheet = await _service.Spreadsheets.Get(_spreadsheetId).ExecuteAsync();
+            foreach (var sheet in spreadsheet.Sheets)
+            {
+                if (string.Equals(sheet.Properties.Title, sheetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return sheet.Properties.SheetId.Value;
+                }
+            }
+
+            var addSheetRequest = new Request
+            {
+                AddSheet = new AddSheetRequest
+                {
+                    Properties = new SheetProperties
+                    {
+                        Title = sheetName
+                    }
+                }
+            };
+
+            var batchUpdate = new BatchUpdateSpreadsheetRequest
+            {
+                Requests = new List<Request> { addSheetRequest }
+            };
+
+            var response = await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
+            return response.Replies[0].AddSheet.Properties.SheetId.Value;
+        }
+
+        public async Task ClearSheetAsync(string sheetName)
+        {
+            await EnsureSheetExistsAsync(sheetName);
+            var requestBody = new ClearValuesRequest();
+            var deleteRequest = _service.Spreadsheets.Values.Clear(requestBody, _spreadsheetId, $"{sheetName}");
+            await deleteRequest.ExecuteAsync();
+        }
+
+        public async Task WriteDataAsync(string sheetName, IList<IList<object>> data)
+        {
+            var valueRange = new ValueRange { Values = data };
+            var updateRequest = _service.Spreadsheets.Values.Update(valueRange, _spreadsheetId, $"{sheetName}!A1");
+            updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+            
+            await updateRequest.ExecuteAsync();
+        }
+
+        public async Task WriteAndFormatDashboardDataAsync(string sheetName, IList<IList<object>> data, IList<IList<string>> notes = null)
+        {
+            if (data == null || data.Count == 0) return;
+
+            int sheetId = await EnsureSheetExistsAsync(sheetName);
+
+            // 1. Write text values
+            var valueRange = new ValueRange { Values = data };
+            var updateRequest = _service.Spreadsheets.Values.Update(valueRange, _spreadsheetId, $"{sheetName}!A1");
+            updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+            await updateRequest.ExecuteAsync();
+
+            // 2. Build formatting requests
+            var requests = new List<Request>();
+
+            // Clear old formatting and notes
+            requests.Add(new Request
+            {
+                RepeatCell = new RepeatCellRequest
+                {
+                    Range = new GridRange { SheetId = sheetId },
+                    Cell = new CellData { UserEnteredFormat = new CellFormat(), Note = "" },
+                    Fields = "userEnteredFormat,note"
+                }
+            });
+
+            var thinBorder = new Border
+            {
+                Style = "SOLID",
+                Color = new SheetColor { Red = 0.8f, Green = 0.8f, Blue = 0.8f }
+            };
+            var borders = new Borders
+            {
+                Top = thinBorder,
+                Bottom = thinBorder,
+                Left = thinBorder,
+                Right = thinBorder
+            };
+
+            int tables = 4;
+            int colsPerTable = (sheetName == "PT") ? 2 : 3;
+            int totalCols = (colsPerTable + 1) * tables - 1; // 11 for PT, 15 for FT/KH
+
+            // Format Header Row (Row 0)
+            for (int t = 0; t < tables; t++)
+            {
+                int startCol = t * (colsPerTable + 1);
+                int endCol = startCol + colsPerTable;
+
+                requests.Add(new Request
+                {
+                    RepeatCell = new RepeatCellRequest
+                    {
+                        Range = new GridRange { SheetId = sheetId, StartRowIndex = 0, EndRowIndex = 1, StartColumnIndex = startCol, EndColumnIndex = endCol },
+                        Cell = new CellData
+                        {
+                            UserEnteredFormat = new CellFormat
+                            {
+                                BackgroundColor = new SheetColor { Red = 0.169f, Green = 0.341f, Blue = 0.604f }, // Excel Blue
+                                TextFormat = new TextFormat { Bold = true, ForegroundColor = new SheetColor { Red = 1f, Green = 1f, Blue = 1f }, FontSize = 10 },
+                                HorizontalAlignment = "CENTER",
+                                VerticalAlignment = "MIDDLE",
+                                Borders = borders
+                            }
+                        },
+                        Fields = "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,borders)"
+                    }
+                });
+            }
+
+            // Format Data Rows (Row 1 to data.Count)
+            if (data.Count > 1)
+            {
+                for (int t = 0; t < tables; t++)
+                {
+                    int startCol = t * (colsPerTable + 1);
+                    int gradeCol = startCol + colsPerTable - 1;
+
+                    // Format non-Grade columns (Teacher, Level)
+                    requests.Add(new Request
+                    {
+                        RepeatCell = new RepeatCellRequest
+                        {
+                            Range = new GridRange { SheetId = sheetId, StartRowIndex = 1, EndRowIndex = data.Count, StartColumnIndex = startCol, EndColumnIndex = startCol + 1 },
+                            Cell = new CellData
+                            {
+                                UserEnteredFormat = new CellFormat
+                                {
+                                    TextFormat = new TextFormat { FontSize = 10 },
+                                    HorizontalAlignment = "LEFT",
+                                    VerticalAlignment = "MIDDLE",
+                                    Borders = borders
+                                }
+                            },
+                            Fields = "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment,borders)"
+                        }
+                    });
+
+                    if (colsPerTable == 3) // Level column
+                    {
+                        requests.Add(new Request
+                        {
+                            RepeatCell = new RepeatCellRequest
+                            {
+                                Range = new GridRange { SheetId = sheetId, StartRowIndex = 1, EndRowIndex = data.Count, StartColumnIndex = startCol + 1, EndColumnIndex = startCol + 2 },
+                                Cell = new CellData
+                                {
+                                    UserEnteredFormat = new CellFormat
+                                    {
+                                        TextFormat = new TextFormat { FontSize = 10 },
+                                        HorizontalAlignment = "CENTER",
+                                        VerticalAlignment = "MIDDLE",
+                                        Borders = borders
+                                    }
+                                },
+                                Fields = "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment,borders)"
+                            }
+                        });
+                    }
+
+                    // Default formatting for Grade column
+                    requests.Add(new Request
+                    {
+                        RepeatCell = new RepeatCellRequest
+                        {
+                            Range = new GridRange { SheetId = sheetId, StartRowIndex = 1, EndRowIndex = data.Count, StartColumnIndex = gradeCol, EndColumnIndex = gradeCol + 1 },
+                            Cell = new CellData
+                            {
+                                UserEnteredFormat = new CellFormat
+                                {
+                                    TextFormat = new TextFormat { FontSize = 10 },
+                                    HorizontalAlignment = "CENTER",
+                                    VerticalAlignment = "MIDDLE",
+                                    Borders = borders
+                                }
+                            },
+                            Fields = "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment,borders)"
+                        }
+                    });
+                }
+
+                // Apply specific colors to Grade cells
+                for (int r = 1; r < data.Count; r++)
+                {
+                    for (int t = 0; t < tables; t++)
+                    {
+                        int startCol = t * (colsPerTable + 1);
+                        int gradeCol = startCol + colsPerTable - 1;
+
+                        if (gradeCol < data[r].Count)
+                        {
+                            string gradeVal = data[r][gradeCol]?.ToString() ?? "";
+                            var bgColor = GetGradeBackgroundColor(gradeVal);
+                            if (bgColor != null)
+                            {
+                                requests.Add(new Request
+                                {
+                                    RepeatCell = new RepeatCellRequest
+                                    {
+                                        Range = new GridRange { SheetId = sheetId, StartRowIndex = r, EndRowIndex = r + 1, StartColumnIndex = gradeCol, EndColumnIndex = gradeCol + 1 },
+                                        Cell = new CellData
+                                        {
+                                            UserEnteredFormat = new CellFormat
+                                            {
+                                                BackgroundColor = bgColor,
+                                                TextFormat = new TextFormat { Bold = true, ForegroundColor = new SheetColor { Red = 1f, Green = 1f, Blue = 1f }, FontSize = 10 },
+                                                HorizontalAlignment = "CENTER",
+                                                VerticalAlignment = "MIDDLE",
+                                                Borders = borders
+                                            }
+                                        },
+                                        Fields = "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,borders)"
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Auto-resize columns
+            requests.Add(new Request
+            {
+                AutoResizeDimensions = new AutoResizeDimensionsRequest
+                {
+                    Dimensions = new DimensionRange
+                    {
+                        SheetId = sheetId,
+                        Dimension = "COLUMNS",
+                        StartIndex = 0,
+                        EndIndex = totalCols
+                    }
+                }
+            });
+
+            // Set spacer column widths
+            int[] spacers = (sheetName == "PT") ? new[] { 2, 5, 8 } : new[] { 3, 7, 11 };
+            foreach (int sp in spacers)
+            {
+                requests.Add(new Request
+                {
+                    UpdateDimensionProperties = new UpdateDimensionPropertiesRequest
+                    {
+                        Range = new DimensionRange
+                        {
+                            SheetId = sheetId,
+                            Dimension = "COLUMNS",
+                            StartIndex = sp,
+                            EndIndex = sp + 1
+                        },
+                        Properties = new DimensionProperties { PixelSize = 25 },
+                        Fields = "pixelSize"
+                    }
+                });
+            }
+
+            if (notes != null && notes.Count > 0)
+            {
+                var rowsData = new List<RowData>();
+                foreach (var noteRow in notes)
+                {
+                    var rowData = new RowData { Values = new List<CellData>() };
+                    if (noteRow != null)
+                    {
+                        foreach (var noteText in noteRow)
+                        {
+                            rowData.Values.Add(new CellData { Note = string.IsNullOrWhiteSpace(noteText) ? null : noteText });
+                        }
+                    }
+                    rowsData.Add(rowData);
+                }
+
+                requests.Add(new Request
+                {
+                    UpdateCells = new UpdateCellsRequest
+                    {
+                        Start = new GridCoordinate { SheetId = sheetId, RowIndex = 0, ColumnIndex = 0 },
+                        Rows = rowsData,
+                        Fields = "note"
+                    }
+                });
+            }
+
+            var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = requests };
+            await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
+        }
+
+        private SheetColor GetGradeBackgroundColor(string grade)
+        {
+            if (string.IsNullOrWhiteSpace(grade)) return null;
+            grade = grade.Trim();
+            if (grade.Equals("A", StringComparison.OrdinalIgnoreCase)) return new SheetColor { Red = 0.298f, Green = 0.686f, Blue = 0.314f }; // #4CAF50
+            if (grade.Equals("B", StringComparison.OrdinalIgnoreCase)) return new SheetColor { Red = 0.129f, Green = 0.588f, Blue = 0.953f }; // #2196F3
+            if (grade.Equals("C", StringComparison.OrdinalIgnoreCase)) return new SheetColor { Red = 1.0f, Green = 0.757f, Blue = 0.027f }; // #FFC107
+            if (grade.Equals("D", StringComparison.OrdinalIgnoreCase)) return new SheetColor { Red = 1.0f, Green = 0.596f, Blue = 0.0f }; // #FF9800
+            if (grade.Equals("E", StringComparison.OrdinalIgnoreCase) || grade.StartsWith("Struggling", StringComparison.OrdinalIgnoreCase)) return new SheetColor { Red = 0.957f, Green = 0.263f, Blue = 0.212f }; // #F44336
+            if (grade.Equals("Exam", StringComparison.OrdinalIgnoreCase)) return new SheetColor { Red = 0.612f, Green = 0.153f, Blue = 0.690f }; // #9C27B0
+            if (grade.Equals("No Teach", StringComparison.OrdinalIgnoreCase)) return new SheetColor { Red = 0.376f, Green = 0.490f, Blue = 0.545f }; // #607D8B
+            if (grade.Contains("Exam", StringComparison.OrdinalIgnoreCase) && grade.Contains("No Teach", StringComparison.OrdinalIgnoreCase)) return new SheetColor { Red = 0.0f, Green = 0.588f, Blue = 0.533f }; // #009688
+            return null;
+        }
+    }
+}

@@ -36,6 +36,9 @@ namespace PrintTrackerApp.Services
         public string SourceFolderPath { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         public List<AppNotification> Notifications { get; set; } = new List<AppNotification>();
         
+        // Google Sheets Integration
+        public string GoogleSpreadsheetId { get; set; } = "";
+        
         // Auto Print Settings
         public string FoxitPath { get; set; } = "";
         public string HoldPrintUserId { get; set; } = "";

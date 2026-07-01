@@ -193,7 +193,7 @@ namespace PrintTrackerApp
             dgSchedule.Columns.Add(new DataGridTextColumn { Header = "Level", Binding = new System.Windows.Data.Binding("Level"), IsReadOnly = true, Width = new DataGridLength(100) });
 
             // Generate date columns
-            var statuses = new List<string> { "teach", "no teach", "exam" };
+            var statuses = new List<string> { "Teach", "No Teach", "Exam" };
             for (DateTime date = start; date <= end; date = date.AddDays(1))
             {
                 string dateStr = date.ToString("yyyy-MM-dd");
@@ -238,11 +238,14 @@ namespace PrintTrackerApp
                 for (DateTime date = start; date <= end; date = date.AddDays(1))
                 {
                     string dateStr = date.ToString("yyyy-MM-dd");
-                    string status = "teach";
+                    string status = "Teach";
 
                     if (hasSchedule && _manager.Schedules[key].ContainsKey(dateStr))
                     {
                         status = _manager.Schedules[key][dateStr];
+                        if (status == "teach") status = "Teach";
+                        else if (status == "no teach") status = "No Teach";
+                        else if (status == "exam") status = "Exam";
                     }
 
                     row[dateStr] = status;
@@ -314,7 +317,7 @@ namespace PrintTrackerApp
                 for (DateTime date = start; date <= end; date = date.AddDays(1))
                 {
                     string dateStr = date.ToString("yyyy-MM-dd");
-                    string status = row[dateStr]?.ToString() ?? "teach";
+                    string status = row[dateStr]?.ToString() ?? "Teach";
                     _manager.Schedules[key][dateStr] = status;
                 }
             }
@@ -439,12 +442,18 @@ namespace PrintTrackerApp
                             {
                                 var cleanPath = bindingPath.Replace("[", "").Replace("]", "");
                                 rowView[cleanPath] = _fillSourceValue;
+                                rowView.EndEdit();
                             }
                         }
                     }
-                    
                     _undoManager.AddBatch(_currentUndoBatch);
                     _currentUndoBatch = null;
+                    
+                    System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        dgSchedule.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true);
+                        dgSchedule.Items.Refresh();
+                    }), System.Windows.Threading.DispatcherPriority.Background);
                 }
             }
         }
@@ -500,13 +509,19 @@ namespace PrintTrackerApp
                             {
                                 var cleanPath = bindingPath.Replace("[", "").Replace("]", "");
                                 rowView[cleanPath] = vals[c];
+                                rowView.EndEdit();
                             }
                         }
                     }
                 }
-                
                 _undoManager.AddBatch(_currentUndoBatch);
                 _currentUndoBatch = null;
+                
+                System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    dgSchedule.CommitEdit(System.Windows.Controls.DataGridEditingUnit.Row, true);
+                    dgSchedule.Items.Refresh();
+                }), System.Windows.Threading.DispatcherPriority.Background);
                 
                 e.Handled = true;
             }

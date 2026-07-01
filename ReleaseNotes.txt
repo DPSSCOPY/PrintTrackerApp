@@ -1,25 +1,9 @@
-Update Version 1.0.15 Features:
-- Added Background Print Tracking mode to silently run at system startup.
-- Prevent duplicate instances from running; opening the app brings the background instance to the front.
-- Disabled UAC prompt (Run as Administrator) to allow silent background start. Print Spooler folder permissions are now configured via the Installer.
-- Modified close behavior to minimize the app to the System Tray instead of exiting, ensuring no print logs are missed.
+Update Version 1.0.16 Features:
+- Added Google Sheets Export with 4 side-by-side tables (matching desktop app UI layout) with spacer columns.
+- Implemented rich Excel Blue header formatting, borders, and auto-sizing for exported sheets.
+- Added Automatic Grade Coloring (A=Green, B=Blue, C=Yellow, D=Orange, E/Struggling=Red, Exam=Purple, No Teach=Gray, Exam/No Teach=Teal) in exported Google Sheets.
+- Added automatic Cell Notes (Comments) when hovering over teachers in Google Sheets showing full print history file list.
+- Fixed issue where GoogleSpreadsheetId setting was reset to blank upon opening Settings window.
+- Added Upload Credentials JSON button in Settings to securely load Service Account credentials without exposing confidential keys in GitHub.
 
-Update Version 1.0.14 Features:
-- Added Data Grid cell Block Fill (Drag to Copy) functionality for fast data entry in Teacher Dashboard.
-- Added Undo/Redo capability for Edit and Block Fill actions.
-- Fixed 5-Week month calculation to correctly dynamically grade based on actual duration when weeks are deleted.
-- Made grading thresholds (20/25 days) automatically adjust according to the active month duration.
 
-Update Version 1.0.13 Features:
-- Bug Fix: "Files Waiting" count now correctly ignores hidden system files (e.g. desktop.ini, Thumbs.db) and exclusively counts PDF files.
-
-Update Version 1.0.12 Features:
-- Integrated the Teacher Dashboard directly into the main window as a new Tab for seamless navigation.
-- Added Data Zoom In/Out capability (Ctrl + Mouse Wheel) to the Dashboard data tables.
-- Implemented an "Unmatched Files" feature to track and view print jobs with malformed or missing teacher/level names.
-- Enhanced print log matching logic to more accurately handle different file naming conventions.
-- Added dynamic Date Columns to the Teacher Dashboard to view pages printed per day.
-- Added 5 Weeks Monthly Auto-Generation and Grading logic.
-- Added "Teacher Schedule Settings" allowing customization of teaching and printing days (e.g., exemptions for non-teaching days).
-- Improved Dashboard UI layout responsiveness (WrapPanel) and visual clarity (font colors for labels).
-- Minor UI layout fixes and performance improvements.

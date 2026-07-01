@@ -17,6 +17,7 @@ namespace PrintTrackerApp.Services
 
         public bool IsRunning { get; private set; }
         public bool IsPaused { get; set; } = false;
+        public bool IsPrinting { get; private set; } = false;
 
         private Dictionary<string, DateTime> _failedFilesCooldown = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
@@ -55,6 +56,7 @@ namespace PrintTrackerApp.Services
             bool hasProcessedFiles = false;
             string watchFolder = settings.SourceFolderPath;
             int lastPriorityLevel = 0;
+            bool wasPaused = false;
 
             while (!token.IsCancellationRequested)
             {
@@ -62,8 +64,18 @@ namespace PrintTrackerApp.Services
                 {
                     if (IsPaused)
                     {
+                        if (!wasPaused)
+                        {
+                            StatusChanged?.Invoke(this, "Paused");
+                            wasPaused = true;
+                        }
                         Thread.Sleep(500);
                         continue;
+                    }
+                    if (wasPaused)
+                    {
+                        StatusChanged?.Invoke(this, "Running");
+                        wasPaused = false;
                     }
 
                     // Always reload settings so dynamic changes to priority lists reflect without restart
@@ -185,7 +197,10 @@ namespace PrintTrackerApp.Services
                         FileProcessingStarted?.Invoke(this, fileName);
                         
                         int actualUiDelay = currentSettings.EnableUiStepDelay ? currentSettings.UiStepDelayMs : 300;
+                        
+                        IsPrinting = true;
                         bool success = PrintPdfWithUIAutomation(fileToProcess, currentSettings.FoxitPath, currentSettings.HoldPrintUserId, fileName, currentSettings.AutoPrintCopies, token, currentSettings.FoxitWindowStyle, actualUiDelay, currentSettings.SkipBlankPage, currentSettings);
+                        IsPrinting = false;
                         
                         FileProcessingCompleted?.Invoke(this, (fileName, success));
                         
@@ -822,22 +837,35 @@ namespace PrintTrackerApp.Services
         {
             try
             {
-                // Most robust way for Win32 Edit controls: SendMessage WM_SETTEXT
+                // Try using ValuePattern FIRST (more reliable for triggering internal events)
+                if (element.TryGetCurrentPattern(ValuePattern.Pattern, out object pattern))
+                {
+                    ((ValuePattern)pattern).SetValue(text);
+                    Thread.Sleep(100);
+                    if (VerifyTextElement(element, text)) return true;
+                }
+
+                // Fallback to WM_SETTEXT
                 int hwnd = element.Current.NativeWindowHandle;
                 if (hwnd != 0)
                 {
                     SendMessage((IntPtr)hwnd, WM_SETTEXT, IntPtr.Zero, text);
-                    Thread.Sleep(50);
-                    return VerifyTextElement(element, text);
+                    Thread.Sleep(100);
+                    if (VerifyTextElement(element, text)) return true;
                 }
 
-                // Try using ValuePattern
-                if (element.TryGetCurrentPattern(ValuePattern.Pattern, out object pattern))
+                // Final Fallback: SendKeys (what made it 100% reliable before for some systems)
+                try 
                 {
-                    ((ValuePattern)pattern).SetValue(text);
+                    element.SetFocus();
+                    Thread.Sleep(150);
+                    System.Windows.Forms.SendKeys.SendWait("^{HOME}^+{END}{BACKSPACE}");
                     Thread.Sleep(50);
-                    return VerifyTextElement(element, text);
-                }
+                    System.Windows.Forms.SendKeys.SendWait(text);
+                    Thread.Sleep(150);
+                    if (VerifyTextElement(element, text)) return true;
+                } 
+                catch { }
             }
             catch { }
             return false;

@@ -25,6 +25,7 @@ namespace PrintTrackerApp
                 Priority2Prefixes = settings.Priority2Prefixes,
                 EnablePriority3 = settings.EnablePriority3,
                 Priority3Prefixes = settings.Priority3Prefixes,
+                GoogleSpreadsheetId = settings.GoogleSpreadsheetId,
                 TelegramBotUrl = settings.TelegramBotUrl,
                 TelegramBotToken = settings.TelegramBotToken,
                 TelegramChatId = settings.TelegramChatId,
@@ -47,6 +48,7 @@ namespace PrintTrackerApp
             chkPriority3.IsChecked = CurrentSettings.EnablePriority3;
             txtPriority3.Text = CurrentSettings.Priority3Prefixes;
 
+            txtGoogleSpreadsheetId.Text = CurrentSettings.GoogleSpreadsheetId;
             txtTelegramBotUrl.Text = CurrentSettings.TelegramBotUrl;
             txtTelegramToken.Text = CurrentSettings.TelegramBotToken;
             txtTelegramChatId.Text = CurrentSettings.TelegramChatId;
@@ -54,6 +56,8 @@ namespace PrintTrackerApp
             chkNotifySentToPrinter.IsChecked = CurrentSettings.NotifySentToPrinter;
             chkNotifyStoringCompleted.IsChecked = CurrentSettings.NotifyStoringCompleted;
             chkNotifyPrintCompleted.IsChecked = CurrentSettings.NotifyPrintCompleted;
+            
+            UpdateCredentialsStatus();
 
             chkAutoShutdown.IsChecked = CurrentSettings.EnableAutoShutdown;
             rbShutdownAfterPrint.IsChecked = CurrentSettings.AutoShutdownMode == 0;
@@ -131,6 +135,7 @@ namespace PrintTrackerApp
             CurrentSettings.EnablePriority3 = chkPriority3.IsChecked ?? false;
             CurrentSettings.Priority3Prefixes = txtPriority3.Text.Trim();
             
+            CurrentSettings.GoogleSpreadsheetId = txtGoogleSpreadsheetId.Text.Trim();
             CurrentSettings.TelegramBotUrl = txtTelegramBotUrl.Text.Trim();
             CurrentSettings.TelegramBotToken = txtTelegramToken.Text.Trim();
             CurrentSettings.TelegramChatId = txtTelegramChatId.Text.Trim();
@@ -261,6 +266,52 @@ namespace PrintTrackerApp
             finally
             {
                 btnTestTelegram.IsEnabled = true;
+            }
+        }
+
+        private void UpdateCredentialsStatus()
+        {
+            string appDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
+            string credPath = System.IO.Path.Combine(appDataFolder, "google_credentials.json");
+            
+            if (System.IO.File.Exists(credPath))
+            {
+                txtCredentialsStatus.Text = "✅ Loaded";
+                txtCredentialsStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(25, 135, 84)); // #198754
+            }
+            else
+            {
+                txtCredentialsStatus.Text = "❌ Not Loaded";
+                txtCredentialsStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 53, 69)); // #DC3545
+            }
+        }
+
+        private void BtnUploadCredentials_Click(object sender, RoutedEventArgs e)
+        {
+            Microsoft.Win32.OpenFileDialog openFileDialog = new Microsoft.Win32.OpenFileDialog();
+            openFileDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*";
+            openFileDialog.Title = "Select google_credentials.json";
+            
+            if (openFileDialog.ShowDialog() == true)
+            {
+                try
+                {
+                    string appDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
+                    if (!System.IO.Directory.Exists(appDataFolder))
+                    {
+                        System.IO.Directory.CreateDirectory(appDataFolder);
+                    }
+                    
+                    string destPath = System.IO.Path.Combine(appDataFolder, "google_credentials.json");
+                    System.IO.File.Copy(openFileDialog.FileName, destPath, true);
+                    
+                    UpdateCredentialsStatus();
+                    System.Windows.MessageBox.Show("Credentials uploaded and stored securely in AppData.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show($"Error uploading credentials: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
         }
     }
