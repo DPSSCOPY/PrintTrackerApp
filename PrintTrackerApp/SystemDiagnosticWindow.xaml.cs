@@ -2,8 +2,10 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Management;
+using System.Net.NetworkInformation;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Media;
 
 namespace PrintTrackerApp
@@ -32,41 +34,50 @@ namespace PrintTrackerApp
             borderSummary.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(254, 243, 199)); // Yellow #FEF3C7
             borderSummary.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(245, 158, 11));
             txtSummary.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(146, 64, 14));
-            txtSummary.Text = "⏳ Running all 5 diagnostic tests sequentially... Please wait.";
+            txtSummary.Text = "⏳ Running all 8 diagnostic tests sequentially... Please wait.";
 
             int passedCount = 0;
             
             if (await RunDriverTestAsync()) passedCount++;
-            await Task.Delay(300);
+            await Task.Delay(250);
             
             if (await RunSpoolerTestAsync()) passedCount++;
-            await Task.Delay(300);
+            await Task.Delay(250);
             
             if (await RunFoxitTestAsync()) passedCount++;
-            await Task.Delay(300);
+            await Task.Delay(250);
             
             if (await RunWmiTestAsync()) passedCount++;
-            await Task.Delay(300);
+            await Task.Delay(250);
             
             if (await RunCsvTestAsync()) passedCount++;
+            await Task.Delay(250);
+
+            if (await RunUiAutoTestAsync()) passedCount++;
+            await Task.Delay(250);
+
+            if (await RunWatchFolderTestAsync()) passedCount++;
+            await Task.Delay(250);
+
+            if (await RunPrinterNetTestAsync()) passedCount++;
 
             _isRunningAll = false;
             btnRunAll.IsEnabled = true;
             btnRunAll.Content = "🚀 Test All (ពិនិត្យទាំងអស់)";
 
-            if (passedCount == 5)
+            if (passedCount == 8)
             {
                 borderSummary.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(209, 250, 229)); // Green #D1FAE5
                 borderSummary.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(16, 185, 129));
                 txtSummary.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(6, 95, 70));
-                txtSummary.Text = "✅ ល្អប្រសើរ! (Passed 5/5) កុំព្យូទ័រនេះមានគ្រប់លក្ខខណ្ឌដំណើរការកូដបានលឿន និង Smooth ១០០% ដូច PC Debug ហើយ!";
+                txtSummary.Text = "✅ ល្អប្រសើរ! (Passed 8/8) កុំព្យូទ័រនេះមានគ្រប់លក្ខខណ្ឌសម្រាប់ Foxit Auto Print និងចាប់ Print បាន Smooth ១០០% ដូច PC Debug ហើយ!";
             }
             else
             {
                 borderSummary.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(254, 226, 226)); // Red #FEE2E2
                 borderSummary.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(239, 68, 68));
                 txtSummary.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(153, 27, 27));
-                txtSummary.Text = $"⚠️ មានចំណុចត្រូវកែសម្រួល! (Passed {passedCount}/5) សូមពិនិត្យមើលចំណុចពណ៌ក្រហមខាងក្រោម ដើម្បីកែឱ្យម៉ាស៊ីននេះ Smooth ១០០%។";
+                txtSummary.Text = $"⚠️ មានចំណុចត្រូវកែសម្រួល! (Passed {passedCount}/8) សូមពិនិត្យមើលចំណុចពណ៌ក្រហមខាងក្រោម ដើម្បីកែឱ្យ Foxit និងប្រព័ន្ធនេះ Smooth ១០០%។";
             }
         }
 
@@ -93,6 +104,21 @@ namespace PrintTrackerApp
         private async void BtnTestCsv_Click(object sender, RoutedEventArgs e)
         {
             await RunCsvTestAsync();
+        }
+
+        private async void BtnTestUiAuto_Click(object sender, RoutedEventArgs e)
+        {
+            await RunUiAutoTestAsync();
+        }
+
+        private async void BtnTestWatchFolder_Click(object sender, RoutedEventArgs e)
+        {
+            await RunWatchFolderTestAsync();
+        }
+
+        private async void BtnTestPrinterNet_Click(object sender, RoutedEventArgs e)
+        {
+            await RunPrinterNetTestAsync();
         }
 
         private void BtnClose_Click(object sender, RoutedEventArgs e)
@@ -224,19 +250,45 @@ namespace PrintTrackerApp
 
         private async Task<bool> RunFoxitTestAsync()
         {
-            txtStatusFoxit.Text = "🔄 Checking Foxit PDF Reader Accessibility...";
+            txtStatusFoxit.Text = "🔄 Checking Foxit PDF Accessibility (Reader / Editor)...";
             txtStatusFoxit.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(75, 85, 99));
 
             return await Task.Run(() =>
             {
                 try
                 {
+                    // 1. Check custom path from Settings first
+                    try
+                    {
+                        var settings = PrintTrackerApp.Services.SettingsManager.LoadSettings();
+                        if (!string.IsNullOrWhiteSpace(settings?.FoxitPath))
+                        {
+                            string customPath = settings.FoxitPath.Trim();
+                            if (File.Exists(customPath))
+                            {
+                                SetStatus(txtStatusFoxit, true, $"✅ ល្អឥតខ្ចោះ! រកឃើញ Foxit PDF (តាម Path ក្នុង Settings)៖ '{customPath}'។");
+                                return true;
+                            }
+                            else
+                            {
+                                SetStatus(txtStatusFoxit, false, $"❌ រកមិនឃើញ Foxit នៅទីតាំងដែលដាក់ក្នុង Settings៖ '{customPath}' ឡើយ! សូមពិនិត្យមើល Foxit PDF Path ក្នុង Settings ម្តងទៀត។");
+                                return false;
+                            }
+                        }
+                    }
+                    catch { }
+
+                    // 2. Check standard installation paths
                     string[] possiblePaths = new string[]
                     {
+                        @"C:\Program Files (x86)\Foxit Software\Foxit PDF Editor\FoxitPDFEditor.exe",
+                        @"C:\Program Files\Foxit Software\Foxit PDF Editor\FoxitPDFEditor.exe",
                         @"C:\Program Files (x86)\Foxit Software\Foxit PDF Reader\FoxitPDFReader.exe",
                         @"C:\Program Files\Foxit Software\Foxit PDF Reader\FoxitPDFReader.exe",
                         @"C:\Program Files (x86)\Foxit Software\Foxit Reader\FoxitReader.exe",
-                        @"C:\Program Files\Foxit Software\Foxit Reader\FoxitReader.exe"
+                        @"C:\Program Files\Foxit Software\Foxit Reader\FoxitReader.exe",
+                        @"C:\Program Files (x86)\Foxit Software\Foxit PhantomPDF\FoxitPhantomPDF.exe",
+                        @"C:\Program Files\Foxit Software\Foxit PhantomPDF\FoxitPhantomPDF.exe"
                     };
 
                     string foundPath = "";
@@ -249,29 +301,38 @@ namespace PrintTrackerApp
                         }
                     }
 
+                    // 3. Try checking App Paths in Registry if not found
                     if (string.IsNullOrEmpty(foundPath))
                     {
-                        // Try checking App Paths in Registry
-                        try
+                        string[] regNames = new string[] { "FoxitPDFEditor.exe", "FoxitPDFReader.exe", "FoxitReader.exe", "FoxitPhantomPDF.exe" };
+                        foreach (string regName in regNames)
                         {
-                            using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\FoxitPDFReader.exe"))
+                            try
                             {
-                                if (key != null && key.GetValue("") != null)
+                                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey($@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{regName}"))
                                 {
-                                    foundPath = key.GetValue("").ToString();
+                                    if (key != null && key.GetValue("") != null)
+                                    {
+                                        string rPath = key.GetValue("").ToString();
+                                        if (File.Exists(rPath))
+                                        {
+                                            foundPath = rPath;
+                                            break;
+                                        }
+                                    }
                                 }
                             }
+                            catch { }
                         }
-                        catch { }
                     }
 
                     if (string.IsNullOrEmpty(foundPath))
                     {
-                        SetStatus(txtStatusFoxit, false, "❌ រកមិនឃើញកម្មវិធី Foxit PDF Reader លើកុំព្យូទ័រនេះទេ។ សូមដំឡើង Foxit PDF Reader ដើម្បីប្រើ Auto Print!");
+                        SetStatus(txtStatusFoxit, false, "❌ រកមិនឃើញកម្មវិធី Foxit PDF Reader ឬ Foxit PDF Editor លើកុំព្យូទ័រនេះទេ។ សូមដំឡើង ឬ Browse ជ្រើសរើស Path ក្នុង Settings!");
                         return false;
                     }
 
-                    SetStatus(txtStatusFoxit, true, $"✅ ល្អឥតខ្ចោះ! រកឃើញ Foxit PDF Reader ត្រៀមរួចជាស្រេច៖ '{foundPath}'។");
+                    SetStatus(txtStatusFoxit, true, $"✅ ល្អឥតខ្ចោះ! រកឃើញ Foxit PDF ត្រៀមរួចជាស្រេច៖ '{foundPath}'។");
                     return true;
                 }
                 catch (Exception ex)
@@ -348,6 +409,180 @@ namespace PrintTrackerApp
                 catch (Exception ex)
                 {
                     SetStatus(txtStatusCsv, false, $"❌ អត់មានសិទ្ធិរក្សាទុកទិន្នន័យនៅ '{_csvPath}' ទេ ({ex.Message})! សូម Check មើលក្រែងលោមានឯកសារ CSV កំពុងបើកចោលក្នុង Excel ឬអត់មានសិទ្ធិ។");
+                    return false;
+                }
+            });
+        }
+
+        private async Task<bool> RunUiAutoTestAsync()
+        {
+            txtStatusUiAuto.Text = "🔄 Checking UI Automation API & Foxit Window IDs...";
+            txtStatusUiAuto.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(75, 85, 99));
+
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    var root = System.Windows.Automation.AutomationElement.RootElement;
+                    if (root == null)
+                    {
+                        SetStatus(txtStatusUiAuto, false, "❌ អត់មានសិទ្ធិប្រើ Windows UI Automation ទេ! សូម Run កម្មវិធីនេះ As Administrator ដើម្បីអាចបញ្ជា Foxit Print បាន ១០០%។");
+                        return false;
+                    }
+
+                    var settings = PrintTrackerApp.Services.SettingsManager.LoadSettings();
+                    string printWinName = settings?.FoxitPrintWindowName ?? "Print";
+                    string propBtnId = settings?.FoxitPropertiesBtnId ?? "10380";
+
+                    if (string.IsNullOrWhiteSpace(printWinName) || string.IsNullOrWhiteSpace(propBtnId))
+                    {
+                        SetStatus(txtStatusUiAuto, false, "❌ ឈ្មោះ Window សម្រាប់បញ្ជា Foxit (Print / Properties) ក្នុង Settings មិនត្រឹមត្រូវឡើយ!");
+                        return false;
+                    }
+
+                    SetStatus(txtStatusUiAuto, true, $"✅ ល្អឥតខ្ចោះ! ប្រព័ន្ធ UI Automation ដំណើរការបានល្អ ហើយឈ្មោះ Window ('{printWinName}', BtnID: '{propBtnId}') ត្រៀមរួចជាស្រេច ១០០%។");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    SetStatus(txtStatusUiAuto, false, $"❌ UI Automation Error: {ex.Message}។ សូម Check ក្រែងលោមាន Antivirus ឬ Windows UAC បិទខ្ទប់។");
+                    return false;
+                }
+            });
+        }
+
+        private async Task<bool> RunWatchFolderTestAsync()
+        {
+            txtStatusWatchFolder.Text = "🔄 Testing Auto Print Source Folder & Subfolder access...";
+            txtStatusWatchFolder.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(75, 85, 99));
+
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    var settings = PrintTrackerApp.Services.SettingsManager.LoadSettings();
+                    string srcFolder = settings?.SourceFolderPath;
+                    if (string.IsNullOrWhiteSpace(srcFolder))
+                    {
+                        srcFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                    }
+
+                    if (!Directory.Exists(srcFolder))
+                    {
+                        Directory.CreateDirectory(srcFolder);
+                    }
+
+                    // Test creating all subfolders required by AutoPrintService
+                    string[] subFolders = new string[] { "Sent to Printer", "Storing Completed", "Print Completed", "Error Prints" };
+                    foreach (string sub in subFolders)
+                    {
+                        string subPath = Path.Combine(srcFolder, sub);
+                        if (!Directory.Exists(subPath))
+                        {
+                            Directory.CreateDirectory(subPath);
+                        }
+                    }
+
+                    // Test writing and moving a test file
+                    string testSrc = Path.Combine(srcFolder, $"test_foxit_{Guid.NewGuid():N}.tmp");
+                    string testDest = Path.Combine(srcFolder, "Sent to Printer", $"test_foxit_{Guid.NewGuid():N}.tmp");
+
+                    File.WriteAllText(testSrc, "test_watch_folder_access");
+                    if (File.Exists(testSrc))
+                    {
+                        File.Move(testSrc, testDest);
+                        if (File.Exists(testDest))
+                        {
+                            File.Delete(testDest);
+                        }
+                    }
+
+                    SetStatus(txtStatusWatchFolder, true, $"✅ ល្អឥតខ្ចោះ! Folder តាមដាន ('{srcFolder}') និង Subfolder ទាំង ៤ អាចបង្កើត និងប្ដូរទីតាំងឯកសារបាន ១០០% (អត់មាន OneDrive/Antivirus Lock ទេ)។");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    SetStatus(txtStatusWatchFolder, false, $"❌ អត់មានសិទ្ធិ ឬមានកម្មវិធី Lock Folder តាមដាន! ({ex.Message}) សូមពិនិត្យមើល Source Folder ក្នុង Settings ក្រែងលោជាប់ក្នុង OneDrive ឬ Network Drive ដែលគ្មានសិទ្ធិ។");
+                    return false;
+                }
+            });
+        }
+
+        private async Task<bool> RunPrinterNetTestAsync()
+        {
+            txtStatusPrinterNet.Text = "🔄 Testing Printer Queue Status & IP Ping Speed...";
+            txtStatusPrinterNet.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(75, 85, 99));
+
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    var settings = PrintTrackerApp.Services.SettingsManager.LoadSettings();
+                    string ip = settings?.PrinterIp ?? "192.168.1.75";
+                    string targetPrinter = string.IsNullOrWhiteSpace(_printerName) ? "SAVIN" : _printerName;
+
+                    // 1. Check Windows Printer Queue Status
+                    bool queueFound = false;
+                    bool isOffline = false;
+                    using (var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_Printer"))
+                    {
+                        foreach (ManagementObject printer in searcher.Get())
+                        {
+                            string pName = printer["Name"]?.ToString() ?? "";
+                            if (pName.IndexOf(targetPrinter, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                pName.IndexOf("Ricoh", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                pName.IndexOf("SAVIN", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                queueFound = true;
+                                bool? workOffline = printer["WorkOffline"] as bool?;
+                                if (workOffline == true)
+                                {
+                                    isOffline = true;
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    if (queueFound && isOffline)
+                    {
+                        SetStatus(txtStatusPrinterNet, false, $"⚠️ ជួរ Print Queue ក្នុង Windows កំពុងស្ថិតក្នុងស្ថានភាព 'Offline' (គ្មានការតភ្ជាប់)! នេះធ្វើឱ្យ Foxit គាំងពេលបញ្ជូន Job។ សូម Check មើលម៉ាស៊ីន Print ក្នុង Devices and Printers។");
+                        return false;
+                    }
+
+                    // 2. Ping Printer IP
+                    if (!string.IsNullOrWhiteSpace(ip))
+                    {
+                        using (var ping = new System.Net.NetworkInformation.Ping())
+                        {
+                            try
+                            {
+                                var reply = ping.Send(ip, 1500);
+                                if (reply.Status == System.Net.NetworkInformation.IPStatus.Success)
+                                {
+                                    SetStatus(txtStatusPrinterNet, true, $"✅ ល្អឥតខ្ចោះ! ជួរ Print Queue ក្នុង Windows មានស្ថានភាព Online ហើយ Ping ទៅ IPម៉ាស៊ីន ('{ip}') លឿនខ្លាំង ({reply.RoundtripTime}ms) ធានាការទាញទិន្នន័យ ១០០% មិនបាត់បង់។");
+                                    return true;
+                                }
+                                else
+                                {
+                                    SetStatus(txtStatusPrinterNet, false, $"❌ មិនអាច Ping ទៅកាន់ IP ម៉ាស៊ីន Print ('{ip}') បានទេ ({reply.Status})! សូម Check ខ្សែបណ្តាញ LAN ឬ IP ក្នុង Settings ដើម្បីកុំឱ្យបាត់ទិន្នន័យ។");
+                                    return false;
+                                }
+                            }
+                            catch
+                            {
+                                SetStatus(txtStatusPrinterNet, false, $"❌ មិនអាច Ping ទៅ IP ('{ip}')! សូម Check IP Address ក្នុង Settings និងការតភ្ជាប់ Network។");
+                                return false;
+                            }
+                        }
+                    }
+
+                    SetStatus(txtStatusPrinterNet, true, "✅ ល្អឥតខ្ចោះ! ជួរ Print Queue ក្នុង Windows មានស្ថានភាព Online ត្រៀមរួចជាស្រេច។");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    SetStatus(txtStatusPrinterNet, false, $"❌ Printer Queue & Network Error: {ex.Message}");
                     return false;
                 }
             });

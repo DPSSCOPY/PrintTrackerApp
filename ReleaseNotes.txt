@@ -1,3 +1,8 @@
+Update Version 1.0.19 Features:
+- Added 3 new critical diagnostics to the **🛠️ PC Health & Diagnostic Tool**: Foxit UI Automation & Control check, Auto Print Watch Folder & Subfolders access check, and Printer Queue Status & Network IP communication check.
+- Added custom Foxit Path detection in diagnostics, prioritizing user-specified paths in Settings over standard registry paths.
+- Added automatic detection for Foxit PDF Editor (`FoxitPDFEditor.exe`) and Foxit PhantomPDF in both diagnostics and Auto Print.
+
 Update Version 1.0.18 Features:
 - Added interactive **🛠️ PC Health & Diagnostic Tool** inside Settings app with individual test buttons to check WMI responsiveness, Spooler permissions, Ricoh printer PCL6 driver type, Foxit PDF accessibility, and CSV storage permissions.
 - Fixed an issue where Hold Print Name and User ID would revert to default document names (e.g. IMG_8482_2.pdf / DPSS COPY PC1) after reopening the application by automatically exporting updated background job details to CSV storage.

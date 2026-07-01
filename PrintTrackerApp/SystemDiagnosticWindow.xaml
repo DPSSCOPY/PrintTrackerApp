@@ -139,8 +139,8 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Margin="0,0,15,0">
-                            <TextBlock Text="3. 📄 Foxit PDF Reader Accessibility Check" FontSize="15" FontWeight="Bold" Foreground="#1F2937" Margin="0,0,0,4"/>
-                            <TextBlock Text="ពិនិត្យការដំឡើង និងការតភ្ជាប់កម្មវិធី Foxit PDF សម្រាប់ការបញ្ជា Auto Print។" FontSize="12" Foreground="#6B7280" Margin="0,0,0,8"/>
+                            <TextBlock Text="3. 📄 Foxit PDF (Reader / Editor) Accessibility Check" FontSize="15" FontWeight="Bold" Foreground="#1F2937" Margin="0,0,0,4"/>
+                            <TextBlock Text="ពិនិត្យការដំឡើង និងការតភ្ជាប់កម្មវិធី Foxit PDF (Reader ឬ Editor) សម្រាប់ Auto Print។" FontSize="12" Foreground="#6B7280" Margin="0,0,0,8"/>
                             <TextBlock x:Name="txtStatusFoxit" Text="⏳ Ready to check..." FontSize="13" FontWeight="SemiBold" Foreground="#4B5563" TextWrapping="Wrap"/>
                         </StackPanel>
                         <Button x:Name="btnTestFoxit" Grid.Column="1" Content="Test Foxit" Style="{StaticResource SecondaryButton}" Width="100" VerticalAlignment="Center" Click="BtnTestFoxit_Click"/>
@@ -176,6 +176,54 @@
                             <TextBlock x:Name="txtStatusCsv" Text="⏳ Ready to check..." FontSize="13" FontWeight="SemiBold" Foreground="#4B5563" TextWrapping="Wrap"/>
                         </StackPanel>
                         <Button x:Name="btnTestCsv" Grid.Column="1" Content="Test CSV" Style="{StaticResource SecondaryButton}" Width="100" VerticalAlignment="Center" Click="BtnTestCsv_Click"/>
+                    </Grid>
+                </Border>
+
+                <!-- 6. FOXIT UI AUTOMATION CHECK -->
+                <Border Style="{StaticResource CardStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,15,0">
+                            <TextBlock Text="6. 🤖 Foxit UI Automation &amp; Control Check" FontSize="15" FontWeight="Bold" Foreground="#1F2937" Margin="0,0,0,4"/>
+                            <TextBlock Text="ពិនិត្យសិទ្ធិ UI Automation Windows សម្រាប់បញ្ជា Foxit (Print/Properties/Copies) អោយដើរ ១០០% អត់គាំង។" FontSize="12" Foreground="#6B7280" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="txtStatusUiAuto" Text="⏳ Ready to check..." FontSize="13" FontWeight="SemiBold" Foreground="#4B5563" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Button x:Name="btnTestUiAuto" Grid.Column="1" Content="Test UI Auto" Style="{StaticResource SecondaryButton}" Width="100" VerticalAlignment="Center" Click="BtnTestUiAuto_Click"/>
+                    </Grid>
+                </Border>
+
+                <!-- 7. AUTO PRINT WATCH FOLDER CHECK -->
+                <Border Style="{StaticResource CardStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,15,0">
+                            <TextBlock Text="7. 📂 Auto Print Watch Folder &amp; Subfolders Check" FontSize="15" FontWeight="Bold" Foreground="#1F2937" Margin="0,0,0,4"/>
+                            <TextBlock Text="ពិនិត្យ Folder តាមដាន (Source Folder) និងការបង្កើត Subfolders (Sent to Printer, Storing Completed, etc.) អត់មាន Error ដោយសារ OneDrive/Antivirus Lock។" FontSize="12" Foreground="#6B7280" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="txtStatusWatchFolder" Text="⏳ Ready to check..." FontSize="13" FontWeight="SemiBold" Foreground="#4B5563" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Button x:Name="btnTestWatchFolder" Grid.Column="1" Content="Test Folder" Style="{StaticResource SecondaryButton}" Width="100" VerticalAlignment="Center" Click="BtnTestWatchFolder_Click"/>
+                    </Grid>
+                </Border>
+
+                <!-- 8. PRINTER QUEUE & NETWORK IP CHECK -->
+                <Border Style="{StaticResource CardStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,15,0">
+                            <TextBlock Text="8. 🖧 Printer Queue Status &amp; Network IP Check" FontSize="15" FontWeight="Bold" Foreground="#1F2937" Margin="0,0,0,4"/>
+                            <TextBlock Text="ពិនិត្យស្ថានភាពជួរ Print Queue ក្នុង Windows និងល្បឿន Ping ទៅកាន់ IP ម៉ាស៊ីន Print ធានាការចាប់ទិន្នន័យ ១០០% មិនបាត់បង់។" FontSize="12" Foreground="#6B7280" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="txtStatusPrinterNet" Text="⏳ Ready to check..." FontSize="13" FontWeight="SemiBold" Foreground="#4B5563" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Button x:Name="btnTestPrinterNet" Grid.Column="1" Content="Test Printer" Style="{StaticResource SecondaryButton}" Width="100" VerticalAlignment="Center" Click="BtnTestPrinterNet_Click"/>
                     </Grid>
                 </Border>
             </StackPanel>
