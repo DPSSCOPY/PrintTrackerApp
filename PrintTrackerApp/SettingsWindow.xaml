@@ -227,6 +227,13 @@
                     </StackPanel>
                 </GroupBox>
 
+                <GroupBox Header="🛠️ PC Health &amp; Diagnostics (ពិនិត្យសុខភាពកុំព្យូទ័រ)" Margin="0,0,0,15" BorderBrush="#0078D4" BorderThickness="1.5" Padding="12">
+                    <StackPanel>
+                        <TextBlock Text="ពិនិត្យលក្ខខណ្ឌម៉ាស៊ីនទាំង ៥ ចំណុច (WMI, Spooler, Ricoh Driver, Antivirus access, Foxit PDF) ដើម្បីធានាថាដើរ Smooth ១០០% ដូច PC Debug។" TextWrapping="Wrap" Foreground="#4B5563" Margin="0,0,0,10"/>
+                        <Button Content="🔍 Run Diagnostic Tests (បើកឧបករណ៍ពិនិត្យម៉ាស៊ីន)..." Style="{StaticResource ModernButton}" Background="#0D6EFD" Padding="12" Click="BtnRunDiagnostics_Click"/>
+                    </StackPanel>
+                </GroupBox>
+
                 <Grid Margin="0,0,0,15">
                     <GroupBox Header="System Settings" BorderBrush="#D1D5DB" Padding="10" IsEnabled="False">
                         <GroupBox.Effect>

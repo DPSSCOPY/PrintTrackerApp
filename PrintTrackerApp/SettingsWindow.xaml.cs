@@ -205,6 +205,13 @@ namespace PrintTrackerApp
             CurrentSettings.ActivePrinterProfileName = updatedSettings.ActivePrinterProfileName;
         }
 
+        private void BtnRunDiagnostics_Click(object sender, RoutedEventArgs e)
+        {
+            var diagWindow = new SystemDiagnosticWindow(txtCsvPath.Text.Trim(), txtPrinterName.Text.Trim());
+            diagWindow.Owner = this;
+            diagWindow.ShowDialog();
+        }
+
         private async void BtnTestTelegram_Click(object sender, RoutedEventArgs e)
         {
             btnTestTelegram.IsEnabled = false;
