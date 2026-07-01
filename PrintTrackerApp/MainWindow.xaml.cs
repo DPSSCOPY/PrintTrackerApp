@@ -396,6 +396,7 @@ namespace PrintTrackerApp
             var loadedJobs = CsvLogger.LoadJobsFromCsv(_appSettings.CsvExportPath);
             foreach (var job in loadedJobs)
             {
+                job.CleanDownlevelNames();
                 _printJobs.Add(job);
             }
 
@@ -451,6 +452,19 @@ namespace PrintTrackerApp
                     existingJob.RicohUserId = updatedJob.RicohUserId;
                     existingJob.WebFileName = updatedJob.WebFileName;
                     existingJob.Copies = updatedJob.Copies;
+                    
+                    if (!string.IsNullOrEmpty(updatedJob.DocumentName) && updatedJob.DocumentName != "Local Downlevel Document" && updatedJob.DocumentName != "Print Document" && updatedJob.DocumentName != "Remote Downlevel Document")
+                    {
+                        if (existingJob.DocumentName == "Local Downlevel Document" || existingJob.DocumentName == "Print Document" || existingJob.DocumentName == "Remote Downlevel Document" || string.IsNullOrWhiteSpace(existingJob.DocumentName))
+                        {
+                            existingJob.DocumentName = updatedJob.DocumentName;
+                        }
+                    }
+
+                    existingJob.CleanDownlevelNames();
+
+                    ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
+                    dgPrintJobs.Items.Refresh();
                 }
             });
         }
@@ -472,17 +486,17 @@ namespace PrintTrackerApp
 
         private void SpoolerMonitor_OnJobCreated(object? sender, PrintJobInfo job)
         {
-            if (job.DocumentName == "Local Downlevel Document" || job.DocumentName == "Print Document")
+            if (job.DocumentName == "Local Downlevel Document" || job.DocumentName == "Print Document" || job.DocumentName == "Remote Downlevel Document" || string.IsNullOrWhiteSpace(job.DocumentName))
             {
                 if (!string.IsNullOrEmpty(_currentAutoPrintFile) && _autoPrintService != null && _autoPrintService.IsRunning)
                 {
                     job.DocumentName = _currentAutoPrintFile;
-                    if (job.WebFileName == "Local Downlevel Document" || job.WebFileName == "Print Document")
+                    if (job.WebFileName == "Local Downlevel Document" || job.WebFileName == "Print Document" || job.WebFileName == "Remote Downlevel Document" || string.IsNullOrWhiteSpace(job.WebFileName))
                     {
                         job.WebFileName = _currentAutoPrintFile;
                     }
                 }
-                else if (!string.IsNullOrEmpty(job.WebFileName) && job.WebFileName != "Local Downlevel Document" && job.WebFileName != "Print Document")
+                else if (!string.IsNullOrEmpty(job.WebFileName) && job.WebFileName != "Local Downlevel Document" && job.WebFileName != "Print Document" && job.WebFileName != "Remote Downlevel Document")
                 {
                     job.DocumentName = job.WebFileName;
                 }
@@ -533,6 +547,7 @@ namespace PrintTrackerApp
                     job.IsPdfPageCountAccurate = true; 
                 }
 
+                job.CleanDownlevelNames();
                 _printJobs.Insert(0, job);
                 job.Status = "Sent to Printer";
                 

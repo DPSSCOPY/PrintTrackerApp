@@ -104,5 +104,21 @@ namespace PrintTrackerApp.Models
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
+
+        public void CleanDownlevelNames()
+        {
+            bool isDocDownlevel = _documentName == "Local Downlevel Document" || _documentName == "Print Document" || _documentName == "Remote Downlevel Document" || string.IsNullOrWhiteSpace(_documentName);
+            bool isWebDownlevel = _webFileName == "Local Downlevel Document" || _webFileName == "Print Document" || _webFileName == "Remote Downlevel Document" || string.IsNullOrWhiteSpace(_webFileName);
+
+            if (isDocDownlevel && !isWebDownlevel)
+            {
+                DocumentName = _webFileName;
+            }
+            else if (isWebDownlevel && !isDocDownlevel)
+            {
+                WebFileName = _documentName;
+            }
+        }
     }
 }
+

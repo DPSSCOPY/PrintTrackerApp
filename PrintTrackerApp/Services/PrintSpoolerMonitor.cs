@@ -123,11 +123,21 @@ namespace PrintTrackerApp.Services
                             changed = true;
                         }
                             
-                        if (!string.IsNullOrEmpty(customDetails.DocumentName) && job.WebFileName != customDetails.DocumentName)
+                        if (!string.IsNullOrEmpty(customDetails.DocumentName))
                         {
-                            job.WebFileName = customDetails.DocumentName;
-                            changed = true;
+                            if (job.WebFileName != customDetails.DocumentName)
+                            {
+                                job.WebFileName = customDetails.DocumentName;
+                                changed = true;
+                            }
+                            if (job.DocumentName == "Local Downlevel Document" || job.DocumentName == "Print Document" || job.DocumentName == "Remote Downlevel Document" || string.IsNullOrWhiteSpace(job.DocumentName))
+                            {
+                                job.DocumentName = customDetails.DocumentName;
+                                changed = true;
+                            }
                         }
+                        
+                        job.CleanDownlevelNames();
                             
                         if (customDetails.Copies > 1 && job.Copies != customDetails.Copies)
                         {

@@ -187,6 +187,7 @@ namespace PrintTrackerApp.Services
                                 job.DynamicProperties[dynamicHeaders[i - 10]] = parts[i];
                             }
                             
+                            job.CleanDownlevelNames();
                             jobs.Add(job);
                         }
                     }
@@ -261,6 +262,7 @@ namespace PrintTrackerApp.Services
                                             job.DynamicProperties[dynamicHeaders[i - 10]] = parts[i];
                                         }
                                         
+                                        job.CleanDownlevelNames();
                                         allJobs.Add(job);
                                     }
                                 }
@@ -462,7 +464,7 @@ namespace PrintTrackerApp.Services
 
                         string GetPart(int idx) => (idx >= 0 && idx < parts.Count) ? parts[idx].Trim() : "";
 
-                        jobs.Add(new PrintJobInfo
+                        var newJob = new PrintJobInfo
                         {
                             Timestamp = GetPart(timeIdx),
                             Owner = GetPart(userIdx),
@@ -474,7 +476,9 @@ namespace PrintTrackerApp.Services
                             RicohUserId = ricohIdIdx >= 0 ? GetPart(ricohIdIdx) : "",
                             Status = statusIdx >= 0 ? GetPart(statusIdx) : "Unknown",
                             JobId = Guid.NewGuid().ToString()
-                        });
+                        };
+                        newJob.CleanDownlevelNames();
+                        jobs.Add(newJob);
                     }
                     
                     if (jobs.Count == 0)
