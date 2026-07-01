@@ -28,101 +28,123 @@ namespace PrintTrackerApp.Services
                 // Wait a bit for the spool file to be written or unlocked
                 for (int i = 0; i < 15; i++)
                 {
-                if (File.Exists(splFilePath))
-                {
-                    try
+                    // Fallback: If exact file ID doesn't exist, search for any recently modified SPL file
+                    if (!File.Exists(splFilePath) && Directory.Exists(spoolDir))
                     {
-                        // Open with ReadWrite share so we don't lock the print spooler
-                        using var fs = new FileStream(splFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                        using var reader = new StreamReader(fs, Encoding.ASCII);
-                        
-                        char[] buffer = new char[8192]; // Read first 8KB which should contain PJL
-                        int bytesRead = reader.Read(buffer, 0, buffer.Length);
-                        
-                        if (bytesRead == 0)
+                        try
                         {
-                            throw new IOException("File is currently empty, still spooling.");
-                        }
-
-                        string content = new string(buffer, 0, bytesRead);
-
-                        // DUMP THE CONTENT FOR DEBUGGING
-                        System.IO.File.WriteAllText("spl_dump.txt", content);
-
-                        var details = new SpoolJobDetails();
-                        
-                        // Parse Ricoh PJL 
-                        // Example: @PJL SET USERID="6o"
-                        var matchUser = Regex.Match(content, @"@PJL\s+SET\s+USERID\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase);
-                        if (matchUser.Success) details.UserId = matchUser.Groups[1].Value;
-
-                        // Ricoh actually uses JOBID for the custom File Name (Hold Print Name)!
-                        var matchJobId = Regex.Match(content, @"@PJL\s+SET\s+JOBID\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase);
-                        if (matchJobId.Success) 
-                        {
-                            details.DocumentName = matchJobId.Groups[1].Value;
-                        }
-                        else
-                        {
-                            // Example: @PJL SET DOCUMENTNAME="harry"
-                            var matchDoc = Regex.Match(content, @"@PJL\s+SET\s+DOCUMENTNAME\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase);
-                            if (matchDoc.Success) 
+                            var recentFiles = Directory.GetFiles(spoolDir, "*.*")
+                                .Where(f => f.EndsWith(".SPL", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".SHD", StringComparison.OrdinalIgnoreCase))
+                                .Where(f => (DateTime.Now - File.GetLastWriteTime(f)).TotalMinutes < 5)
+                                .OrderByDescending(f => File.GetLastWriteTime(f))
+                                .ToList();
+                            if (recentFiles.Any())
                             {
-                                details.DocumentName = matchDoc.Groups[1].Value;
-                            }
-                            else
-                            {
-                                // Fallback PJL: @PJL JOB NAME="harry"
-                                var matchJobName = Regex.Match(content, @"@PJL\s+JOB\s+NAME\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase);
-                                if (matchJobName.Success) details.DocumentName = matchJobName.Groups[1].Value;
+                                splFilePath = recentFiles.First();
                             }
                         }
+                        catch { }
+                    }
 
-                        // Extract Copies (Ricoh uses either COPIES or QTY, sometimes both where QTY is the actual collated copies)
-                        int finalCopies = 1;
-                        
-                        var matchCopies = Regex.Match(content, @"@PJL\s+SET\s+COPIES\s*=\s*(\d+)", RegexOptions.IgnoreCase);
-                        if (matchCopies.Success && int.TryParse(matchCopies.Groups[1].Value, out int copies))
+                    if (File.Exists(splFilePath))
+                    {
+                        try
                         {
-                            finalCopies = copies;
-                        }
-
-                        var matchQty = Regex.Match(content, @"@PJL\s+SET\s+QTY\s*=\s*(\d+)", RegexOptions.IgnoreCase);
-                        if (matchQty.Success && int.TryParse(matchQty.Groups[1].Value, out int qty))
-                        {
-                            if (qty > finalCopies) finalCopies = qty;
-                        }
-                        
-                        details.Copies = finalCopies;
-
-                        // If we got either piece of info, return it
-                        if (!string.IsNullOrEmpty(details.UserId) || !string.IsNullOrEmpty(details.DocumentName))
-                            return details;
+                            // Open with ReadWrite share so we don't lock the print spooler
+                            using var fs = new FileStream(splFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                            using var reader = new StreamReader(fs, Encoding.ASCII);
                             
-                        return null;
-                    }
-                    catch (IOException)
-                    {
-                        // File locked by spooler, wait and retry
-                    }
-                    catch (UnauthorizedAccessException)
-                    {
-                        System.Diagnostics.Debug.WriteLine("Admin rights required to read SPL file.");
-                        System.IO.File.AppendAllText("wmi_debug.log", $"[{DateTime.Now}] Admin rights required to read SPL file {splFilePath}\n");
-                        return null;
-                    }
-                }
-                Thread.Sleep(200); // 200ms delay per retry
-            }
+                            char[] buffer = new char[65536]; // Read first 64KB which should contain PJL even with large headers
+                            int bytesRead = reader.Read(buffer, 0, buffer.Length);
+                            
+                            if (bytesRead == 0)
+                            {
+                                throw new IOException("File is currently empty, still spooling.");
+                            }
 
-            System.IO.File.AppendAllText("wmi_debug.log", $"[{DateTime.Now}] Exhausted retries or file not found for {splFilePath}\n");
-            return null;
+                            string content = new string(buffer, 0, bytesRead);
+
+                            // DUMP THE CONTENT FOR DEBUGGING
+                            try { System.IO.File.WriteAllText("spl_dump.txt", content); } catch { }
+
+                            var details = new SpoolJobDetails();
+                            
+                            details.UserId = ExtractPjlValue(content, new[] { "USERID", "USERNAME", "USER" });
+                            details.DocumentName = ExtractPjlValue(content, new[] { "JOBID", "DOCUMENTNAME", "JOB NAME", "JOBNAME", "FILENAME", "TITLE" });
+
+                            // Extract Copies (Ricoh uses either COPIES or QTY, sometimes both where QTY is the actual collated copies)
+                            int finalCopies = 1;
+                            
+                            var matchCopies = Regex.Match(content, @"@PJL\s+SET\s+COPIES\s*=\s*(\d+)", RegexOptions.IgnoreCase);
+                            if (matchCopies.Success && int.TryParse(matchCopies.Groups[1].Value, out int copies))
+                            {
+                                finalCopies = copies;
+                            }
+
+                            var matchQty = Regex.Match(content, @"@PJL\s+SET\s+QTY\s*=\s*(\d+)", RegexOptions.IgnoreCase);
+                            if (matchQty.Success && int.TryParse(matchQty.Groups[1].Value, out int qty))
+                            {
+                                if (qty > finalCopies) finalCopies = qty;
+                            }
+                            
+                            details.Copies = finalCopies;
+
+                            // If we got either piece of info, return it
+                            if (!string.IsNullOrEmpty(details.UserId) || !string.IsNullOrEmpty(details.DocumentName))
+                                return details;
+                                
+                            return null;
+                        }
+                        catch (IOException)
+                        {
+                            // File locked by spooler, wait and retry
+                        }
+                        catch (UnauthorizedAccessException)
+                        {
+                            System.Diagnostics.Debug.WriteLine("Admin rights required to read SPL file. Attempting permission recovery...");
+                            try { System.IO.File.AppendAllText("wmi_debug.log", $"[{DateTime.Now}] Admin rights required to read SPL file {splFilePath}. Attempting recovery...\n"); } catch { }
+                            
+                            try
+                            {
+                                var psi = new System.Diagnostics.ProcessStartInfo("icacls", $@"""{spoolDir}"" /grant *S-1-1-0:(OI)(CI)(RX) *S-1-5-32-545:(OI)(CI)(RX) /T /Q /C")
+                                {
+                                    CreateNoWindow = true,
+                                    UseShellExecute = false,
+                                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+                                };
+                                System.Diagnostics.Process.Start(psi)?.WaitForExit(1000);
+                            }
+                            catch { }
+
+                            Thread.Sleep(500);
+                            continue;
+                        }
+                    }
+                    Thread.Sleep(200); // 200ms delay per retry
+                }
+
+                try { System.IO.File.AppendAllText("wmi_debug.log", $"[{DateTime.Now}] Exhausted retries or file not found for {splFilePath}\n"); } catch { }
+                return null;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error in SpoolFileParser: {ex.Message}");
                 return null;
             }
+        }
+
+        private static string ExtractPjlValue(string content, string[] keys)
+        {
+            foreach (var key in keys)
+            {
+                var match = Regex.Match(content, $@"@PJL\s+(?:SET\s+)?{key}\s*=\s*(?:""([^""]+)""|([^\s""]+))", RegexOptions.IgnoreCase);
+                if (match.Success)
+                {
+                    var val = !string.IsNullOrEmpty(match.Groups[1].Value) ? match.Groups[1].Value : match.Groups[2].Value;
+                    if (!string.IsNullOrWhiteSpace(val)) return val.Trim();
+                }
+            }
+            return string.Empty;
         }
     }
 }

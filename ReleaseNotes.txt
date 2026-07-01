@@ -1,9 +1,10 @@
-Update Version 1.0.16 Features:
-- Added Google Sheets Export with 4 side-by-side tables (matching desktop app UI layout) with spacer columns.
-- Implemented rich Excel Blue header formatting, borders, and auto-sizing for exported sheets.
-- Added Automatic Grade Coloring (A=Green, B=Blue, C=Yellow, D=Orange, E/Struggling=Red, Exam=Purple, No Teach=Gray, Exam/No Teach=Teal) in exported Google Sheets.
-- Added automatic Cell Notes (Comments) when hovering over teachers in Google Sheets showing full print history file list.
-- Fixed issue where GoogleSpreadsheetId setting was reset to blank upon opening Settings window.
-- Added Upload Credentials JSON button in Settings to securely load Service Account credentials without exposing confidential keys in GitHub.
+Update Version 1.0.17 Features:
+- Fixed User ID and Hold Print Name capture on User PCs by adding instant pre-fill from dynamic filename patterns (e.g. SMC3-Vannet-S1-9copies...), eliminating dependency on reading spooler files during Auto Print.
+- Enhanced SpoolFileParser with automatic silent permission recovery (using universal Windows SIDs for Everyone and Built-in Users) to prevent UnauthorizedAccessException on standard user accounts.
+- Added fallback spool file lookup to find recently created .SPL/.SHD files when WMI job IDs offset from disk filenames.
+- Increased PJL read buffer to 64KB and made PJL command extraction flexible to handle various Ricoh driver headers and formatting.
+- Updated installer (setup.iss) to apply permissions using universal SIDs (*S-1-1-0 and *S-1-5-32-545) for 100% compatibility across all Windows language editions and domain environments.
+
+
 
 

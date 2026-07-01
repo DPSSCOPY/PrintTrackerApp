@@ -488,6 +488,20 @@ namespace PrintTrackerApp
                 }
             }
 
+            // Ensure WebFileName, RicohUserId, and Copies are extracted immediately if DocumentName follows the dynamic pattern
+            if (PrintTrackerApp.Services.AutoPrintService.ParseDynamicFileInfo(job.DocumentName, job.Owner, 1, out string parsedUserId, out string parsedFileName, out int parsedCopies))
+            {
+                job.RicohUserId = parsedUserId;
+                job.WebFileName = parsedFileName;
+                if (parsedCopies > 1 && job.Copies == 1) job.Copies = parsedCopies;
+            }
+            else if (!string.IsNullOrEmpty(job.WebFileName) && PrintTrackerApp.Services.AutoPrintService.ParseDynamicFileInfo(job.WebFileName, job.Owner, 1, out string parsedUserIdWeb, out string parsedFileNameWeb, out int parsedCopiesWeb))
+            {
+                job.RicohUserId = parsedUserIdWeb;
+                job.WebFileName = parsedFileNameWeb;
+                if (parsedCopiesWeb > 1 && job.Copies == 1) job.Copies = parsedCopiesWeb;
+            }
+
             // 1. ATTEMPT TO GET EXACT PAGE COUNT FROM PDF FILE
             string? physicalFile = FindPhysicalFileForJob(job);
             bool parsedPdfPages = false;
@@ -2039,13 +2053,13 @@ namespace PrintTrackerApp
                             if (!exists)
                             {
                                 // WMI missed it! Add it manually to ensure tracking
-                                PrintTrackerApp.Services.AutoPrintService.ParseDynamicFileInfo(e.FileName, _appSettings.HoldPrintUserId, _appSettings.AutoPrintCopies, out string userId, out string _, out int copies);
+                                PrintTrackerApp.Services.AutoPrintService.ParseDynamicFileInfo(e.FileName, _appSettings.HoldPrintUserId, _appSettings.AutoPrintCopies, out string userId, out string fileName, out int copies);
                                 
                                 var fallbackJob = new PrintJobInfo
                                 {
                                     JobId = Guid.NewGuid().ToString(),
                                     DocumentName = e.FileName,
-                                    WebFileName = e.FileName,
+                                    WebFileName = fileName,
                                     RicohUserId = userId,
                                     Copies = copies,
                                     TotalPages = 1,

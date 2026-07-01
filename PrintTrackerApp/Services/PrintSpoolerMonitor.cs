@@ -92,6 +92,14 @@ namespace PrintTrackerApp.Services
             job.WebFileName = job.DocumentName;
             job.RicohUserId = job.Owner;
 
+            // Attempt immediate pre-fill if DocumentName matches dynamic format (e.g. SMC3-Vannet-S1-9copies...)
+            if (AutoPrintService.ParseDynamicFileInfo(job.DocumentName, job.Owner, 1, out string parsedUserId, out string parsedFileName, out int parsedCopies))
+            {
+                job.RicohUserId = parsedUserId;
+                job.WebFileName = parsedFileName;
+                if (parsedCopies > 1) job.Copies = parsedCopies;
+            }
+
             if (job.TotalPages <= 0)
             {
                 job.TotalPages = 1; // Fallback so it doesn't show 0 initially

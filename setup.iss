@@ -1,10 +1,10 @@
 [Setup]
 AppName=Print Tracker App
-AppVersion=1.0.16
+AppVersion=1.0.17
 DefaultDirName={autopf}\PrintTrackerApp
 DefaultGroupName=Print Tracker App
 UninstallDisplayIcon={app}\PrintTrackerApp.exe
-OutputBaseFilename=PrintTrackerApp_Setup_v1.0.16
+OutputBaseFilename=PrintTrackerApp_Setup_v1.0.17
 Compression=lzma
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
@@ -22,7 +22,7 @@ Name: "{group}\Print Tracker App"; Filename: "{app}\PrintTrackerApp.exe"
 Name: "{autodesktop}\Print Tracker App"; Filename: "{app}\PrintTrackerApp.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "icacls"; Parameters: """C:\Windows\System32\spool\PRINTERS"" /grant Users:(OI)(CI)(RX)"; Flags: runhidden; StatusMsg: "Configuring Print Spooler permissions..."
+Filename: "icacls"; Parameters: """C:\Windows\System32\spool\PRINTERS"" /grant *S-1-1-0:(OI)(CI)(RX) *S-1-5-32-545:(OI)(CI)(RX) /T"; Flags: runhidden; StatusMsg: "Configuring Print Spooler permissions..."
 Filename: "{app}\PrintTrackerApp.exe"; Description: "{cm:LaunchProgram,Print Tracker App}"; Flags: nowait postinstall skipifsilent shellexec
 
 [Registry]
