@@ -1,10 +1,10 @@
 [Setup]
 AppName=Print Tracker App
-AppVersion=1.0.17
+AppVersion=1.0.18
 DefaultDirName={autopf}\PrintTrackerApp
 DefaultGroupName=Print Tracker App
 UninstallDisplayIcon={app}\PrintTrackerApp.exe
-OutputBaseFilename=PrintTrackerApp_Setup_v1.0.17
+OutputBaseFilename=PrintTrackerApp_Setup_v1.0.18
 Compression=lzma
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
