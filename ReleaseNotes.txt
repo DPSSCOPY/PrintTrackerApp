@@ -1,3 +1,6 @@
+Update Version 1.0.20 Features:
+- Fixed Teacher Schedule Settings save bug where changing ComboBox statuses (e.g. from "Teach" to "No Teach") without clicking out of the cell would not commit changes before saving. Added automatic cell/row commit prior to saving schedules.
+
 Update Version 1.0.19 Features:
 - Added 3 new critical diagnostics to the **🛠️ PC Health & Diagnostic Tool**: Foxit UI Automation & Control check, Auto Print Watch Folder & Subfolders access check, and Printer Queue Status & Network IP communication check.
 - Added custom Foxit Path detection in diagnostics, prioritizing user-specified paths in Settings over standard registry paths.

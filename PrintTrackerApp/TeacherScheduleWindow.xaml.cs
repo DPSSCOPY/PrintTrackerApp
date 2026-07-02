@@ -300,6 +300,10 @@ namespace PrintTrackerApp
 
         private void BtnSave_Click(object sender, RoutedEventArgs e)
         {
+            // Commit any pending cell/row edits so the DataTable has the latest values
+            dgSchedule.CommitEdit(DataGridEditingUnit.Cell, true);
+            dgSchedule.CommitEdit(DataGridEditingUnit.Row, true);
+
             DateTime start = dpStart.SelectedDate.Value;
             DateTime end = dpEnd.SelectedDate.Value;
 
