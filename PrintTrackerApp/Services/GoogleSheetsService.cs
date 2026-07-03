@@ -2,6 +2,7 @@ using Google.Apis.Auth.OAuth2;
 using Google.Apis.Services;
 using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
+using Google.Apis.Drive.v3;
 using SheetColor = Google.Apis.Sheets.v4.Data.Color;
 using System;
 using System.Collections.Generic;
@@ -12,9 +13,10 @@ namespace PrintTrackerApp.Services
 {
     public class GoogleSheetsService
     {
-        private static readonly string[] Scopes = { SheetsService.Scope.Spreadsheets };
+        private static readonly string[] Scopes = { SheetsService.Scope.Spreadsheets, DriveService.Scope.DriveReadonly };
         private readonly string _applicationName = "Print Tracker App";
         private readonly SheetsService _service;
+        private readonly DriveService _driveService;
         private readonly string _spreadsheetId;
 
         public GoogleSheetsService(string spreadsheetId, string credentialsPath)
@@ -32,6 +34,27 @@ namespace PrintTrackerApp.Services
                 HttpClientInitializer = credential,
                 ApplicationName = _applicationName,
             });
+
+            _driveService = new DriveService(new BaseClientService.Initializer()
+            {
+                HttpClientInitializer = credential,
+                ApplicationName = _applicationName,
+            });
+        }
+
+        public async Task<DateTime?> GetSpreadsheetModifiedTimeAsync()
+        {
+            try
+            {
+                var request = _driveService.Files.Get(_spreadsheetId);
+                request.Fields = "modifiedTime";
+                var file = await request.ExecuteAsync();
+                return file.ModifiedTimeDateTimeOffset?.DateTime;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         public async Task<int> EnsureSheetExistsAsync(string sheetName)
@@ -342,6 +365,59 @@ namespace PrintTrackerApp.Services
             if (grade.Equals("No Teach", StringComparison.OrdinalIgnoreCase)) return new SheetColor { Red = 0.376f, Green = 0.490f, Blue = 0.545f }; // #607D8B
             if (grade.Contains("Exam", StringComparison.OrdinalIgnoreCase) && grade.Contains("No Teach", StringComparison.OrdinalIgnoreCase)) return new SheetColor { Red = 0.0f, Green = 0.588f, Blue = 0.533f }; // #009688
             return null;
+        }
+
+        public async Task<List<string>> GetSheetNamesAsync()
+        {
+            var spreadsheet = await _service.Spreadsheets.Get(_spreadsheetId).ExecuteAsync();
+            var names = new List<string>();
+            foreach (var sheet in spreadsheet.Sheets)
+            {
+                names.Add(sheet.Properties.Title);
+            }
+            return names;
+        }
+
+        public async Task<System.Data.DataTable> ReadSheetAsDataTableAsync(string sheetName)
+        {
+            try
+            {
+                var request = _service.Spreadsheets.Values.Get(_spreadsheetId, sheetName);
+                var response = await request.ExecuteAsync();
+                var values = response.Values;
+
+                if (values == null || values.Count == 0)
+                    return null;
+
+                var table = new System.Data.DataTable(sheetName);
+
+                int maxCols = 0;
+                foreach (var row in values)
+                {
+                    if (row.Count > maxCols) maxCols = row.Count;
+                }
+
+                for (int i = 0; i < maxCols; i++)
+                {
+                    table.Columns.Add($"Column{i}");
+                }
+
+                foreach (var row in values)
+                {
+                    var dataRow = table.NewRow();
+                    for (int i = 0; i < row.Count; i++)
+                    {
+                        dataRow[i] = row[i]?.ToString() ?? "";
+                    }
+                    table.Rows.Add(dataRow);
+                }
+
+                return table;
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 }

@@ -28,6 +28,9 @@ namespace PrintTrackerApp
         private DateTime _lastExcelWriteTime;
         private System.Windows.Threading.DispatcherTimer _excelCheckTimer;
         
+        private DateTime? _lastGoogleSheetsWriteTime;
+        private System.Windows.Threading.DispatcherTimer _googleSheetsCheckTimer;
+        
         private DateTime _currentStart;
         private DateTime _currentEnd;
         private int _currentDurationDays;
@@ -40,6 +43,10 @@ namespace PrintTrackerApp
             _excelCheckTimer = new System.Windows.Threading.DispatcherTimer();
             _excelCheckTimer.Interval = TimeSpan.FromSeconds(2);
             _excelCheckTimer.Tick += ExcelCheckTimer_Tick;
+
+            _googleSheetsCheckTimer = new System.Windows.Threading.DispatcherTimer();
+            _googleSheetsCheckTimer.Interval = TimeSpan.FromSeconds(30);
+            _googleSheetsCheckTimer.Tick += GoogleSheetsCheckTimer_Tick;
             
             dpStartDate.SelectedDate = DateTime.Now;
             dpEndDate.SelectedDate = DateTime.Now;
@@ -52,8 +59,14 @@ namespace PrintTrackerApp
                 if (File.Exists(configPath))
                 {
                     string savedPath = File.ReadAllText(configPath).Trim();
-                    if (!string.IsNullOrEmpty(savedPath) && File.Exists(savedPath))
+                    if (savedPath == "GoogleSheets")
                     {
+                        cmbDataSource.SelectedIndex = 1;
+                        ImportGoogleSheetsData(null);
+                    }
+                    else if (!string.IsNullOrEmpty(savedPath) && File.Exists(savedPath))
+                    {
+                        cmbDataSource.SelectedIndex = 0;
                         LoadExcelData(savedPath, false);
                     }
                 }
@@ -515,13 +528,20 @@ namespace PrintTrackerApp
             }
         }
 
-        private void BtnUploadExcel_Click(object sender, RoutedEventArgs e)
+        private void BtnLoadData_Click(object sender, RoutedEventArgs e)
         {
-            var openFileDialog = new Microsoft.Win32.OpenFileDialog();
-            openFileDialog.Filter = "Excel Files|*.xls;*.xlsx;*.xlsm";
-            if (openFileDialog.ShowDialog() == true)
+            if (cmbDataSource.SelectedIndex == 1)
             {
-                LoadExcelData(openFileDialog.FileName, true);
+                ImportGoogleSheetsData(sender);
+            }
+            else
+            {
+                var openFileDialog = new Microsoft.Win32.OpenFileDialog();
+                openFileDialog.Filter = "Excel Files|*.xls;*.xlsx;*.xlsm";
+                if (openFileDialog.ShowDialog() == true)
+                {
+                    LoadExcelData(openFileDialog.FileName, true);
+                }
             }
         }
 
@@ -597,9 +617,40 @@ namespace PrintTrackerApp
 
         private void BtnRefreshExcel_Click(object sender, RoutedEventArgs e)
         {
-            if (!string.IsNullOrEmpty(_currentExcelPath) && File.Exists(_currentExcelPath))
+            if (cmbDataSource.SelectedIndex == 1)
             {
-                LoadExcelData(_currentExcelPath, false);
+                ImportGoogleSheetsData(sender);
+            }
+            else
+            {
+                if (!string.IsNullOrEmpty(_currentExcelPath) && File.Exists(_currentExcelPath))
+                {
+                    LoadExcelData(_currentExcelPath, false);
+                }
+            }
+        }
+
+        private async void GoogleSheetsCheckTimer_Tick(object sender, EventArgs e)
+        {
+            var settings = PrintTrackerApp.Services.SettingsManager.LoadSettings();
+            string spreadsheetId = settings.TeacherDataSpreadsheetId;
+            if (string.IsNullOrWhiteSpace(spreadsheetId)) return;
+
+            string appDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
+            string credentialsPath = System.IO.Path.Combine(appDataFolder, "google_credentials.json");
+            if (!System.IO.File.Exists(credentialsPath)) return;
+
+            var service = new PrintTrackerApp.Services.GoogleSheetsService(spreadsheetId, credentialsPath);
+            var modifiedTime = await service.GetSpreadsheetModifiedTimeAsync();
+            
+            if (modifiedTime.HasValue && _lastGoogleSheetsWriteTime.HasValue)
+            {
+                if (modifiedTime.Value > _lastGoogleSheetsWriteTime.Value)
+                {
+                    btnRefreshExcel.Visibility = Visibility.Visible;
+                    btnRefreshExcel.Foreground = new SolidColorBrush(System.Windows.Media.Colors.Red);
+                    elExcelChangedIndicator.Visibility = Visibility.Visible;
+                }
             }
         }
 
@@ -634,6 +685,7 @@ namespace PrintTrackerApp
                         btnRefreshExcel.Foreground = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#0078D4"));
                         elExcelChangedIndicator.Visibility = Visibility.Collapsed;
                         
+                        if (_googleSheetsCheckTimer.IsEnabled) _googleSheetsCheckTimer.Stop();
                         if (!_excelCheckTimer.IsEnabled) _excelCheckTimer.Start();
                         
                         if (showSuccessMessage)
@@ -1168,6 +1220,67 @@ namespace PrintTrackerApp
             catch (Exception ex)
             {
                 System.Windows.MessageBox.Show($"Error exporting to Google Sheets: {ex.Message}", "Export Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                var btn = sender as System.Windows.Controls.Button;
+                if (btn != null) btn.IsEnabled = true;
+            }
+        }
+
+        private async void ImportGoogleSheetsData(object sender)
+        {
+            var settings = PrintTrackerApp.Services.SettingsManager.LoadSettings();
+            string spreadsheetId = settings.TeacherDataSpreadsheetId;
+            if (string.IsNullOrWhiteSpace(spreadsheetId))
+            {
+                System.Windows.MessageBox.Show("Please configure the Teacher Data Spreadsheet ID in Settings.", "Configuration Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string appDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
+            string credentialsPath = System.IO.Path.Combine(appDataFolder, "google_credentials.json");
+            if (!System.IO.File.Exists(credentialsPath))
+            {
+                System.Windows.MessageBox.Show($"Could not find 'google_credentials.json' at {credentialsPath}.", "Credentials Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                var btn = sender as System.Windows.Controls.Button;
+                if (btn != null) btn.IsEnabled = false;
+
+                var service = new PrintTrackerApp.Services.GoogleSheetsService(spreadsheetId, credentialsPath);
+                
+                var sheetNames = await service.GetSheetNamesAsync();
+                
+                string ftName = sheetNames.Contains("FT") ? "FT" : (sheetNames.Count > 0 ? sheetNames[0] : null);
+                string ptName = sheetNames.Contains("PT") ? "PT" : (sheetNames.Count > 1 ? sheetNames[1] : null);
+                string khName = sheetNames.Contains("KH") ? "KH" : (sheetNames.Count > 2 ? sheetNames[2] : null);
+
+                if (ftName != null) _ftTable = await service.ReadSheetAsDataTableAsync(ftName);
+                if (ptName != null) _ptTable = await service.ReadSheetAsDataTableAsync(ptName);
+                if (khName != null) _khTable = await service.ReadSheetAsDataTableAsync(khName);
+
+                RefreshExcelTabs();
+                
+                _currentExcelPath = null;
+                try { File.WriteAllText(GetConfigFilePath(), "GoogleSheets"); } catch { }
+                if (_excelCheckTimer.IsEnabled) _excelCheckTimer.Stop();
+                
+                _lastGoogleSheetsWriteTime = await service.GetSpreadsheetModifiedTimeAsync();
+                if (!_googleSheetsCheckTimer.IsEnabled) _googleSheetsCheckTimer.Start();
+
+                btnRefreshExcel.Visibility = Visibility.Visible;
+                btnRefreshExcel.Foreground = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#0078D4"));
+                elExcelChangedIndicator.Visibility = Visibility.Collapsed;
+                
+                System.Windows.MessageBox.Show("Google Sheets data loaded successfully!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show($"Error reading from Google Sheets: {ex.Message}", "Import Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {

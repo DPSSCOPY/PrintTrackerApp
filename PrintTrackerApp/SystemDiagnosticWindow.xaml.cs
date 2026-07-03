@@ -472,20 +472,14 @@ namespace PrintTrackerApp
                         Directory.CreateDirectory(srcFolder);
                     }
 
-                    // Test creating all subfolders required by AutoPrintService
-                    string[] subFolders = new string[] { "Sent to Printer", "Storing Completed", "Print Completed", "Error Prints" };
-                    foreach (string sub in subFolders)
-                    {
-                        string subPath = Path.Combine(srcFolder, sub);
-                        if (!Directory.Exists(subPath))
-                        {
-                            Directory.CreateDirectory(subPath);
-                        }
-                    }
+                    // Subfolders are created dynamically based on actual Status values at runtime.
+                    // Here we only test that the source folder is writable and subfolder creation works.
+                    string testSubDir = Path.Combine(srcFolder, "_diagnostic_test");
+                    if (!Directory.Exists(testSubDir))
+                        Directory.CreateDirectory(testSubDir);
 
-                    // Test writing and moving a test file
                     string testSrc = Path.Combine(srcFolder, $"test_foxit_{Guid.NewGuid():N}.tmp");
-                    string testDest = Path.Combine(srcFolder, "Sent to Printer", $"test_foxit_{Guid.NewGuid():N}.tmp");
+                    string testDest = Path.Combine(testSubDir, $"test_foxit_{Guid.NewGuid():N}.tmp");
 
                     File.WriteAllText(testSrc, "test_watch_folder_access");
                     if (File.Exists(testSrc))
@@ -497,7 +491,12 @@ namespace PrintTrackerApp
                         }
                     }
 
-                    SetStatus(txtStatusWatchFolder, true, $"✅ ល្អឥតខ្ចោះ! Folder តាមដាន ('{srcFolder}') និង Subfolder ទាំង ៤ អាចបង្កើត និងប្ដូរទីតាំងឯកសារបាន ១០០% (អត់មាន OneDrive/Antivirus Lock ទេ)។");
+                    // Clean up test directory
+                    if (Directory.Exists(testSubDir) && Directory.GetFiles(testSubDir).Length == 0)
+                        Directory.Delete(testSubDir);
+
+                    SetStatus(txtStatusWatchFolder, true, $"✅ Source Folder ('{srcFolder}') is writable! Subfolders will be created automatically based on actual Status values.");
+
                     return true;
                 }
                 catch (Exception ex)

@@ -204,7 +204,7 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Margin="0,0,15,0">
                             <TextBlock Text="7. 📂 Auto Print Watch Folder &amp; Subfolders Check" FontSize="15" FontWeight="Bold" Foreground="#1F2937" Margin="0,0,0,4"/>
-                            <TextBlock Text="ពិនិត្យ Folder តាមដាន (Source Folder) និងការបង្កើត Subfolders (Sent to Printer, Storing Completed, etc.) អត់មាន Error ដោយសារ OneDrive/Antivirus Lock។" FontSize="12" Foreground="#6B7280" Margin="0,0,0,8"/>
+                            <TextBlock Text="ពិនិត្យ Folder តាមដាន (Source Folder) និងការបង្កើត Subfolders (Sent to Printer, Storing Complete, Print Complete) អត់មាន Error ដោយសារ OneDrive/Antivirus Lock។" FontSize="12" Foreground="#6B7280" Margin="0,0,0,8"/>
                             <TextBlock x:Name="txtStatusWatchFolder" Text="⏳ Ready to check..." FontSize="13" FontWeight="SemiBold" Foreground="#4B5563" TextWrapping="Wrap"/>
                         </StackPanel>
                         <Button x:Name="btnTestWatchFolder" Grid.Column="1" Content="Test Folder" Style="{StaticResource SecondaryButton}" Width="100" VerticalAlignment="Center" Click="BtnTestWatchFolder_Click"/>

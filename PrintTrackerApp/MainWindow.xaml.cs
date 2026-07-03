@@ -669,8 +669,20 @@ namespace PrintTrackerApp
 
                 if (totalCount > 0)
                 {
+                    string reportText = sb.ToString().TrimEnd();
                     string csvPath = System.IO.Path.Combine(_appSettings.CsvExportPath, $"PrintLog_{today}.csv");
-                    _ = SendTelegramMessageWithDocumentAsync(sb.ToString().TrimEnd(), csvPath);
+                    string webMonitorCsvPath = System.IO.Path.Combine(_appSettings.CsvExportPath, $"WebMonitorHistory_{today}.csv");
+
+                    _ = Task.Run(async () =>
+                    {
+                        await SendTelegramMessageWithDocumentAsync(reportText, csvPath);
+
+                        // Also send WebMonitorHistory CSV file (no caption, just the document) sequentially below PrintLog
+                        if (System.IO.File.Exists(webMonitorCsvPath))
+                        {
+                            await SendTelegramMessageWithDocumentAsync("", webMonitorCsvPath);
+                        }
+                    });
                 }
                 
                 _lastReportDate = today;
@@ -1341,6 +1353,7 @@ namespace PrintTrackerApp
                 latestSettings.EnablePriority3 = sw.CurrentSettings.EnablePriority3;
                 latestSettings.Priority3Prefixes = sw.CurrentSettings.Priority3Prefixes;
                 latestSettings.GoogleSpreadsheetId = sw.CurrentSettings.GoogleSpreadsheetId;
+                latestSettings.TeacherDataSpreadsheetId = sw.CurrentSettings.TeacherDataSpreadsheetId;
                 latestSettings.TelegramBotUrl = sw.CurrentSettings.TelegramBotUrl;
                 latestSettings.TelegramBotToken = sw.CurrentSettings.TelegramBotToken;
                 latestSettings.TelegramChatId = sw.CurrentSettings.TelegramChatId;
@@ -1384,48 +1397,13 @@ namespace PrintTrackerApp
             if (string.IsNullOrWhiteSpace(_appSettings.SourceFolderPath) || !System.IO.Directory.Exists(_appSettings.SourceFolderPath))
                 return;
 
-            string targetSubFolder;
-            if (status.Contains("Complete", StringComparison.OrdinalIgnoreCase) && !status.Contains("Sorting", StringComparison.OrdinalIgnoreCase) && !status.Contains("Storing", StringComparison.OrdinalIgnoreCase))
-            {
-                targetSubFolder = "Print Complete";
-            }
-            else if (status.Contains("Sorting", StringComparison.OrdinalIgnoreCase))
-            {
-                targetSubFolder = "Sorting Complete";
-            }
-            else if (status.Contains("Storing Failed", StringComparison.OrdinalIgnoreCase))
-            {
-                targetSubFolder = "Storing Failed";
-            }
-            else if (status.Contains("Storing Complete", StringComparison.OrdinalIgnoreCase))
-            {
-                targetSubFolder = "Storing Complete";
-            }
-            else if (status.Contains("Storing", StringComparison.OrdinalIgnoreCase) || status.Contains("Hold", StringComparison.OrdinalIgnoreCase) || status.Contains("Locked", StringComparison.OrdinalIgnoreCase))
-            {
-                targetSubFolder = "Storing";
-            }
-            else if (status.Contains("Power Failed", StringComparison.OrdinalIgnoreCase) || status.Contains("Power Fail", StringComparison.OrdinalIgnoreCase))
-            {
-                targetSubFolder = "Power Failed";
-            }
-            else if (status.Contains("Processing", StringComparison.OrdinalIgnoreCase))
-            {
-                targetSubFolder = "Processing";
-            }
-            else if (status.Contains("Printing", StringComparison.OrdinalIgnoreCase))
-            {
-                targetSubFolder = "Printing";
-            }
-            else if (status.Contains("Sent to Printer", StringComparison.OrdinalIgnoreCase))
-            {
-                targetSubFolder = "Sent to Printer";
-            }
-            else
-            {
-                // Create safe folder name
-                targetSubFolder = string.Join("_", status.Split(System.IO.Path.GetInvalidFileNameChars())).Trim();
-            }
+            // Use the actual Status value directly as the sub-folder name
+            string targetSubFolder = status.Trim();
+            if (string.IsNullOrWhiteSpace(targetSubFolder))
+                return;
+
+            // Sanitize invalid filename characters
+            targetSubFolder = string.Join("_", targetSubFolder.Split(System.IO.Path.GetInvalidFileNameChars())).Trim();
 
             string targetFolder = System.IO.Path.Combine(_appSettings.SourceFolderPath, targetSubFolder);
             if (!System.IO.Directory.Exists(targetFolder))
@@ -1595,7 +1573,7 @@ namespace PrintTrackerApp
                     
                     if (_appSettings.NotifyPrintCompleted)
                     {
-                        _ = SendTelegramMessageAsync("✅ *ការព្រីនត្រូវបានបញ្ចាំងរួចរាល់!* (Print Complete)");
+                        _ = SendTelegramMessageAsync("✅ *ឯកសារត្រូវបានព្រីនរួចរាល់ពីម៉ាស៊ីន!* (All Print Completed)");
                     }
 
                     // Auto Shutdown after print complete (Specific Time mode) is disabled for now (Coming Soon)
@@ -1776,7 +1754,7 @@ namespace PrintTrackerApp
 
         private async Task SendTelegramMessageAsync(string message)
         {
-            if (string.IsNullOrWhiteSpace(_appSettings.TelegramBotToken) || string.IsNullOrWhiteSpace(_appSettings.TelegramChatId))
+            if (string.IsNullOrWhiteSpace(message) || string.IsNullOrWhiteSpace(_appSettings.TelegramBotToken) || string.IsNullOrWhiteSpace(_appSettings.TelegramChatId))
                 return;
 
             try
@@ -1818,7 +1796,10 @@ namespace PrintTrackerApp
 
             if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
             {
-                await SendTelegramMessageAsync(message);
+                if (!string.IsNullOrWhiteSpace(message))
+                {
+                    await SendTelegramMessageAsync(message);
+                }
                 return;
             }
 
@@ -1838,8 +1819,11 @@ namespace PrintTrackerApp
                         using (var form = new System.Net.Http.MultipartFormDataContent())
                         {
                             form.Add(new System.Net.Http.StringContent(trimmedId), "chat_id");
-                            form.Add(new System.Net.Http.StringContent(message), "caption");
-                            form.Add(new System.Net.Http.StringContent("Markdown"), "parse_mode");
+                            if (!string.IsNullOrWhiteSpace(message))
+                            {
+                                form.Add(new System.Net.Http.StringContent(message), "caption");
+                                form.Add(new System.Net.Http.StringContent("Markdown"), "parse_mode");
+                            }
 
                             var fileContent = new System.Net.Http.ByteArrayContent(System.IO.File.ReadAllBytes(filePath));
                             fileContent.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse("text/csv");
@@ -1853,7 +1837,10 @@ namespace PrintTrackerApp
             catch (Exception ex)
             {
                 Debug.WriteLine($"Failed to send Telegram document: {ex.Message}");
-                await SendTelegramMessageAsync(message);
+                if (!string.IsNullOrWhiteSpace(message))
+                {
+                    await SendTelegramMessageAsync(message);
+                }
             }
         }
         private void BtnTest_Click(object sender, RoutedEventArgs e)

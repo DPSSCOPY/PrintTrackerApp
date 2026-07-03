@@ -38,6 +38,7 @@ namespace PrintTrackerApp.Services
         
         // Google Sheets Integration
         public string GoogleSpreadsheetId { get; set; } = "";
+        public string TeacherDataSpreadsheetId { get; set; } = "";
         
         // Auto Print Settings
         public string FoxitPath { get; set; } = "";
