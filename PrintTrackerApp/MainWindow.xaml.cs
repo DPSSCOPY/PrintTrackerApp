@@ -198,7 +198,10 @@ namespace PrintTrackerApp
                     {
                         _printJobs.Add(job);
                     }
-                    teacherDashboard.InitializeData(_printJobs, _appSettings.CsvExportPath);
+                    if (_historicalPrintJobs == null)
+                    {
+                        teacherDashboard.InitializeData(_printJobs, _appSettings.CsvExportPath);
+                    }
                     dgPrintJobs.Items.Refresh();
                 }
                 catch (Exception ex)
@@ -401,6 +404,7 @@ namespace PrintTrackerApp
             }
 
             teacherDashboard.InitializeData(_printJobs, _appSettings.CsvExportPath);
+            teacherDashboard.OnResetDataClicked += (s, ev) => BtnResetLiveLog_Click(null, null);
             SetupCsvWatcher();
 
             // Also load the existing web monitor history so it's not overwritten and deleted on restart
@@ -3006,8 +3010,14 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
         {
             if (e.Source is System.Windows.Controls.TabControl && tabDashboard != null && tabDashboard.IsSelected)
             {
-                // Re-initialize with the latest jobs if the user switches to the Dashboard tab
-                teacherDashboard.InitializeData(_printJobs, _appSettings.CsvExportPath);
+                // Only re-initialize with live jobs when NOT viewing a historical log.
+                // If historical data is loaded, the dashboard already has the correct data
+                // (set by BtnLoadHistoricalLog_Click via LoadHistoricalData) and we must
+                // not overwrite it with today's live jobs.
+                if (_historicalPrintJobs == null)
+                {
+                    teacherDashboard.InitializeData(_printJobs, _appSettings.CsvExportPath);
+                }
             }
         }
 
@@ -3058,6 +3068,15 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                     dgPrintJobs.ItemsSource = _historicalPrintJobs;
                     btnResetLiveLog.Visibility = Visibility.Visible;
                     
+                    string sourceText = openFileDialog.FileNames.Length > 1 
+                        ? $"External Log ({openFileDialog.FileNames.Length} files)" 
+                        : $"External Log ({System.IO.Path.GetFileName(openFileDialog.FileNames[0])})";
+
+                    // Pass historical jobs to the Dashboard using LoadHistoricalData so it
+                    // auto-detects the date range and shows all records (not just "Today").
+                    teacherDashboard.LoadHistoricalData(allExternalJobs, _appSettings.CsvExportPath, sourceText);
+
+                    
                     // Force refresh filter
                     TxtSearch_TextChanged(null, null);
                     UpdateVerificationPanel();
@@ -3075,6 +3094,9 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
             _historicalPrintJobs = null;
             dgPrintJobs.ItemsSource = _printJobs;
             btnResetLiveLog.Visibility = Visibility.Collapsed;
+            
+            // Restore dashboard to live data (today's filter)
+            teacherDashboard.ResetToDefaultData();
             
             // Force refresh filter
             TxtSearch_TextChanged(null, null);

@@ -1,3 +1,10 @@
+Update Version 1.0.22 Features:
+- Improved Auto Print error handling: added immediate skip to next available files on printing error without blocking the queue.
+- Implemented intelligent retry mechanism: failed files are automatically retried after all unfailed files in the queue have been processed.
+- Added 3-retry limit with 1-minute cooldown per file: after 3 consecutive failures, a specific file enters a 60-second cooldown while allowing other files to print normally without stopping Auto Print.
+- Fixed Teacher Dashboard external CSV data synchronization so external logs appear consistently on both Print Tracker and Dashboard tabs without merging into default live data.
+- Enhanced teacher schedule matching algorithm with strict Level verification and normalization (handling variations like Pre2A1, Pre-2A-I) to prevent mismatched assignment across grade levels.
+
 Update Version 1.0.20 Features:
 - Fixed Teacher Schedule Settings save bug where changing ComboBox statuses (e.g. from "Teach" to "No Teach") without clicking out of the cell would not commit changes before saving. Added automatic cell/row commit prior to saving schedules.
 

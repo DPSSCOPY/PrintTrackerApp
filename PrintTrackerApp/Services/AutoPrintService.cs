@@ -19,7 +19,12 @@ namespace PrintTrackerApp.Services
         public bool IsPaused { get; set; } = false;
         public bool IsPrinting { get; private set; } = false;
 
-        private Dictionary<string, DateTime> _failedFilesCooldown = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private class FailedFileInfo
+        {
+            public int FailCount { get; set; }
+            public DateTime LastFailedTime { get; set; }
+        }
+        private Dictionary<string, FailedFileInfo> _failedFilesInfo = new Dictionary<string, FailedFileInfo>(StringComparer.OrdinalIgnoreCase);
 
         public event EventHandler<string>? StatusChanged;
         public event EventHandler<string>? FileProcessingStarted;
@@ -35,6 +40,7 @@ namespace PrintTrackerApp.Services
 
             IsRunning = true;
             IsPaused = false;
+            _failedFilesInfo.Clear();
             _cancellationTokenSource = new CancellationTokenSource();
             
             StatusChanged?.Invoke(this, "Running");
@@ -88,22 +94,31 @@ namespace PrintTrackerApp.Services
                         continue;
                     }
 
-                    var files = Directory.GetFiles(watchFolder, "*.pdf")
-                        .Where(f => !f.Contains("Complete Print", StringComparison.OrdinalIgnoreCase))
-                        .OrderBy(f => File.GetCreationTime(f))
-                        .ToList();
-
-                    // Filter out files that are in cooldown (failed recently)
                     var currentNow = DateTime.Now;
-                    files = files.Where(f => 
-                    {
-                        if (_failedFilesCooldown.TryGetValue(f, out DateTime failedTime))
+                    
+                    // Clean up any tracked files that were deleted or moved by user
+                    var existingFilesSet = new HashSet<string>(Directory.GetFiles(watchFolder, "*.pdf"), StringComparer.OrdinalIgnoreCase);
+                    var keysToRemove = _failedFilesInfo.Keys.Where(k => !existingFilesSet.Contains(k)).ToList();
+                    foreach (var k in keysToRemove) _failedFilesInfo.Remove(k);
+
+                    var files = existingFilesSet
+                        .Where(f => !f.Contains("Complete Print", StringComparison.OrdinalIgnoreCase))
+                        .Where(f => 
                         {
-                            if ((currentNow - failedTime).TotalMinutes < 5) return false; // Skip for 5 minutes
-                            else _failedFilesCooldown.Remove(f); // Cooldown expired
-                        }
-                        return true;
-                    }).ToList();
+                            if (_failedFilesInfo.TryGetValue(f, out FailedFileInfo? info))
+                            {
+                                // Rule: If failed 3 or more times, wait 1 minute (60 seconds) before retrying
+                                if (info.FailCount >= 3 && (currentNow - info.LastFailedTime).TotalSeconds < 60)
+                                {
+                                    return false; // Skip while on 1-minute cooldown after 3 retries
+                                }
+                            }
+                            return true;
+                        })
+                        .OrderBy(f => _failedFilesInfo.ContainsKey(f) ? 1 : 0) // Rule: Skip failed files and print next unfailed files first!
+                        .ThenBy(f => _failedFilesInfo.ContainsKey(f) ? _failedFilesInfo[f].FailCount : 0) // Try lower fail counts first
+                        .ThenBy(f => File.GetCreationTime(f))
+                        .ToList();
 
                     if (files.Count > 0)
                     {
@@ -208,16 +223,32 @@ namespace PrintTrackerApp.Services
                         {
                             Thread.Sleep(currentSettings.DelayBetweenPrints * 1000);
                             MoveFileToFolder(fileToProcess, watchFolder, "Sent to Printer");
-                            _failedFilesCooldown.Remove(fileToProcess);
+                            _failedFilesInfo.Remove(fileToProcess);
                         }
                         else
                         {
-                            StatusChanged?.Invoke(this, "Error during printing. Pausing 5s...");
-                            
-                            // Add to cooldown so we process the next file instead of getting stuck in a loop
                             if (fileToProcess != null)
                             {
-                                _failedFilesCooldown[fileToProcess] = DateTime.Now;
+                                if (!_failedFilesInfo.TryGetValue(fileToProcess, out FailedFileInfo? info))
+                                {
+                                    info = new FailedFileInfo { FailCount = 0 };
+                                    _failedFilesInfo[fileToProcess] = info;
+                                }
+                                info.FailCount++;
+                                info.LastFailedTime = DateTime.Now;
+
+                                if (info.FailCount >= 3)
+                                {
+                                    StatusChanged?.Invoke(this, $"Error printing {fileName} (Retry {info.FailCount}/3). Cooldown 1 min...");
+                                }
+                                else
+                                {
+                                    StatusChanged?.Invoke(this, $"Error printing {fileName} (Retry {info.FailCount}/3). Skipping to next file...");
+                                }
+                            }
+                            else
+                            {
+                                StatusChanged?.Invoke(this, "Error during printing. Pausing 5s...");
                             }
                             
                             // Kill orphaned print driver dialogs (splwow64) to prevent them from blocking the next job
@@ -242,6 +273,28 @@ namespace PrintTrackerApp.Services
                     }
                     else
                     {
+                        var remainingCooldownFiles = existingFilesSet
+                            .Where(f => !f.Contains("Complete Print", StringComparison.OrdinalIgnoreCase))
+                            .ToList();
+
+                        if (remainingCooldownFiles.Count > 0)
+                        {
+                            var nextFile = remainingCooldownFiles
+                                .OrderBy(f => _failedFilesInfo.ContainsKey(f) ? _failedFilesInfo[f].LastFailedTime : DateTime.MaxValue)
+                                .First();
+
+                            if (_failedFilesInfo.TryGetValue(nextFile, out FailedFileInfo? info))
+                            {
+                                int rem = (int)Math.Ceiling(60 - (currentNow - info.LastFailedTime).TotalSeconds);
+                                if (rem > 0)
+                                {
+                                    StatusChanged?.Invoke(this, $"Waiting 1 min cooldown for {Path.GetFileName(nextFile)} ({rem}s remaining)...");
+                                    Thread.Sleep(1000);
+                                    continue;
+                                }
+                            }
+                        }
+
                         if (hasProcessedFiles)
                         {
                             QueueEmpty?.Invoke(this, EventArgs.Empty);

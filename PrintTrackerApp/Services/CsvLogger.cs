@@ -220,7 +220,11 @@ namespace PrintTrackerApp.Services
                 {
                     string fileName = Path.GetFileNameWithoutExtension(filePath);
                     string datePart = fileName.Replace("PrintLog_", "");
-                    if (DateTime.TryParse(datePart, out DateTime fileDate))
+                    bool parsedDate = DateTime.TryParse(datePart, out DateTime fileDate);
+                    if (!parsedDate) parsedDate = DateTime.TryParseExact(datePart, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out fileDate);
+                    if (!parsedDate) parsedDate = DateTime.TryParse(datePart, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out fileDate);
+                    
+                    if (parsedDate)
                     {
                         if (fileDate.Date >= startDate.Date && fileDate.Date <= endDate.Date)
                         {

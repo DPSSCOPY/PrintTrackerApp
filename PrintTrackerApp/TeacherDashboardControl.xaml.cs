@@ -35,6 +35,9 @@ namespace PrintTrackerApp
         private DateTime _currentEnd;
         private int _currentDurationDays;
 
+        private bool _isExternalDataMode = false;
+        public event EventHandler OnResetDataClicked;
+
         public TeacherDashboardControl()
         {
             System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
@@ -76,8 +79,12 @@ namespace PrintTrackerApp
 
         public void InitializeData(IEnumerable<PrintJobInfo> printJobs, string csvExportPath)
         {
-            _currentJobs = printJobs;
             _originalJobs = printJobs;
+            if (_isExternalDataMode)
+            {
+                return;
+            }
+            _currentJobs = printJobs;
             _csvExportPath = csvExportPath;
 
             if (cmbDateFilter.SelectedItem is System.Windows.Controls.ComboBoxItem item && item.Content != null)
@@ -87,6 +94,108 @@ namespace PrintTrackerApp
             else
             {
                 ReloadFilteredData(DateTime.Now.Date, DateTime.Now.Date);
+            }
+        }
+
+        /// <summary>
+        /// Load historical (old log) data into the dashboard.
+        /// Auto-detects the date range from the jobs so all records are visible,
+        /// and switches the filter to "Custom Range" to cover the full period.
+        /// </summary>
+        public void LoadHistoricalData(IEnumerable<PrintJobInfo> printJobs, string csvExportPath, string sourceName = null)
+        {
+            _isExternalDataMode = true;
+            _currentJobs = printJobs;
+            _csvExportPath = csvExportPath;
+
+            string sourceText = string.IsNullOrEmpty(sourceName) ? "External Log" : sourceName;
+            if (txtDataSource != null)
+            {
+                txtDataSource.Text = "Data Source: " + sourceText;
+            }
+            if (btnResetData != null)
+            {
+                btnResetData.Visibility = System.Windows.Visibility.Visible;
+            }
+
+            // Auto-detect min/max date from the jobs
+            DateTime minDate = DateTime.Now.Date;
+            DateTime maxDate = DateTime.Now.Date;
+            bool anyParsed = false;
+
+            foreach (var job in printJobs)
+            {
+                DateTime dt;
+                bool parsed = DateTime.TryParse(job.Timestamp, out dt);
+                if (!parsed) parsed = DateTime.TryParseExact(job.Timestamp, "yyyy-MM-dd HH:mm:ss",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out dt);
+                if (!parsed) parsed = DateTime.TryParse(job.Timestamp,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out dt);
+
+                if (parsed)
+                {
+                    if (!anyParsed)
+                    {
+                        minDate = dt.Date;
+                        maxDate = dt.Date;
+                        anyParsed = true;
+                    }
+                    else
+                    {
+                        if (dt.Date < minDate) minDate = dt.Date;
+                        if (dt.Date > maxDate) maxDate = dt.Date;
+                    }
+                }
+            }
+
+            // Switch filter to "Custom Range" and set dates to cover all loaded records
+            dpStartDate.SelectedDate = minDate;
+            dpEndDate.SelectedDate = maxDate;
+            spCustomDate.Visibility = System.Windows.Visibility.Visible;
+
+            // Set combobox to "Custom Range" without triggering the selection-changed reload twice
+            foreach (System.Windows.Controls.ComboBoxItem ci in cmbDateFilter.Items)
+            {
+                if (ci.Content?.ToString() == "Custom Range")
+                {
+                    cmbDateFilter.SelectedItem = ci;
+                    break;
+                }
+            }
+
+            // Always reload with detected range
+            ReloadFilteredData(minDate, maxDate);
+        }
+
+        public void ResetToDefaultData()
+        {
+            _isExternalDataMode = false;
+            if (_originalJobs != null)
+            {
+                _currentJobs = _originalJobs;
+            }
+            if (txtDataSource != null)
+            {
+                txtDataSource.Text = "Data Source: App Log";
+            }
+            if (btnResetData != null)
+            {
+                btnResetData.Visibility = System.Windows.Visibility.Collapsed;
+            }
+
+            if (cmbDateFilter != null)
+            {
+                foreach (System.Windows.Controls.ComboBoxItem ci in cmbDateFilter.Items)
+                {
+                    if (ci.Content?.ToString() == "Today")
+                    {
+                        cmbDateFilter.SelectedItem = ci;
+                        break;
+                    }
+                }
+                CmbDateFilter_SelectionChanged(this, null);
             }
         }
 
@@ -196,23 +305,30 @@ namespace PrintTrackerApp
             // 1. Get from memory
             foreach (var job in _currentJobs)
             {
-                if (DateTime.TryParse(job.Timestamp, out DateTime dt) && dt.Date >= start.Date && dt.Date <= end.Date)
+                bool parsed = DateTime.TryParse(job.Timestamp, out DateTime dt);
+                if (!parsed) parsed = DateTime.TryParseExact(job.Timestamp, "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
+                if (!parsed) parsed = DateTime.TryParse(job.Timestamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
+                
+                if (parsed && dt.Date >= start.Date && dt.Date <= end.Date)
                 {
                     allJobs.Add(job);
                 }
             }
 
-            // 2. Load from CSV history (Offload to background thread to prevent UI freezing)
-            var historyJobs = await Task.Run(() => Services.CsvLogger.LoadJobsFromCsvForDateRange(_csvExportPath, start, end));
-
-            // 3. Merge avoiding duplicates
-            var memoryKeys = new HashSet<string>(allJobs.Select(j => $"{j.Timestamp}_{j.DocumentName}_{j.Owner}"));
-            foreach (var hJob in historyJobs)
+            if (!_isExternalDataMode)
             {
-                string key = $"{hJob.Timestamp}_{hJob.DocumentName}_{hJob.Owner}";
-                if (!memoryKeys.Contains(key))
+                // 2. Load from CSV history (Offload to background thread to prevent UI freezing)
+                var historyJobs = await Task.Run(() => Services.CsvLogger.LoadJobsFromCsvForDateRange(_csvExportPath, start, end));
+
+                // 3. Merge avoiding duplicates
+                var memoryKeys = new HashSet<string>(allJobs.Select(j => $"{j.Timestamp}_{j.DocumentName}_{j.Owner}"));
+                foreach (var hJob in historyJobs)
                 {
-                    allJobs.Add(hJob);
+                    string key = $"{hJob.Timestamp}_{hJob.DocumentName}_{hJob.Owner}";
+                    if (!memoryKeys.Contains(key))
+                    {
+                        allJobs.Add(hJob);
+                    }
                 }
             }
 
@@ -248,7 +364,11 @@ namespace PrintTrackerApp
                 }
 
                 string jobDate = "";
-                if (DateTime.TryParse(job.Timestamp, out DateTime dt))
+                bool parsed = DateTime.TryParse(job.Timestamp, out DateTime dt);
+                if (!parsed) parsed = DateTime.TryParseExact(job.Timestamp, "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
+                if (!parsed) parsed = DateTime.TryParse(job.Timestamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
+                
+                if (parsed)
                 {
                     jobDate = dt.Date.ToString("yyyy-MM-dd");
                 }
@@ -432,17 +552,21 @@ namespace PrintTrackerApp
                 docName = docName.Substring(0, docName.Length - 4);
             }
 
-            // Fix Pre- dash issue (e.g., Pre-5 -> Pre5)
-            docName = System.Text.RegularExpressions.Regex.Replace(docName, @"(?i)\bPre-([a-zA-Z0-9]+)\b", "Pre$1");
+            // Fix Pre- dash issue (e.g., Pre-5 -> Pre5, but NOT Pre-Smey)
+            docName = System.Text.RegularExpressions.Regex.Replace(docName, @"(?i)\bPre-([0-9][a-zA-Z0-9]*)\b", "Pre$1");
 
             // Split by dash or underscore
             var parts = docName.Split(new[] { '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
 
-            // Find the index of the part containing "copies"
+            // Find the index of the part containing "copies" (or variations/typos)
             int copiesIndex = -1;
             for (int i = 0; i < parts.Length; i++)
             {
-                if (parts[i].IndexOf("copies", StringComparison.OrdinalIgnoreCase) >= 0)
+                string p = parts[i].ToLower();
+                if (System.Text.RegularExpressions.Regex.IsMatch(p, @"^\d+[-_]?c[o0]?[o0]?p[a-z]*$") || // "15copies", "15copiees", "15coopies", "15cop"
+                    System.Text.RegularExpressions.Regex.IsMatch(p, @"^\d+[-_]?cps$") ||           // "15cps"
+                    System.Text.RegularExpressions.Regex.IsMatch(p, @"^c[o0]?[o0]?p[ieys]+$") ||   // "copies", "copiees", "coopies", "copy"
+                    p == "cps" || p == "cop") 
                 {
                     copiesIndex = i;
                     break;
@@ -571,22 +695,10 @@ namespace PrintTrackerApp
 
                 if (allExternalJobs.Count > 0)
                 {
-                    _currentJobs = allExternalJobs;
                     string sourceText = openFileDialog.FileNames.Length > 1 
                         ? $"External CSVs ({openFileDialog.FileNames.Length} files)" 
                         : $"External CSV ({System.IO.Path.GetFileName(openFileDialog.FileNames[0])})";
-                    txtDataSource.Text = "Data Source: " + sourceText;
-                    btnResetData.Visibility = Visibility.Visible;
-                    
-                    // Re-trigger current filter
-                    if (cmbDateFilter.SelectedItem is System.Windows.Controls.ComboBoxItem item && item.Content != null)
-                    {
-                        CmbDateFilter_SelectionChanged(this, null);
-                    }
-                    else
-                    {
-                        ReloadFilteredData(dpStartDate.SelectedDate ?? DateTime.Now.Date, dpEndDate.SelectedDate ?? DateTime.Now.Date);
-                    }
+                    LoadHistoricalData(allExternalJobs, _csvExportPath, sourceText);
                     
                     string extra = errorMessages.Count > 0 ? $"\n(Some errors occurred:\n{string.Join("\n", errorMessages)})" : "";
                     System.Windows.MessageBox.Show($"Loaded {allExternalJobs.Count} records from {openFileDialog.FileNames.Length} CSV(s).{extra}", "Success", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
@@ -601,18 +713,8 @@ namespace PrintTrackerApp
 
         private void BtnResetData_Click(object sender, RoutedEventArgs e)
         {
-            _currentJobs = _originalJobs;
-            txtDataSource.Text = "Data Source: App Log";
-            btnResetData.Visibility = Visibility.Collapsed;
-            
-            if (cmbDateFilter.SelectedItem is System.Windows.Controls.ComboBoxItem item && item.Content != null)
-            {
-                CmbDateFilter_SelectionChanged(this, null);
-            }
-            else
-            {
-                ReloadFilteredData(dpStartDate.SelectedDate ?? DateTime.Now.Date, dpEndDate.SelectedDate ?? DateTime.Now.Date);
-            }
+            ResetToDefaultData();
+            OnResetDataClicked?.Invoke(this, EventArgs.Empty);
         }
 
         private void BtnRefreshExcel_Click(object sender, RoutedEventArgs e)
@@ -844,7 +946,7 @@ namespace PrintTrackerApp
             {
                 stat.ExemptedDates.Clear();
                 
-                var matchingExcel = excelTeachers.FirstOrDefault(et => et.Level == stat.Level && IsNameMatch(et.Name, stat.TeacherName, strict: false));
+                var matchingExcel = excelTeachers.FirstOrDefault(et => IsLevelMatch(et.Level, stat.Level) && IsNameMatch(et.Name, stat.TeacherName, strict: false));
                 string key = "";
                 
                 if (matchingExcel != null)
@@ -924,28 +1026,114 @@ namespace PrintTrackerApp
 
         private TeacherPrintStat FindBestMatch(string excelName, string level, string session)
         {
-            // Only consider jobs that match the Excel level
-            var levelMatches = _statsDict.Values.Where(v => 
-                string.Equals(v.Level, level, StringComparison.OrdinalIgnoreCase)).ToList();
-            
-            if (!string.IsNullOrEmpty(session))
+            var candidates = _statsDict.Values.Where(v => IsLevelMatch(v.Level, level) && IsNameMatch(excelName, v.TeacherName, strict: false)).ToList();
+            if (candidates.Count == 0) return null;
+
+            var scoredCandidates = candidates.Select(c =>
             {
-                var sessionMatches = levelMatches.Where(v => 
-                    string.Equals(v.Session, session, StringComparison.OrdinalIgnoreCase) || 
-                    string.IsNullOrWhiteSpace(v.Session)).ToList();
-                    
-                if (sessionMatches.Count > 0) levelMatches = sessionMatches;
+                int score = 0;
+                
+                // Name match score
+                if (IsNameMatch(excelName, c.TeacherName, strict: true)) score += 100;
+                else score += 50;
+
+                // Session match score
+                if (!string.IsNullOrEmpty(session))
+                {
+                    if (string.Equals(c.Session, session, StringComparison.OrdinalIgnoreCase)) score += 50;
+                    else if (string.IsNullOrWhiteSpace(c.Session)) score += 10;
+                }
+                
+                // Level match score
+                if (string.Equals(c.Level, level, StringComparison.OrdinalIgnoreCase)) score += 100;
+                else if (IsLevelMatch(c.Level, level)) score += 80;
+                
+                return new { Stat = c, Score = score };
+            }).OrderByDescending(x => x.Score).ToList();
+
+            if (scoredCandidates.Count > 0 && scoredCandidates.First().Score >= 50)
+                return scoredCandidates.First().Stat;
+
+            return null;
+        }
+
+        private bool IsLevelMatch(string printLevel, string excelLevel)
+        {
+            if (string.IsNullOrWhiteSpace(printLevel) && string.IsNullOrWhiteSpace(excelLevel)) return true;
+            if (string.IsNullOrWhiteSpace(printLevel) || string.IsNullOrWhiteSpace(excelLevel)) return false;
+
+            string nPrint = NormalizeLevel(printLevel);
+            string nExcel = NormalizeLevel(excelLevel);
+
+            if (nPrint == nExcel) return true;
+
+            // Check if one is a more specific sub-level of the other (e.g., "pre2a" matching "pre2a1" or "1a" matching "1a1")
+            if ((nPrint.StartsWith(nExcel) && nPrint.Length == nExcel.Length + 1) ||
+                (nExcel.StartsWith(nPrint) && nExcel.Length == nPrint.Length + 1))
+            {
+                return true;
             }
 
-            // 1. Try exact or strong name match within the valid candidates
-            var strongMatch = levelMatches.FirstOrDefault(v => IsNameMatch(excelName, v.TeacherName, strict: true));
-            if (strongMatch != null) return strongMatch;
+            // Safe substring match: only allow if one contains the other WITHOUT conflicting numeric/grade prefixes
+            // Specifically prevent "pre1a" from matching "1a", or "11a" from matching "1a", or "2a" matching "pre2a"
+            if (nPrint.Contains(nExcel))
+            {
+                int idx = nPrint.IndexOf(nExcel);
+                if (idx == 0 || (!char.IsDigit(nPrint[idx - 1]) && !nPrint.Substring(0, idx).Contains("pre")))
+                {
+                    if (idx + nExcel.Length == nPrint.Length || !char.IsDigit(nPrint[idx + nExcel.Length]))
+                        return true;
+                }
+            }
+            if (nExcel.Contains(nPrint))
+            {
+                int idx = nExcel.IndexOf(nPrint);
+                if (idx == 0 || (!char.IsDigit(nExcel[idx - 1]) && !nExcel.Substring(0, idx).Contains("pre")))
+                {
+                    if (idx + nPrint.Length == nExcel.Length || !char.IsDigit(nExcel[idx + nPrint.Length]))
+                        return true;
+                }
+            }
 
-            // 2. Try loose name match within the valid candidates
-            var looseMatch = levelMatches.FirstOrDefault(v => IsNameMatch(excelName, v.TeacherName, strict: false));
-            if (looseMatch != null) return looseMatch;
+            return false;
+        }
+
+        private string NormalizeLevel(string level)
+        {
+            if (string.IsNullOrWhiteSpace(level)) return "";
             
-            return null;
+            string s = level.ToLower().Trim();
+            
+            // Replace common separators with space
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"[-_,/]", " ");
+            
+            // Remove common prefixes/suffixes as standalone words or prefixes
+            string[] wordsToRemove = new[] { "level", "class", "grade", "room", "sec", "section", "group", "ft", "pt", "kh", "morning", "afternoon", "am", "pm", "term", "sem", "semester" };
+            foreach (var w in wordsToRemove)
+            {
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"\b" + w + @"\b", "");
+                s = System.Text.RegularExpressions.Regex.Replace(s, @"^" + w + @"(?=[0-9a-z])", "");
+            }
+            
+            // Remove all spaces and special characters
+            s = System.Text.RegularExpressions.Regex.Replace(s, @"[^a-z0-9]", "");
+
+            // Normalize Pre-2A letter/number endings
+            // e.g. pre2all -> pre2a2, pre2aii -> pre2a2, pre2ai -> pre2a1, pre2al -> pre2a1
+            if (s.StartsWith("pre"))
+            {
+                if (s.EndsWith("iii") || s.EndsWith("lll")) s = s.Substring(0, s.Length - 3) + "3";
+                else if (s.EndsWith("ii") || s.EndsWith("ll")) s = s.Substring(0, s.Length - 2) + "2";
+                else if (s.EndsWith("i") || s.EndsWith("l"))
+                {
+                    if (s.Length > 1 && !char.IsDigit(s[s.Length - 1]) && char.IsLetterOrDigit(s[s.Length - 2]))
+                    {
+                        s = s.Substring(0, s.Length - 1) + "1";
+                    }
+                }
+            }
+            
+            return s;
         }
 
         private bool IsNameMatch(string excelName, string dictName, bool strict)
@@ -955,7 +1143,8 @@ namespace PrintTrackerApp
             excelName = excelName.ToLower().Trim();
             dictName = dictName.ToLower().Trim();
             
-            if (excelName == dictName || excelName.Contains(dictName) || dictName.Contains(excelName)) return true;
+            if (excelName == dictName) return true;
+            if ((excelName.Contains(dictName) && dictName.Length >= 4) || (dictName.Contains(excelName) && excelName.Length >= 4)) return true;
             
             var excelWords = excelName.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
             var dictWords = dictName.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
@@ -964,7 +1153,10 @@ namespace PrintTrackerApp
             {
                 foreach (var dWord in dictWords)
                 {
-                    if (eWord == dWord || eWord.Contains(dWord) || dWord.Contains(eWord))
+                    if (eWord == dWord)
+                        return true;
+                        
+                    if ((eWord.Contains(dWord) && dWord.Length >= 4) || (dWord.Contains(eWord) && eWord.Length >= 4))
                         return true;
                         
                     if (!strict && eWord.Length >= 4 && dWord.Length >= 4)
