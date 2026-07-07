@@ -1450,6 +1450,10 @@ namespace PrintTrackerApp
             if (string.IsNullOrWhiteSpace(_appSettings.SourceFolderPath) || !System.IO.Directory.Exists(_appSettings.SourceFolderPath))
                 return;
 
+            string fileToMove = FindPhysicalFileForJob(job);
+            if (fileToMove == null)
+                return; // Do not create a folder if there is no physical file to move!
+
             // Use the actual Status value directly as the sub-folder name
             string targetSubFolder = status.Trim();
             if (string.IsNullOrWhiteSpace(targetSubFolder))
@@ -1462,7 +1466,6 @@ namespace PrintTrackerApp
             if (!System.IO.Directory.Exists(targetFolder))
                 System.IO.Directory.CreateDirectory(targetFolder);
 
-            string fileToMove = FindPhysicalFileForJob(job);
             if (fileToMove != null)
             {
                 // Prevent moving file over itself and appending time repeatedly
