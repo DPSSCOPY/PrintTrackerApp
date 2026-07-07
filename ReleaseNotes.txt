@@ -1,3 +1,6 @@
+Update Version 1.0.24 Features:
+- Fixed empty status folder creation bug: Prevented the application from automatically creating empty subdirectories in the watch folder for print jobs when their physical PDF files do not exist (e.g., historical print logs loaded from external CSVs).
+
 Update Version 1.0.23 Features:
 - Fixed external CSV saving bug: Editing an external CSV file and saving now writes back to its original path instead of overwriting today's default CSV print log.
 - Synchronized Dashboard updating: Data modifications (edits, deletions, cancels, pastes, and undo/redo actions) now immediately trigger a dashboard recalculation.
