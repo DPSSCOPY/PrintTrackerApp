@@ -142,6 +142,7 @@ namespace PrintTrackerApp
         private System.IO.FileSystemWatcher _csvWatcher;
         private bool _isAppModifyingCsv = false;
         private DateTime _lastCsvChangeTime = DateTime.MinValue;
+        private bool _isAppInitialized = false;
 
         private void SetupCsvWatcher()
         {
@@ -225,6 +226,45 @@ namespace PrintTrackerApp
             }
         }
 
+        private void ExportHistoricalJobsSafely(IEnumerable<PrintJobInfo> jobs)
+        {
+            if (jobs == null) return;
+            _isAppModifyingCsv = true;
+            try
+            {
+                var jobsList = jobs.ToList();
+                string defaultPath = jobsList.FirstOrDefault(j => !string.IsNullOrEmpty(j.SourceFilePath))?.SourceFilePath;
+
+                if (string.IsNullOrEmpty(defaultPath))
+                {
+                    // Fallback to today's default print log
+                    CsvLogger.ExportJobsToCsv(jobsList, _appSettings.CsvExportPath);
+                    return;
+                }
+
+                var groups = jobsList.GroupBy(j => string.IsNullOrEmpty(j.SourceFilePath) ? defaultPath : j.SourceFilePath);
+
+                foreach (var group in groups)
+                {
+                    string targetPath = group.Key;
+                    
+                    if (targetPath.EndsWith(".xls", StringComparison.OrdinalIgnoreCase) || 
+                        targetPath.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) || 
+                        targetPath.EndsWith(".xlsm", StringComparison.OrdinalIgnoreCase))
+                    {
+                        System.Windows.MessageBox.Show($"Saving changes directly back to Excel files ({System.IO.Path.GetFileName(targetPath)}) is not supported.\nPlease export or save your data as CSV.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        continue;
+                    }
+
+                    CsvLogger.ExportJobsToSpecificCsvFile(group, targetPath);
+                }
+            }
+            finally
+            {
+                System.Threading.Tasks.Task.Delay(1500).ContinueWith(_ => _isAppModifyingCsv = false);
+            }
+        }
+
         public MainWindow()
         {
             _autoPrintService = new AutoPrintService();
@@ -299,6 +339,7 @@ namespace PrintTrackerApp
             // _timeCheckTimer.Interval = TimeSpan.FromSeconds(30);
             // _timeCheckTimer.Tick += TimeCheckTimer_Tick;
             // _timeCheckTimer.Start();
+            InitializeAppLogic();
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -379,8 +420,11 @@ namespace PrintTrackerApp
             });
         }
 
-        private void Window_Loaded(object sender, RoutedEventArgs e)
+        private void InitializeAppLogic()
         {
+            if (_isAppInitialized) return;
+            _isAppInitialized = true;
+
             AutoUpdater.CheckForUpdateEvent += AutoUpdaterOnCheckForUpdateEvent;
             AutoUpdater.Start("https://raw.githubusercontent.com/DPSSCOPY/PrintTrackerApp/main/AutoUpdater.xml");
 
@@ -444,6 +488,11 @@ namespace PrintTrackerApp
 
             // Start SNMP Polling
             _statusTimer.Start();
+        }
+
+        private void Window_Loaded(object sender, RoutedEventArgs e)
+        {
+            InitializeAppLogic();
         }
 
         private void SpoolerMonitor_OnJobUpdated(object? sender, PrintJobInfo updatedJob)
@@ -2656,11 +2705,23 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                 var result = System.Windows.MessageBox.Show($"Are you sure you want to delete {itemsToRemove.Count} selected job(s)?", "Confirm Delete", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
                 if (result == System.Windows.MessageBoxResult.Yes)
                 {
-                    foreach (var item in itemsToRemove.ToList())
+                    if (_historicalPrintJobs != null)
                     {
-                        _printJobs.Remove(item);
+                        foreach (var item in itemsToRemove.ToList())
+                        {
+                            _historicalPrintJobs.Remove(item);
+                        }
+                        ExportHistoricalJobsSafely(_historicalPrintJobs);
                     }
-                    ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
+                    else
+                    {
+                        foreach (var item in itemsToRemove.ToList())
+                        {
+                            _printJobs.Remove(item);
+                        }
+                        ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
+                    }
+                    teacherDashboard.RefreshDashboard();
                 }
             }
         }
@@ -2685,11 +2746,23 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                 var result = System.Windows.MessageBox.Show($"Are you sure you want to mark {itemsToCancel.Count} selected job(s) as Cancelled?", "Confirm Cancel", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question);
                 if (result == System.Windows.MessageBoxResult.Yes)
                 {
-                    foreach (var item in itemsToCancel.ToList())
+                    if (_historicalPrintJobs != null)
                     {
-                        item.Status = "Cancelled";
+                        foreach (var item in itemsToCancel.ToList())
+                        {
+                            item.Status = "Cancelled";
+                        }
+                        ExportHistoricalJobsSafely(_historicalPrintJobs);
                     }
-                    ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
+                    else
+                    {
+                        foreach (var item in itemsToCancel.ToList())
+                        {
+                            item.Status = "Cancelled";
+                        }
+                        ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
+                    }
+                    teacherDashboard.RefreshDashboard();
                 }
             }
         }
@@ -2924,6 +2997,7 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                             {
                                 ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                             }
+                            teacherDashboard.RefreshDashboard();
                         }
                     }, System.Windows.Threading.DispatcherPriority.Background);
                 }
@@ -2999,6 +3073,7 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                             _undoManager.AddBatch(batch);
                             if (requiresRefresh) dgPrintJobs.Items.Refresh();
                             if (_historicalPrintJobs == null) ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
+                            teacherDashboard.RefreshDashboard();
                         }
                     }
                     e.Handled = true;
@@ -3158,6 +3233,7 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                     _undoManager.Undo();
                     dgPrintJobs.Items.Refresh();
                     if (_historicalPrintJobs == null) ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
+                    teacherDashboard.RefreshDashboard();
                     e.Handled = true;
                 }
                 else if (e.Key == System.Windows.Input.Key.Y)
@@ -3165,6 +3241,7 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                     _undoManager.Redo();
                     dgPrintJobs.Items.Refresh();
                     if (_historicalPrintJobs == null) ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
+                    teacherDashboard.RefreshDashboard();
                     e.Handled = true;
                 }
                 else if (e.Key == System.Windows.Input.Key.S)
@@ -3172,12 +3249,13 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                     e.Handled = true;
                     if (_historicalPrintJobs != null)
                     {
-                        ExportJobsToCsvSafely(_historicalPrintJobs, _appSettings.CsvExportPath);
+                        ExportHistoricalJobsSafely(_historicalPrintJobs);
                     }
                     else
                     {
                         ExportJobsToCsvSafely(_printJobs, _appSettings.CsvExportPath);
                     }
+                    teacherDashboard.RefreshDashboard();
                     
                     System.Windows.MessageBox.Show("Saved successfully.", "Save", MessageBoxButton.OK, MessageBoxImage.Information);
                 }

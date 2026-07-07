@@ -1,30 +1,16 @@
+Update Version 1.0.23 Features:
+- Fixed external CSV saving bug: Editing an external CSV file and saving now writes back to its original path instead of overwriting today's default CSV print log.
+- Synchronized Dashboard updating: Data modifications (edits, deletions, cancels, pastes, and undo/redo actions) now immediately trigger a dashboard recalculation.
+- Fixed Windows Startup capturing bug: When the application starts minimized/hidden on Windows boot (via the -background argument), all print spooler tracking and SNMP polling services now initialize immediately.
+- Optimized Tab switching performance: Offloaded all heavy calculations (exemption matching, grade evaluation, and LCS name matching) to a background thread and implemented DataGrid UI control caching/reuse to achieve instantaneous tab switching with zero lag.
+- Restored print detail hover tooltips on teacher names.
+
 Update Version 1.0.22 Features:
 - Improved Auto Print error handling: added immediate skip to next available files on printing error without blocking the queue.
 - Implemented intelligent retry mechanism: failed files are automatically retried after all unfailed files in the queue have been processed.
 - Added 3-retry limit with 1-minute cooldown per file: after 3 consecutive failures, a specific file enters a 60-second cooldown while allowing other files to print normally without stopping Auto Print.
 - Fixed Teacher Dashboard external CSV data synchronization so external logs appear consistently on both Print Tracker and Dashboard tabs without merging into default live data.
 - Enhanced teacher schedule matching algorithm with strict Level verification and normalization (handling variations like Pre2A1, Pre-2A-I) to prevent mismatched assignment across grade levels.
-
-Update Version 1.0.20 Features:
-- Fixed Teacher Schedule Settings save bug where changing ComboBox statuses (e.g. from "Teach" to "No Teach") without clicking out of the cell would not commit changes before saving. Added automatic cell/row commit prior to saving schedules.
-
-Update Version 1.0.19 Features:
-- Added 3 new critical diagnostics to the **🛠️ PC Health & Diagnostic Tool**: Foxit UI Automation & Control check, Auto Print Watch Folder & Subfolders access check, and Printer Queue Status & Network IP communication check.
-- Added custom Foxit Path detection in diagnostics, prioritizing user-specified paths in Settings over standard registry paths.
-- Added automatic detection for Foxit PDF Editor (`FoxitPDFEditor.exe`) and Foxit PhantomPDF in both diagnostics and Auto Print.
-
-Update Version 1.0.18 Features:
-- Added interactive **🛠️ PC Health & Diagnostic Tool** inside Settings app with individual test buttons to check WMI responsiveness, Spooler permissions, Ricoh printer PCL6 driver type, Foxit PDF accessibility, and CSV storage permissions.
-- Fixed an issue where Hold Print Name and User ID would revert to default document names (e.g. IMG_8482_2.pdf / DPSS COPY PC1) after reopening the application by automatically exporting updated background job details to CSV storage.
-- Added automatic clean-up for Windows spooler temporary names ("Local Downlevel Document", "Remote Downlevel Document", "Print Document"), instantly replacing them with accurate Hold Print Names from Foxit PDF and Ricoh print jobs.
-- Fixed update loop behavior by synchronizing build versions across ZIP releases and AutoUpdater configurations.
-
-Update Version 1.0.17 Features:
-- Fixed User ID and Hold Print Name capture on User PCs by adding instant pre-fill from dynamic filename patterns (e.g. SMC3-Vannet-S1-9copies...), eliminating dependency on reading spooler files during Auto Print.
-- Enhanced SpoolFileParser with automatic silent permission recovery (using universal Windows SIDs for Everyone and Built-in Users) to prevent UnauthorizedAccessException on standard user accounts.
-- Added fallback spool file lookup to find recently created .SPL/.SHD files when WMI job IDs offset from disk filenames.
-- Increased PJL read buffer to 64KB and made PJL command extraction flexible to handle various Ricoh driver headers and formatting.
-- Updated installer (setup.iss) to apply permissions using universal SIDs (*S-1-1-0 and *S-1-5-32-545) for 100% compatibility across all Windows language editions and domain environments.
 
 
 

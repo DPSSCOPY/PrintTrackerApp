@@ -199,6 +199,19 @@ namespace PrintTrackerApp
             }
         }
 
+        public void RefreshDashboard()
+        {
+            if (_currentJobs == null) return;
+            if (_currentStart != DateTime.MinValue && _currentEnd != DateTime.MinValue)
+            {
+                ReloadFilteredData(_currentStart, _currentEnd);
+            }
+            else
+            {
+                ReloadFilteredData(DateTime.Now.Date, DateTime.Now.Date);
+            }
+        }
+
         private string GetConfigFilePath()
         {
             return System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "last_excel_path.txt");
@@ -296,194 +309,463 @@ namespace PrintTrackerApp
             }
         }
 
+        private class DashboardCalculationResult
+        {
+            public List<PrintJobInfo> AllJobs { get; set; } = new List<PrintJobInfo>();
+            public Dictionary<string, TeacherPrintStat> StatsDict { get; set; } = new Dictionary<string, TeacherPrintStat>();
+            public List<PrintJobInfo> UnmatchedJobs { get; set; } = new List<PrintJobInfo>();
+            public List<TeacherExcelRecord> FtRecords { get; set; } = new List<TeacherExcelRecord>();
+            public List<TeacherExcelRecord> PtRecords { get; set; } = new List<TeacherExcelRecord>();
+            public List<TeacherExcelRecord> KhRecords { get; set; } = new List<TeacherExcelRecord>();
+        }
+
         private async void ReloadFilteredData(DateTime start, DateTime end)
         {
             if (_currentJobs == null) return;
 
-            var allJobs = new List<PrintJobInfo>();
+            var currentJobsCopy = _currentJobs.ToList();
+            string searchText = txtSearch?.Text?.ToLower()?.Trim() ?? "";
 
-            // 1. Get from memory
-            foreach (var job in _currentJobs)
+            var result = await Task.Run(() =>
             {
-                bool parsed = DateTime.TryParse(job.Timestamp, out DateTime dt);
-                if (!parsed) parsed = DateTime.TryParseExact(job.Timestamp, "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
-                if (!parsed) parsed = DateTime.TryParse(job.Timestamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
-                
-                if (parsed && dt.Date >= start.Date && dt.Date <= end.Date)
-                {
-                    allJobs.Add(job);
-                }
-            }
+                var res = new DashboardCalculationResult();
+                var filteredJobs = new List<PrintJobInfo>();
 
-            if (!_isExternalDataMode)
-            {
-                // 2. Load from CSV history (Offload to background thread to prevent UI freezing)
-                var historyJobs = await Task.Run(() => Services.CsvLogger.LoadJobsFromCsvForDateRange(_csvExportPath, start, end));
-
-                // 3. Merge avoiding duplicates
-                var memoryKeys = new HashSet<string>(allJobs.Select(j => $"{j.Timestamp}_{j.DocumentName}_{j.Owner}"));
-                foreach (var hJob in historyJobs)
+                // 1. Get from memory
+                foreach (var job in currentJobsCopy)
                 {
-                    string key = $"{hJob.Timestamp}_{hJob.DocumentName}_{hJob.Owner}";
-                    if (!memoryKeys.Contains(key))
+                    bool parsed = DateTime.TryParse(job.Timestamp, out DateTime dt);
+                    if (!parsed) parsed = DateTime.TryParseExact(job.Timestamp, "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
+                    if (!parsed) parsed = DateTime.TryParse(job.Timestamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
+                    
+                    if (parsed && dt.Date >= start.Date && dt.Date <= end.Date)
                     {
-                        allJobs.Add(hJob);
+                        filteredJobs.Add(job);
                     }
                 }
-            }
+
+                if (!_isExternalDataMode)
+                {
+                    // 2. Load from CSV history
+                    var historyJobs = Services.CsvLogger.LoadJobsFromCsvForDateRange(_csvExportPath, start, end);
+
+                    // 3. Merge avoiding duplicates
+                    var memoryKeys = new HashSet<string>(filteredJobs.Select(j => $"{j.Timestamp}_{j.DocumentName}_{j.Owner}"));
+                    foreach (var hJob in historyJobs)
+                    {
+                        string key = $"{hJob.Timestamp}_{hJob.DocumentName}_{hJob.Owner}";
+                        if (!memoryKeys.Contains(key))
+                        {
+                            filteredJobs.Add(hJob);
+                        }
+                    }
+                }
+
+                res.AllJobs = filteredJobs;
+
+                // 4. Populate StatsDict
+                foreach (var job in res.AllJobs)
+                {
+                    if (string.IsNullOrWhiteSpace(job.DocumentName))
+                        continue;
+
+                    ParseDocumentName(job.DocumentName, out string level, out string teacher, out string session);
+
+                    // If file is missing level or teacher, it's considered malformed/unmatched and is NOT assigned to anyone
+                    if (string.IsNullOrWhiteSpace(level) || string.IsNullOrWhiteSpace(teacher))
+                    {
+                        res.UnmatchedJobs.Add(job);
+                        continue;
+                    }
+
+                    string jobDate = "";
+                    bool parsed = DateTime.TryParse(job.Timestamp, out DateTime dt);
+                    if (!parsed) parsed = DateTime.TryParseExact(job.Timestamp, "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
+                    if (!parsed) parsed = DateTime.TryParse(job.Timestamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
+                    
+                    if (parsed)
+                    {
+                        jobDate = dt.Date.ToString("yyyy-MM-dd");
+                    }
+
+                    // Split by '&'
+                    var levels = level.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
+                    var teachers = teacher.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
+                    var sessions = session.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
+
+                    if (levels.Length == 0) levels = new string[] { level };
+                    if (teachers.Length == 0) teachers = new string[] { teacher };
+                    if (sessions.Length == 0) sessions = new string[] { session };
+
+                    int splitCount = levels.Length * teachers.Length * sessions.Length;
+                    int totalCopies = job.TotalPages * job.Copies;
+                    int baseCopies = totalCopies / splitCount;
+                    int remainder = totalCopies % splitCount;
+
+                    int count = 0;
+                    foreach (var currentTeacher in teachers)
+                    {
+                        foreach (var currentLevel in levels)
+                        {
+                            foreach (var currentSession in sessions)
+                            {
+                                string tName = currentTeacher.Trim();
+                                string lName = currentLevel.Trim();
+                                string sName = currentSession.Trim();
+                                
+                                string key = $"{lName}_{tName}_{sName}";
+
+                                if (!res.StatsDict.ContainsKey(key))
+                                {
+                                    res.StatsDict[key] = new TeacherPrintStat
+                                    {
+                                        TeacherName = tName,
+                                        Level = lName,
+                                        Session = sName
+                                    };
+                                }
+
+                                res.StatsDict[key].JobCount++;
+                                res.StatsDict[key].TotalPages += job.TotalPages;
+                                res.StatsDict[key].TotalPageCopies += baseCopies + (count == 0 ? remainder : 0);
+                                
+                                if (!string.IsNullOrEmpty(jobDate))
+                                {
+                                    res.StatsDict[key].PrintDays.Add(jobDate);
+                                    if (!res.StatsDict[key].DailyPages.ContainsKey(jobDate))
+                                    {
+                                        res.StatsDict[key].DailyPages[jobDate] = 0;
+                                    }
+                                    res.StatsDict[key].DailyPages[jobDate] += job.TotalPages;
+                                }
+                                
+                                res.StatsDict[key].Jobs.Add(job);
+
+                                string jobInfo = $"- {job.DocumentName} ({jobDate}, {job.TotalPages} pages)\n";
+                                if (!res.StatsDict[key].JobsTooltip.Contains(jobInfo))
+                                {
+                                    res.StatsDict[key].JobsTooltip += jobInfo;
+                                }
+
+                                count++;
+                            }
+                        }
+                    }
+                }
+
+                // 5. Apply Exemptions
+                var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
+                ApplyExemptionsFromManagerInternal(res.StatsDict, start, end, manager);
+
+                // 6. Calculate Grades
+                int duration = (end.Date - start.Date).Days + 1;
+                int weeks = (int)Math.Ceiling(duration / 7.0);
+                if (weeks == 0) weeks = 1;
+
+                foreach (var stat in res.StatsDict.Values)
+                {
+                    int activeDays = stat.PrintDays.Union(stat.ExemptedDates).Count();
+                    
+                    if (stat.ExemptedDates.Count >= duration)
+                    {
+                        string key = $"{stat.TeacherName}_{stat.Level}";
+                        bool hasExam = false;
+                        bool hasNoTeach = false;
+
+                        if (manager.Schedules.ContainsKey(key))
+                        {
+                            for (DateTime date = start.Date; date <= end.Date; date = date.AddDays(1))
+                            {
+                                string dateStr = date.ToString("yyyy-MM-dd");
+                                if (manager.Schedules[key].ContainsKey(dateStr))
+                                {
+                                    string s = manager.Schedules[key][dateStr]?.ToLower();
+                                    if (s == "exam") hasExam = true;
+                                    if (s == "no teach") hasNoTeach = true;
+                                }
+                            }
+                        }
+                        if (hasExam && hasNoTeach) stat.Grade = "Exam/No Teach";
+                        else if (hasExam) stat.Grade = "Exam";
+                        else if (hasNoTeach) stat.Grade = "No Teach";
+                        else stat.Grade = "Exam/No Teach";
+                    }
+                    else if (activeDays >= 4 * weeks) stat.Grade = "A";
+                    else if (activeDays >= 3 * weeks) stat.Grade = "B";
+                    else if (activeDays >= 2 * weeks) stat.Grade = "C";
+                    else if (activeDays >= 1 * weeks) stat.Grade = "D";
+                    else stat.Grade = "E";
+                }
+
+                // 7. Get Excel Records FT, PT, KH
+                res.FtRecords = GetRecordsForTabInternal(_ftTable, "FT", searchText, res.StatsDict, manager, start, end);
+                res.PtRecords = GetRecordsForTabInternal(_ptTable, "PT", searchText, res.StatsDict, manager, start, end);
+                res.KhRecords = GetRecordsForTabInternal(_khTable, "KH", searchText, res.StatsDict, manager, start, end);
+
+                return res;
+            });
 
             int duration = (end.Date - start.Date).Days + 1;
-            LoadData(allJobs, duration, start, end);
+            BindDashboardData(result, start, end, duration, searchText);
         }
 
-        private void LoadData(IEnumerable<PrintJobInfo> printJobs, int totalDurationDays = 1, DateTime? filterStart = null, DateTime? filterEnd = null)
+        private void BindDashboardData(DashboardCalculationResult res, DateTime start, DateTime end, int totalDurationDays, string searchText)
         {
-            DateTime start = filterStart ?? DateTime.Now.Date;
-            DateTime end = filterEnd ?? DateTime.Now.Date;
             _currentStart = start;
             _currentEnd = end;
             _currentDurationDays = totalDurationDays;
 
             GenerateDynamicColumns(start, end);
 
-            _statsDict.Clear();
-            _unmatchedJobs.Clear();
+            _statsDict = res.StatsDict;
+            _unmatchedJobs = res.UnmatchedJobs;
 
-            foreach (var job in printJobs)
+            if (string.IsNullOrEmpty(searchText))
             {
-                if (string.IsNullOrWhiteSpace(job.DocumentName))
-                    continue;
-
-                ParseDocumentName(job.DocumentName, out string level, out string teacher, out string session);
-
-                // If file is missing level or teacher, it's considered malformed/unmatched and is NOT assigned to anyone
-                if (string.IsNullOrWhiteSpace(level) || string.IsNullOrWhiteSpace(teacher))
-                {
-                    _unmatchedJobs.Add(job);
-                    continue;
-                }
-
-                string jobDate = "";
-                bool parsed = DateTime.TryParse(job.Timestamp, out DateTime dt);
-                if (!parsed) parsed = DateTime.TryParseExact(job.Timestamp, "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
-                if (!parsed) parsed = DateTime.TryParse(job.Timestamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
-                
-                if (parsed)
-                {
-                    jobDate = dt.Date.ToString("yyyy-MM-dd");
-                }
-
-                // Split by '&'
-                var levels = level.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
-                var teachers = teacher.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
-                var sessions = session.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
-
-                if (levels.Length == 0) levels = new string[] { level };
-                if (teachers.Length == 0) teachers = new string[] { teacher };
-                if (sessions.Length == 0) sessions = new string[] { session };
-
-                int splitCount = levels.Length * teachers.Length * sessions.Length;
-                int totalCopies = job.TotalPages * job.Copies;
-                int baseCopies = totalCopies / splitCount;
-                int remainder = totalCopies % splitCount;
-
-                int count = 0;
-                foreach (var currentTeacher in teachers)
-                {
-                    foreach (var currentLevel in levels)
-                    {
-                        foreach (var currentSession in sessions)
-                        {
-                            string tName = currentTeacher.Trim();
-                            string lName = currentLevel.Trim();
-                            string sName = currentSession.Trim();
-                            
-                            string key = $"{lName}_{tName}_{sName}";
-
-                            if (!_statsDict.ContainsKey(key))
-                            {
-                                _statsDict[key] = new TeacherPrintStat
-                                {
-                                    TeacherName = tName,
-                                    Level = lName,
-                                    Session = sName
-                                };
-                            }
-
-                            _statsDict[key].JobCount++;
-                            _statsDict[key].TotalPages += job.TotalPages;
-                            _statsDict[key].TotalPageCopies += baseCopies + (count == 0 ? remainder : 0);
-                            
-                            if (!string.IsNullOrEmpty(jobDate))
-                            {
-                                _statsDict[key].PrintDays.Add(jobDate);
-                                if (!_statsDict[key].DailyPages.ContainsKey(jobDate))
-                                {
-                                    _statsDict[key].DailyPages[jobDate] = 0;
-                                }
-                                _statsDict[key].DailyPages[jobDate] += job.TotalPages;
-                            }
-                            
-                            _statsDict[key].Jobs.Add(job);
-
-                            string jobInfo = $"- {job.DocumentName} ({jobDate}, {job.TotalPages} pages)\n";
-                            if (!_statsDict[key].JobsTooltip.Contains(jobInfo))
-                            {
-                                _statsDict[key].JobsTooltip += jobInfo;
-                            }
-
-                            count++;
-                        }
-                    }
-                }
+                dgStats.ItemsSource = _statsDict.Values.OrderBy(s => s.TeacherName).ThenBy(s => s.Level).ToList();
+            }
+            else
+            {
+                dgStats.ItemsSource = _statsDict.Values
+                    .Where(s => s.TeacherName.ToLower().Contains(searchText) || s.Level.ToLower().Contains(searchText))
+                    .OrderBy(s => s.TeacherName).ThenBy(s => s.Level).ToList();
             }
 
-            // Apply exemptions from Schedule Manager
-            ApplyExemptionsFromManager(start, end);
+            PopulateExcelGridDirect(gridFT, res.FtRecords, true);
+            PopulateExcelGridDirect(gridPT, res.PtRecords, false);
+            PopulateExcelGridDirect(gridKH, res.KhRecords, true);
 
-            // Calculate Grades dynamically based on number of weeks (minimum 1 week)
-            int weeks = (int)Math.Ceiling(totalDurationDays / 7.0);
-            if (weeks == 0) weeks = 1;
-            
-            foreach (var stat in _statsDict.Values)
-            {
-                int activeDays = stat.PrintDays.Union(stat.ExemptedDates).Count();
-                
-                if (stat.ExemptedDates.Count >= totalDurationDays)
-                {
-                    var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
-                    string key = $"{stat.TeacherName}_{stat.Level}";
-                    bool hasExam = false;
-                    bool hasNoTeach = false;
-
-                    if (manager.Schedules.ContainsKey(key))
-                    {
-                        for (DateTime date = start.Date; date <= end.Date; date = date.AddDays(1))
-                        {
-                            string dateStr = date.ToString("yyyy-MM-dd");
-                            if (manager.Schedules[key].ContainsKey(dateStr))
-                            {
-                                string s = manager.Schedules[key][dateStr]?.ToLower();
-                                if (s == "exam") hasExam = true;
-                                if (s == "no teach") hasNoTeach = true;
-                            }
-                        }
-                    }
-                    if (hasExam && hasNoTeach) stat.Grade = "Exam/No Teach";
-                    else if (hasExam) stat.Grade = "Exam";
-                    else if (hasNoTeach) stat.Grade = "No Teach";
-                    else stat.Grade = "Exam/No Teach";
-                }
-                else if (activeDays >= 4 * weeks) stat.Grade = "A";
-                else if (activeDays >= 3 * weeks) stat.Grade = "B";
-                else if (activeDays >= 2 * weeks) stat.Grade = "C";
-                else if (activeDays >= 1 * weeks) stat.Grade = "D";
-                else stat.Grade = "E";
-            }
-
-            dgStats.ItemsSource = _statsDict.Values.OrderBy(s => s.TeacherName).ThenBy(s => s.Level).ToList();
-            RefreshExcelTabs();
             UpdateUnmatchedJobsUI();
+        }
+
+        private void PopulateExcelGridDirect(Grid container, List<TeacherExcelRecord> records, bool showLevel)
+        {
+            int columns = 4;
+            int itemsPerColumn = (int)Math.Ceiling(records.Count / (double)columns);
+
+            if (container.Children.Count != columns || !(container.Children[0] is DataGrid))
+            {
+                container.Children.Clear();
+                container.ColumnDefinitions.Clear();
+
+                for (int i = 0; i < columns; i++)
+                {
+                    container.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                    var grid = new DataGrid
+                    {
+                        AutoGenerateColumns = false,
+                        CanUserAddRows = false,
+                        CanUserSortColumns = false,
+                        Margin = new Thickness(2),
+                        HeadersVisibility = DataGridHeadersVisibility.Column,
+                        RowHeight = 25
+                    };
+
+                    var textStyle = new System.Windows.Style(typeof(System.Windows.Controls.TextBlock));
+                    textStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.ToolTipProperty, new System.Windows.Data.Binding("JobsTooltip")));
+                    
+                    grid.Columns.Add(new DataGridTextColumn { Header = "Teacher", Binding = new System.Windows.Data.Binding("TeacherName"), Width = new DataGridLength(1, DataGridLengthUnitType.Star), ElementStyle = textStyle });
+                    if (showLevel)
+                    {
+                        grid.Columns.Add(new DataGridTextColumn { Header = "Level", Binding = new System.Windows.Data.Binding("Level"), Width = DataGridLength.Auto });
+                    }
+
+                    var gradeCol = new DataGridTemplateColumn { Header = "Grade", Width = 80 };
+                    gradeCol.CellTemplate = (DataTemplate)this.FindResource("GradeTemplate");
+                    grid.Columns.Add(gradeCol);
+
+                    Grid.SetColumn(grid, i);
+                    container.Children.Add(grid);
+                }
+            }
+
+            for (int i = 0; i < columns; i++)
+            {
+                if (container.Children[i] is DataGrid grid)
+                {
+                    var columnRecords = records.Skip(i * itemsPerColumn).Take(itemsPerColumn).ToList();
+                    grid.ItemsSource = columnRecords;
+                }
+            }
+        }
+
+        private void ApplyExemptionsFromManagerInternal(Dictionary<string, TeacherPrintStat> statsDict, DateTime start, DateTime end, PrintTrackerApp.Services.TeacherScheduleManager manager)
+        {
+            if (statsDict == null) return;
+
+            var excelTeachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
+            ExtractTeachersFromTable(_ftTable, "FT", excelTeachers);
+            ExtractTeachersFromTable(_ptTable, "PT", excelTeachers);
+            ExtractTeachersFromTable(_khTable, "KH", excelTeachers);
+
+            foreach (var stat in statsDict.Values)
+            {
+                stat.ExemptedDates.Clear();
+                
+                var matchingExcel = excelTeachers.FirstOrDefault(et => IsLevelMatch(et.Level, stat.Level) && IsNameMatch(et.Name, stat.TeacherName, strict: false));
+                string key = matchingExcel != null ? $"{matchingExcel.Name}_{matchingExcel.Level}" : $"{stat.TeacherName}_{stat.Level}";
+
+                if (manager.Schedules.ContainsKey(key))
+                {
+                    for (DateTime date = start.Date; date <= end.Date; date = date.AddDays(1))
+                    {
+                        string dateStr = date.ToString("yyyy-MM-dd");
+                        if (manager.Schedules[key].ContainsKey(dateStr))
+                        {
+                            string status = manager.Schedules[key][dateStr];
+                            if (status?.ToLower() == "no teach" || status?.ToLower() == "exam")
+                            {
+                                stat.ExemptedDates.Add(dateStr);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private List<TeacherExcelRecord> GetRecordsForTabInternal(System.Data.DataTable table, string tabType, string searchText, Dictionary<string, TeacherPrintStat> statsDict, PrintTrackerApp.Services.TeacherScheduleManager manager, DateTime start, DateTime end)
+        {
+            var records = new List<TeacherExcelRecord>();
+            if (table == null) return records;
+            int startRow = (tabType == "KH") ? 2 : 1; 
+
+            for (int i = startRow; i < table.Rows.Count; i++)
+            {
+                System.Data.DataRow row = table.Rows[i];
+                var no = row[0]?.ToString();
+                if (string.IsNullOrWhiteSpace(no)) continue;
+
+                string rawTeacher = row[1]?.ToString() ?? "";
+                string rawLevel = table.Columns.Count > 2 ? (row[2]?.ToString() ?? "") : "";
+
+                if (!string.IsNullOrEmpty(searchText))
+                {
+                    if (!rawTeacher.ToLower().Contains(searchText) && !rawLevel.ToLower().Contains(searchText))
+                    {
+                        continue;
+                    }
+                }
+
+                string teacherName = rawTeacher;
+                string level = rawLevel;
+                string grade = "";
+
+                if (tabType == "PT")
+                {
+                    var parts = rawTeacher.Split('-');
+                    if (parts.Length >= 3)
+                    {
+                        teacherName = parts[0].Trim();
+                        level = parts[1].Trim();
+                        string session = parts[2].Trim();
+                        
+                        var bestMatch = FindBestMatchInternal(teacherName, level, session, statsDict);
+                        if (bestMatch != null) 
+                        {
+                            grade = bestMatch.Grade;
+                            bestMatch.IsMatched = true;
+                        }
+                        else
+                        {
+                            grade = CalculateGradeFromExemptionsOnlyInternal(teacherName, level, manager, start, end);
+                        }
+                    }
+                }
+                else
+                {
+                    var bestMatch = FindBestMatchInternal(teacherName, level, null, statsDict);
+                    if (bestMatch != null)
+                    {
+                        grade = bestMatch.Grade;
+                        bestMatch.IsMatched = true;
+                    }
+                    else
+                    {
+                        grade = CalculateGradeFromExemptionsOnlyInternal(teacherName, level, manager, start, end);
+                    }
+                }
+
+                records.Add(new TeacherExcelRecord
+                {
+                    No = no,
+                    TeacherName = rawTeacher,
+                    Level = rawLevel,
+                    Grade = string.IsNullOrEmpty(grade) ? "E" : grade,
+                    JobsTooltip = (tabType == "PT" ? FindBestMatchInternal(teacherName, level, rawTeacher.Split('-').Length >= 3 ? rawTeacher.Split('-')[2].Trim() : null, statsDict)?.JobsTooltip : FindBestMatchInternal(teacherName, level, null, statsDict)?.JobsTooltip) ?? ""
+                });
+            }
+            return records;
+        }
+
+        private TeacherPrintStat FindBestMatchInternal(string excelName, string level, string session, Dictionary<string, TeacherPrintStat> statsDict)
+        {
+            var candidates = statsDict.Values.Where(v => IsLevelMatch(v.Level, level) && IsNameMatch(excelName, v.TeacherName, strict: false)).ToList();
+            if (candidates.Count == 0) return null;
+
+            var scoredCandidates = candidates.Select(c =>
+            {
+                int score = 0;
+                
+                if (IsNameMatch(excelName, c.TeacherName, strict: true)) score += 100;
+                else score += 50;
+
+                if (!string.IsNullOrEmpty(session))
+                {
+                    if (string.Equals(c.Session, session, StringComparison.OrdinalIgnoreCase)) score += 50;
+                    else if (string.IsNullOrWhiteSpace(c.Session)) score += 10;
+                }
+                
+                if (string.Equals(c.Level, level, StringComparison.OrdinalIgnoreCase)) score += 100;
+                else if (IsLevelMatch(c.Level, level)) score += 80;
+                
+                return new { Stat = c, Score = score };
+            }).OrderByDescending(x => x.Score).ToList();
+
+            if (scoredCandidates.Count > 0 && scoredCandidates.First().Score >= 50)
+                return scoredCandidates.First().Stat;
+
+            return null;
+        }
+
+        private string CalculateGradeFromExemptionsOnlyInternal(string teacherName, string level, PrintTrackerApp.Services.TeacherScheduleManager manager, DateTime start, DateTime end)
+        {
+            string key = $"{teacherName}_{level}";
+            int exemptedCount = 0;
+            bool hasExam = false;
+            bool hasNoTeach = false;
+
+            if (manager.Schedules.ContainsKey(key))
+            {
+                for (DateTime date = start.Date; date <= end.Date; date = date.AddDays(1))
+                {
+                    string dateStr = date.ToString("yyyy-MM-dd");
+                    if (manager.Schedules[key].ContainsKey(dateStr))
+                    {
+                        string status = manager.Schedules[key][dateStr];
+                        if (status?.ToLower() == "no teach" || status?.ToLower() == "exam")
+                        {
+                            exemptedCount++;
+                            if (status?.ToLower() == "exam") hasExam = true;
+                            if (status?.ToLower() == "no teach") hasNoTeach = true;
+                        }
+                    }
+                }
+            }
+
+            int totalDurationDays = (end.Date - start.Date).Days + 1;
+            int teachDaysCount = totalDurationDays - exemptedCount;
+            if (teachDaysCount > 0)
+            {
+                // If they had ANY teaching days but printed 0 times, they fail.
+                return "E";
+            }
+
+            if (hasExam && hasNoTeach) return "Exam/No Teach";
+            if (hasExam) return "Exam";
+            if (hasNoTeach) return "No Teach";
+            
+            return "Exam/No Teach";
         }
 
         private void GenerateDynamicColumns(DateTime start, DateTime end)
@@ -805,71 +1087,65 @@ namespace PrintTrackerApp
 
         private void RefreshExcelTabs()
         {
-            if (_ftTable != null) PopulateExcelGrid(gridFT, _ftTable, "FT");
-            if (_ptTable != null) PopulateExcelGrid(gridPT, _ptTable, "PT");
-            if (_khTable != null) PopulateExcelGrid(gridKH, _khTable, "KH");
+            ReloadFilteredData(_currentStart, _currentEnd);
         }
 
         private void TxtSearch_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (_statsDict == null || dgStats == null || txtSearch == null) return;
-            string searchText = txtSearch.Text.ToLower().Trim();
-            
-            if (string.IsNullOrEmpty(searchText))
-            {
-                dgStats.ItemsSource = _statsDict.Values.OrderBy(s => s.TeacherName).ThenBy(s => s.Level).ToList();
-            }
-            else
-            {
-                dgStats.ItemsSource = _statsDict.Values
-                    .Where(s => s.TeacherName.ToLower().Contains(searchText) || s.Level.ToLower().Contains(searchText))
-                    .OrderBy(s => s.TeacherName).ThenBy(s => s.Level).ToList();
-            }
-            RefreshExcelTabs();
+            ReloadFilteredData(_currentStart, _currentEnd);
         }
 
         private void PopulateExcelGrid(Grid container, DataTable table, string tabType)
         {
             var records = GetRecordsForTab(table, tabType, false);
 
-            container.Children.Clear();
-            container.ColumnDefinitions.Clear();
-
             int columns = 4;
             int itemsPerColumn = (int)Math.Ceiling(records.Count / (double)columns);
 
+            if (container.Children.Count != columns || !(container.Children[0] is DataGrid))
+            {
+                container.Children.Clear();
+                container.ColumnDefinitions.Clear();
+
+                for (int i = 0; i < columns; i++)
+                {
+                    container.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                    var grid = new DataGrid
+                    {
+                        AutoGenerateColumns = false,
+                        CanUserAddRows = false,
+                        CanUserSortColumns = false,
+                        Margin = new Thickness(2),
+                        HeadersVisibility = DataGridHeadersVisibility.Column,
+                        RowHeight = 25
+                    };
+
+                    var textStyle = new System.Windows.Style(typeof(System.Windows.Controls.TextBlock));
+                    textStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.ToolTipProperty, new System.Windows.Data.Binding("JobsTooltip")));
+                    
+                    grid.Columns.Add(new DataGridTextColumn { Header = "Teacher", Binding = new System.Windows.Data.Binding("TeacherName"), Width = new DataGridLength(1, DataGridLengthUnitType.Star), ElementStyle = textStyle });
+                    if (tabType != "PT")
+                    {
+                        grid.Columns.Add(new DataGridTextColumn { Header = "Level", Binding = new System.Windows.Data.Binding("Level"), Width = DataGridLength.Auto });
+                    }
+
+                    var gradeCol = new DataGridTemplateColumn { Header = "Grade", Width = 80 };
+                    gradeCol.CellTemplate = (DataTemplate)this.FindResource("GradeTemplate");
+                    grid.Columns.Add(gradeCol);
+
+                    Grid.SetColumn(grid, i);
+                    container.Children.Add(grid);
+                }
+            }
+
             for (int i = 0; i < columns; i++)
             {
-                container.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                var columnRecords = records.Skip(i * itemsPerColumn).Take(itemsPerColumn).ToList();
-
-                var grid = new DataGrid
+                if (container.Children[i] is DataGrid grid)
                 {
-                    AutoGenerateColumns = false,
-                    CanUserAddRows = false,
-                    CanUserSortColumns = false,
-                    Margin = new Thickness(2),
-                    HeadersVisibility = DataGridHeadersVisibility.Column,
-                    RowHeight = 25,
-                    ItemsSource = columnRecords
-                };
-
-                var textStyle = new System.Windows.Style(typeof(System.Windows.Controls.TextBlock));
-                textStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.ToolTipProperty, new System.Windows.Data.Binding("JobsTooltip")));
-                
-                grid.Columns.Add(new DataGridTextColumn { Header = "Teacher", Binding = new System.Windows.Data.Binding("TeacherName"), Width = new DataGridLength(1, DataGridLengthUnitType.Star), ElementStyle = textStyle });
-                if (tabType != "PT")
-                {
-                    grid.Columns.Add(new DataGridTextColumn { Header = "Level", Binding = new System.Windows.Data.Binding("Level"), Width = DataGridLength.Auto });
+                    var columnRecords = records.Skip(i * itemsPerColumn).Take(itemsPerColumn).ToList();
+                    grid.ItemsSource = columnRecords;
                 }
-
-                var gradeCol = new DataGridTemplateColumn { Header = "Grade", Width = 80 };
-                gradeCol.CellTemplate = (DataTemplate)this.FindResource("GradeTemplate");
-                grid.Columns.Add(gradeCol);
-
-                Grid.SetColumn(grid, i);
-                container.Children.Add(grid);
             }
         }
 

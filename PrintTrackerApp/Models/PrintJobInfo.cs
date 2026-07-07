@@ -42,6 +42,7 @@ namespace PrintTrackerApp.Models
         public bool IsPdfPageCountAccurate { get; set; } = false;
         public bool IsInPrintPhase { get; set; } = false;
         public DateTime? SpoolerDeletedTime { get; set; } = null;
+        public string SourceFilePath { get; set; } = string.Empty;
 
         private int _copies = 1;
         public int Copies 

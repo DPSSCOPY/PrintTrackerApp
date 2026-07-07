@@ -13,21 +13,35 @@ namespace PrintTrackerApp.Services
     {
         public static void ExportJobsToCsv(IEnumerable<PrintJobInfo> jobs, string folderPath)
         {
+            if (string.IsNullOrWhiteSpace(folderPath))
+                return;
+
             try
             {
-                if (string.IsNullOrWhiteSpace(folderPath))
-                    return;
-
                 if (!Directory.Exists(folderPath))
                     Directory.CreateDirectory(folderPath);
 
                 string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
                 string filePath = Path.Combine(folderPath, $"PrintLog_{dateStr}.csv");
+                ExportJobsToSpecificCsvFile(jobs, filePath);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Error logging to CSV folder: " + ex.Message);
+            }
+        }
 
-                // Get today's jobs only, or we can just write everything that is in memory.
-                // Assuming _printJobs usually holds recent/today's jobs. Let's write them all to today's file.
-                // It's safer to filter by Timestamp starting with today's date, but for simplicity we write all provided.
-                
+        public static void ExportJobsToSpecificCsvFile(IEnumerable<PrintJobInfo> jobs, string filePath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(filePath))
+                    return;
+
+                string directory = Path.GetDirectoryName(filePath);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                    Directory.CreateDirectory(directory);
+
                 // Overwrite the file to ensure updates (like Copies and Status) are reflected
                 using (var writer = new StreamWriter(filePath, append: false, Encoding.UTF8))
                 {
@@ -81,7 +95,7 @@ namespace PrintTrackerApp.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine("Error logging to CSV: " + ex.Message);
+                System.Diagnostics.Debug.WriteLine("Error logging to CSV file: " + ex.Message);
             }
         }
 
@@ -179,7 +193,8 @@ namespace PrintTrackerApp.Services
                                 PrinterName = parts[7],
                                 Status = parts[8],
                                 JobId = Guid.NewGuid().ToString(),
-                                WebJobId = parts.Count >= 10 && int.TryParse(parts[9], out int wid) ? wid : -1
+                                WebJobId = parts.Count >= 10 && int.TryParse(parts[9], out int wid) ? wid : -1,
+                                SourceFilePath = filePath
                             };
                             
                             for (int i = 10; i < parts.Count && (i - 10) < dynamicHeaders.Count; i++)
@@ -258,7 +273,8 @@ namespace PrintTrackerApp.Services
                                             PrinterName = parts[7],
                                             Status = parts[8],
                                             JobId = Guid.NewGuid().ToString(),
-                                            WebJobId = parts.Count >= 10 && int.TryParse(parts[9], out int wid) ? wid : -1
+                                            WebJobId = parts.Count >= 10 && int.TryParse(parts[9], out int wid) ? wid : -1,
+                                            SourceFilePath = filePath
                                         };
                                         
                                         for (int i = 10; i < parts.Count && (i - 10) < dynamicHeaders.Count; i++)
@@ -407,7 +423,8 @@ namespace PrintTrackerApp.Services
                                         Owner = user,
                                         PrinterName = printer,
                                         Status = status,
-                                        JobId = Guid.NewGuid().ToString()
+                                        JobId = Guid.NewGuid().ToString(),
+                                        SourceFilePath = filePath
                                     });
                                 }
                             }
@@ -479,7 +496,8 @@ namespace PrintTrackerApp.Services
                             WebFileName = holdNameIdx >= 0 ? GetPart(holdNameIdx) : GetPart(docNameIdx),
                             RicohUserId = ricohIdIdx >= 0 ? GetPart(ricohIdIdx) : "",
                             Status = statusIdx >= 0 ? GetPart(statusIdx) : "Unknown",
-                            JobId = Guid.NewGuid().ToString()
+                            JobId = Guid.NewGuid().ToString(),
+                            SourceFilePath = filePath
                         };
                         newJob.CleanDownlevelNames();
                         jobs.Add(newJob);
