@@ -328,6 +328,8 @@ namespace PrintTrackerApp
 
             var result = await Task.Run(() =>
             {
+                var levelCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                var nameCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
                 var res = new DashboardCalculationResult();
                 var filteredJobs = new List<PrintJobInfo>();
 
@@ -363,94 +365,101 @@ namespace PrintTrackerApp
 
                 res.AllJobs = filteredJobs;
 
-                // 4. Populate StatsDict
-                foreach (var job in res.AllJobs)
-                {
-                    if (string.IsNullOrWhiteSpace(job.DocumentName))
-                        continue;
+                 // 4. Populate StatsDict
+                 var processedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                 foreach (var job in res.AllJobs)
+                 {
+                     if (string.IsNullOrWhiteSpace(job.DocumentName))
+                         continue;
 
-                    ParseDocumentName(job.DocumentName, out string level, out string teacher, out string session);
+                     ParseDocumentName(job.DocumentName, out string level, out string teacher, out string session);
 
-                    // If file is missing level or teacher, it's considered malformed/unmatched and is NOT assigned to anyone
-                    if (string.IsNullOrWhiteSpace(level) || string.IsNullOrWhiteSpace(teacher))
-                    {
-                        res.UnmatchedJobs.Add(job);
-                        continue;
-                    }
+                     // If file is missing level or teacher, it's considered malformed/unmatched and is NOT assigned to anyone
+                     if (string.IsNullOrWhiteSpace(level) || string.IsNullOrWhiteSpace(teacher))
+                     {
+                         res.UnmatchedJobs.Add(job);
+                         continue;
+                     }
 
-                    string jobDate = "";
-                    bool parsed = DateTime.TryParse(job.Timestamp, out DateTime dt);
-                    if (!parsed) parsed = DateTime.TryParseExact(job.Timestamp, "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
-                    if (!parsed) parsed = DateTime.TryParse(job.Timestamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
-                    
-                    if (parsed)
-                    {
-                        jobDate = dt.Date.ToString("yyyy-MM-dd");
-                    }
+                     string jobDate = "";
+                     bool parsed = DateTime.TryParse(job.Timestamp, out DateTime dt);
+                     if (!parsed) parsed = DateTime.TryParseExact(job.Timestamp, "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
+                     if (!parsed) parsed = DateTime.TryParse(job.Timestamp, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out dt);
+                     
+                     if (parsed)
+                     {
+                         jobDate = dt.Date.ToString("yyyy-MM-dd");
+                     }
 
-                    // Split by '&'
-                    var levels = level.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
-                    var teachers = teacher.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
-                    var sessions = session.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
+                     // Split by '&'
+                     var levels = level.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
+                     var teachers = teacher.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
+                     var sessions = session.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries);
 
-                    if (levels.Length == 0) levels = new string[] { level };
-                    if (teachers.Length == 0) teachers = new string[] { teacher };
-                    if (sessions.Length == 0) sessions = new string[] { session };
+                     if (levels.Length == 0) levels = new string[] { level };
+                     if (teachers.Length == 0) teachers = new string[] { teacher };
+                     if (sessions.Length == 0) sessions = new string[] { session };
 
-                    int splitCount = levels.Length * teachers.Length * sessions.Length;
-                    int totalCopies = job.TotalPages * job.Copies;
-                    int baseCopies = totalCopies / splitCount;
-                    int remainder = totalCopies % splitCount;
+                     int splitCount = levels.Length * teachers.Length * sessions.Length;
+                     int totalCopies = job.TotalPages * job.Copies;
+                     int baseCopies = totalCopies / splitCount;
+                     int remainder = totalCopies % splitCount;
 
-                    int count = 0;
-                    foreach (var currentTeacher in teachers)
-                    {
-                        foreach (var currentLevel in levels)
-                        {
-                            foreach (var currentSession in sessions)
-                            {
-                                string tName = currentTeacher.Trim();
-                                string lName = currentLevel.Trim();
-                                string sName = currentSession.Trim();
-                                
-                                string key = $"{lName}_{tName}_{sName}";
+                     int count = 0;
+                     foreach (var currentTeacher in teachers)
+                     {
+                         foreach (var currentLevel in levels)
+                         {
+                             foreach (var currentSession in sessions)
+                             {
+                                 string tName = currentTeacher.Trim();
+                                 string lName = currentLevel.Trim();
+                                 string sName = currentSession.Trim();
+                                 
+                                 string key = $"{lName}_{tName}_{sName}";
 
-                                if (!res.StatsDict.ContainsKey(key))
-                                {
-                                    res.StatsDict[key] = new TeacherPrintStat
-                                    {
-                                        TeacherName = tName,
-                                        Level = lName,
-                                        Session = sName
-                                    };
-                                }
+                                 if (!res.StatsDict.ContainsKey(key))
+                                 {
+                                     res.StatsDict[key] = new TeacherPrintStat
+                                     {
+                                         TeacherName = tName,
+                                         Level = lName,
+                                         Session = sName
+                                     };
+                                 }
 
-                                res.StatsDict[key].JobCount++;
-                                res.StatsDict[key].TotalPages += job.TotalPages;
-                                res.StatsDict[key].TotalPageCopies += baseCopies + (count == 0 ? remainder : 0);
-                                
-                                if (!string.IsNullOrEmpty(jobDate))
-                                {
-                                    res.StatsDict[key].PrintDays.Add(jobDate);
-                                    if (!res.StatsDict[key].DailyPages.ContainsKey(jobDate))
-                                    {
-                                        res.StatsDict[key].DailyPages[jobDate] = 0;
-                                    }
-                                    res.StatsDict[key].DailyPages[jobDate] += job.TotalPages;
-                                }
-                                
-                                res.StatsDict[key].Jobs.Add(job);
+                                 string dupKey = $"{key}|{jobDate ?? ""}|{job.DocumentName.Trim().ToLower()}";
+                                 bool isDuplicateDailyPrint = !processedKeys.Add(dupKey);
 
-                                string jobInfo = $"- {job.DocumentName} ({jobDate}, {job.TotalPages} pages)\n";
-                                if (!res.StatsDict[key].JobsTooltip.Contains(jobInfo))
-                                {
-                                    res.StatsDict[key].JobsTooltip += jobInfo;
-                                }
+                                 if (!isDuplicateDailyPrint)
+                                 {
+                                     res.StatsDict[key].JobCount++;
+                                     res.StatsDict[key].TotalPages += job.TotalPages;
+                                     res.StatsDict[key].TotalPageCopies += baseCopies + (count == 0 ? remainder : 0);
+                                     
+                                     if (!string.IsNullOrEmpty(jobDate))
+                                     {
+                                         res.StatsDict[key].PrintDays.Add(jobDate);
+                                         if (!res.StatsDict[key].DailyPages.ContainsKey(jobDate))
+                                         {
+                                             res.StatsDict[key].DailyPages[jobDate] = 0;
+                                         }
+                                         res.StatsDict[key].DailyPages[jobDate] += job.TotalPages;
+                                     }
+                                 }
+                                 
+                                 res.StatsDict[key].Jobs.Add(job);
 
-                                count++;
-                            }
-                        }
-                    }
+                                 string jobInfo = $"- {job.DocumentName} ({jobDate}, {job.TotalPages} pages)\n";
+                                 if (!res.StatsDict[key].JobsTooltip.Contains(jobInfo))
+                                 {
+                                     res.StatsDict[key].JobsTooltip += jobInfo;
+                                 }
+
+                                 count++;
+                             }
+                         }
+                     }
                 }
 
                 // 5. Apply Exemptions
@@ -498,9 +507,9 @@ namespace PrintTrackerApp
                 }
 
                 // 7. Get Excel Records FT, PT, KH
-                res.FtRecords = GetRecordsForTabInternal(_ftTable, "FT", searchText, res.StatsDict, manager, start, end);
-                res.PtRecords = GetRecordsForTabInternal(_ptTable, "PT", searchText, res.StatsDict, manager, start, end);
-                res.KhRecords = GetRecordsForTabInternal(_khTable, "KH", searchText, res.StatsDict, manager, start, end);
+                res.FtRecords = GetRecordsForTabInternal(_ftTable, "FT", searchText, res.StatsDict, manager, start, end, levelCache, nameCache);
+                res.PtRecords = GetRecordsForTabInternal(_ptTable, "PT", searchText, res.StatsDict, manager, start, end, levelCache, nameCache);
+                res.KhRecords = GetRecordsForTabInternal(_khTable, "KH", searchText, res.StatsDict, manager, start, end, levelCache, nameCache);
 
                 return res;
             });
@@ -624,7 +633,36 @@ namespace PrintTrackerApp
             }
         }
 
-        private List<TeacherExcelRecord> GetRecordsForTabInternal(System.Data.DataTable table, string tabType, string searchText, Dictionary<string, TeacherPrintStat> statsDict, PrintTrackerApp.Services.TeacherScheduleManager manager, DateTime start, DateTime end)
+        private bool GetIsLevelMatch(string printLevel, string excelLevel, Dictionary<string, bool> cache)
+        {
+            if (cache == null) return IsLevelMatch(printLevel, excelLevel);
+            string key = $"{printLevel ?? ""}|{excelLevel ?? ""}";
+            if (cache.TryGetValue(key, out bool res)) return res;
+            res = IsLevelMatch(printLevel, excelLevel);
+            cache[key] = res;
+            return res;
+        }
+
+        private bool GetIsNameMatch(string excelName, string dictName, bool strict, Dictionary<string, bool> cache)
+        {
+            if (cache == null) return IsNameMatch(excelName, dictName, strict);
+            string key = $"{excelName ?? ""}|{dictName ?? ""}|{strict}";
+            if (cache.TryGetValue(key, out bool res)) return res;
+            res = IsNameMatch(excelName, dictName, strict);
+            cache[key] = res;
+            return res;
+        }
+
+        private List<TeacherExcelRecord> GetRecordsForTabInternal(
+            System.Data.DataTable table, 
+            string tabType, 
+            string searchText, 
+            Dictionary<string, TeacherPrintStat> statsDict, 
+            PrintTrackerApp.Services.TeacherScheduleManager manager, 
+            DateTime start, 
+            DateTime end,
+            Dictionary<string, bool> levelCache,
+            Dictionary<string, bool> nameCache)
         {
             var records = new List<TeacherExcelRecord>();
             if (table == null) return records;
@@ -650,7 +688,9 @@ namespace PrintTrackerApp
                 string teacherName = rawTeacher;
                 string level = rawLevel;
                 string grade = "";
+                string jobsTooltip = "";
 
+                TeacherPrintStat bestMatch = null;
                 if (tabType == "PT")
                 {
                     var parts = rawTeacher.Split('-');
@@ -660,30 +700,23 @@ namespace PrintTrackerApp
                         level = parts[1].Trim();
                         string session = parts[2].Trim();
                         
-                        var bestMatch = FindBestMatchInternal(teacherName, level, session, statsDict);
-                        if (bestMatch != null) 
-                        {
-                            grade = bestMatch.Grade;
-                            bestMatch.IsMatched = true;
-                        }
-                        else
-                        {
-                            grade = CalculateGradeFromExemptionsOnlyInternal(teacherName, level, manager, start, end);
-                        }
+                        bestMatch = FindBestMatchInternal(teacherName, level, session, statsDict, levelCache, nameCache);
                     }
                 }
                 else
                 {
-                    var bestMatch = FindBestMatchInternal(teacherName, level, null, statsDict);
-                    if (bestMatch != null)
-                    {
-                        grade = bestMatch.Grade;
-                        bestMatch.IsMatched = true;
-                    }
-                    else
-                    {
-                        grade = CalculateGradeFromExemptionsOnlyInternal(teacherName, level, manager, start, end);
-                    }
+                    bestMatch = FindBestMatchInternal(teacherName, level, null, statsDict, levelCache, nameCache);
+                }
+
+                if (bestMatch != null)
+                {
+                    grade = bestMatch.Grade;
+                    bestMatch.IsMatched = true;
+                    jobsTooltip = bestMatch.JobsTooltip ?? "";
+                }
+                else
+                {
+                    grade = CalculateGradeFromExemptionsOnlyInternal(teacherName, level, manager, start, end);
                 }
 
                 records.Add(new TeacherExcelRecord
@@ -692,15 +725,25 @@ namespace PrintTrackerApp
                     TeacherName = rawTeacher,
                     Level = rawLevel,
                     Grade = string.IsNullOrEmpty(grade) ? "E" : grade,
-                    JobsTooltip = (tabType == "PT" ? FindBestMatchInternal(teacherName, level, rawTeacher.Split('-').Length >= 3 ? rawTeacher.Split('-')[2].Trim() : null, statsDict)?.JobsTooltip : FindBestMatchInternal(teacherName, level, null, statsDict)?.JobsTooltip) ?? ""
+                    JobsTooltip = jobsTooltip
                 });
             }
             return records;
         }
 
-        private TeacherPrintStat FindBestMatchInternal(string excelName, string level, string session, Dictionary<string, TeacherPrintStat> statsDict)
+        private TeacherPrintStat FindBestMatchInternal(
+            string excelName, 
+            string level, 
+            string session, 
+            Dictionary<string, TeacherPrintStat> statsDict,
+            Dictionary<string, bool> levelCache,
+            Dictionary<string, bool> nameCache)
         {
-            var candidates = statsDict.Values.Where(v => IsLevelMatch(v.Level, level) && IsNameMatch(excelName, v.TeacherName, strict: false)).ToList();
+            var candidates = statsDict.Values.Where(v => 
+                GetIsLevelMatch(v.Level, level, levelCache) && 
+                GetIsNameMatch(excelName, v.TeacherName, false, nameCache)
+            ).ToList();
+
             if (candidates.Count == 0) return null;
 
             var scoredCandidates = candidates.Select(c =>
@@ -1252,45 +1295,10 @@ namespace PrintTrackerApp
             }
         }
 
+        // CalculateGradeFromExemptionsOnly is deprecated and replaced by CalculateGradeFromExemptionsOnlyInternal
         private string CalculateGradeFromExemptionsOnly(string teacherName, string level)
         {
-            var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
-            string key = $"{teacherName}_{level}";
-            int exemptedCount = 0;
-            bool hasExam = false;
-            bool hasNoTeach = false;
-
-            if (manager.Schedules.ContainsKey(key))
-            {
-                for (DateTime date = _currentStart.Date; date <= _currentEnd.Date; date = date.AddDays(1))
-                {
-                    string dateStr = date.ToString("yyyy-MM-dd");
-                    if (manager.Schedules[key].ContainsKey(dateStr))
-                    {
-                        string status = manager.Schedules[key][dateStr];
-                        if (status?.ToLower() == "no teach" || status?.ToLower() == "exam")
-                        {
-                            exemptedCount++;
-                            if (status?.ToLower() == "exam") hasExam = true;
-                            if (status?.ToLower() == "no teach") hasNoTeach = true;
-                        }
-                    }
-                }
-            }
-
-            int teachDaysCount = _currentDurationDays - exemptedCount;
-            if (teachDaysCount > 0)
-            {
-                // If they had ANY teaching days but printed 0 times, they fail.
-                return "E";
-            }
-            
-            // All days were exempted
-            if (hasExam && hasNoTeach) return "Exam/No Teach";
-            if (hasExam) return "Exam";
-            if (hasNoTeach) return "No Teach";
-            
-            return "Exam/No Teach";
+            return "E";
         }
 
         private void BtnUnmatchedFiles_Click(object sender, RoutedEventArgs e)
@@ -1300,38 +1308,7 @@ namespace PrintTrackerApp
             window.ShowDialog();
         }
 
-        private TeacherPrintStat FindBestMatch(string excelName, string level, string session)
-        {
-            var candidates = _statsDict.Values.Where(v => IsLevelMatch(v.Level, level) && IsNameMatch(excelName, v.TeacherName, strict: false)).ToList();
-            if (candidates.Count == 0) return null;
-
-            var scoredCandidates = candidates.Select(c =>
-            {
-                int score = 0;
-                
-                // Name match score
-                if (IsNameMatch(excelName, c.TeacherName, strict: true)) score += 100;
-                else score += 50;
-
-                // Session match score
-                if (!string.IsNullOrEmpty(session))
-                {
-                    if (string.Equals(c.Session, session, StringComparison.OrdinalIgnoreCase)) score += 50;
-                    else if (string.IsNullOrWhiteSpace(c.Session)) score += 10;
-                }
-                
-                // Level match score
-                if (string.Equals(c.Level, level, StringComparison.OrdinalIgnoreCase)) score += 100;
-                else if (IsLevelMatch(c.Level, level)) score += 80;
-                
-                return new { Stat = c, Score = score };
-            }).OrderByDescending(x => x.Score).ToList();
-
-            if (scoredCandidates.Count > 0 && scoredCandidates.First().Score >= 50)
-                return scoredCandidates.First().Stat;
-
-            return null;
-        }
+        // FindBestMatch is deprecated and replaced by FindBestMatchInternal with caching.
 
         private bool IsLevelMatch(string printLevel, string excelLevel)
         {
@@ -1495,8 +1472,13 @@ namespace PrintTrackerApp
         private List<TeacherExcelRecord> GetRecordsForTab(System.Data.DataTable table, string tabType, bool ignoreSearch)
         {
             var records = new List<TeacherExcelRecord>();
+            if (table == null) return records;
             int startRow = (tabType == "KH") ? 2 : 1; 
             string searchText = ignoreSearch ? "" : (txtSearch?.Text?.ToLower()?.Trim() ?? "");
+
+            var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
+            var levelCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            var nameCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
             for (int i = startRow; i < table.Rows.Count; i++)
             {
@@ -1518,7 +1500,9 @@ namespace PrintTrackerApp
                 string teacherName = rawTeacher;
                 string level = rawLevel;
                 string grade = "";
+                string jobsTooltip = "";
 
+                TeacherPrintStat bestMatch = null;
                 if (tabType == "PT")
                 {
                     var parts = rawTeacher.Split('-');
@@ -1528,33 +1512,23 @@ namespace PrintTrackerApp
                         level = parts[1].Trim();
                         string session = parts[2].Trim();
                         
-                        var bestMatch = FindBestMatch(teacherName, level, session);
-                        if (bestMatch != null) 
-                        {
-                            grade = bestMatch.Grade;
-                            bestMatch.IsMatched = true;
-                        }
-                        else
-                        {
-                            grade = CalculateGradeFromExemptionsOnly(teacherName, level);
-                        }
+                        bestMatch = FindBestMatchInternal(teacherName, level, session, _statsDict, levelCache, nameCache);
                     }
                 }
                 else
                 {
-                    teacherName = rawTeacher.Trim();
-                    level = rawLevel.Trim();
+                    bestMatch = FindBestMatchInternal(teacherName, level, null, _statsDict, levelCache, nameCache);
+                }
 
-                    var bestMatch = FindBestMatch(teacherName, level, null);
-                    if (bestMatch != null) 
-                    {
-                        grade = bestMatch.Grade;
-                        bestMatch.IsMatched = true;
-                    }
-                    else
-                    {
-                        grade = CalculateGradeFromExemptionsOnly(teacherName, level);
-                    }
+                if (bestMatch != null)
+                {
+                    grade = bestMatch.Grade;
+                    bestMatch.IsMatched = true;
+                    jobsTooltip = bestMatch.JobsTooltip ?? "";
+                }
+                else
+                {
+                    grade = CalculateGradeFromExemptionsOnlyInternal(teacherName, level, manager, _currentStart, _currentEnd);
                 }
 
                 records.Add(new TeacherExcelRecord
@@ -1563,7 +1537,7 @@ namespace PrintTrackerApp
                     TeacherName = rawTeacher,
                     Level = rawLevel,
                     Grade = string.IsNullOrEmpty(grade) ? "E" : grade,
-                    JobsTooltip = (tabType == "PT" ? FindBestMatch(teacherName, level, rawTeacher.Split('-').Length >= 3 ? rawTeacher.Split('-')[2].Trim() : null)?.JobsTooltip : FindBestMatch(teacherName, level, null)?.JobsTooltip) ?? ""
+                    JobsTooltip = jobsTooltip
                 });
             }
             return records;

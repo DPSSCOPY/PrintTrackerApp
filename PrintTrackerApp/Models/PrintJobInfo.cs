@@ -106,6 +106,20 @@ namespace PrintTrackerApp.Models
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
+        private bool _isDuplicate = false;
+        public bool IsDuplicate 
+        { 
+            get => _isDuplicate; 
+            set
+            {
+                if (_isDuplicate != value)
+                {
+                    _isDuplicate = value;
+                    OnPropertyChanged(nameof(IsDuplicate));
+                }
+            }
+        }
+
         public void CleanDownlevelNames()
         {
             bool isDocDownlevel = _documentName == "Local Downlevel Document" || _documentName == "Print Document" || _documentName == "Remote Downlevel Document" || string.IsNullOrWhiteSpace(_documentName);

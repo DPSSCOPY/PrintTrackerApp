@@ -746,6 +746,7 @@ namespace PrintTrackerApp
         {
             Dispatcher.Invoke(() =>
             {
+                UpdateDuplicateHighlighting(dgPrintJobs.ItemsSource);
 
                 if (_historicalPrintJobs != null)
                 {
@@ -847,7 +848,27 @@ namespace PrintTrackerApp
                     }
                     
                     int actualCount = uniqueBaseNames.Count;
-                    int duplicateCount = totalSubCount - actualCount;
+                    
+                    // Count actual duplicate files matching the regex in all subdirectories of SourceFolderPath,
+                    // which is the exact same logic used in the Duplicate Files popup window
+                    int duplicateCount = 0;
+                    var duplicateSubdirs = System.IO.Directory.GetDirectories(_appSettings.SourceFolderPath);
+                    foreach (var dir in duplicateSubdirs)
+                    {
+                        try
+                        {
+                            var pdfFiles = System.IO.Directory.GetFiles(dir, "*.pdf");
+                            foreach (var f in pdfFiles)
+                            {
+                                string name = System.IO.Path.GetFileNameWithoutExtension(f);
+                                if (System.Text.RegularExpressions.Regex.IsMatch(name, @"_(\d{6})$"))
+                                {
+                                    duplicateCount++;
+                                }
+                            }
+                        }
+                        catch { }
+                    }
 
                     txtSubfolderCount.Text = actualCount.ToString();
                     txtDuplicateCount.Text = duplicateCount.ToString();
@@ -933,6 +954,37 @@ namespace PrintTrackerApp
                     txtPendingCount.Text = "Err";
                 }
             });
+        }
+
+        private void UpdateDuplicateHighlighting(System.Collections.IEnumerable jobs)
+        {
+            if (jobs == null) return;
+            var jobsList = jobs.OfType<PrintTrackerApp.Models.PrintJobInfo>().ToList();
+            
+            // Clear duplicates first
+            foreach (var job in jobsList)
+            {
+                job.IsDuplicate = false;
+            }
+
+            var groups = jobsList
+                .Where(j => !string.IsNullOrWhiteSpace(j.DocumentName))
+                .GroupBy(j => new 
+                { 
+                    Date = j.Timestamp.Length >= 10 ? j.Timestamp.Substring(0, 10) : j.Timestamp, 
+                    DocName = j.DocumentName.Trim().ToLower() 
+                });
+
+            foreach (var group in groups)
+            {
+                if (group.Count() > 1)
+                {
+                    foreach (var job in group)
+                    {
+                        job.IsDuplicate = true;
+                    }
+                }
+            }
         }
 
         private void BtnNotifications_Click(object sender, RoutedEventArgs e)
@@ -1454,9 +1506,51 @@ namespace PrintTrackerApp
             if (fileToMove == null)
                 return; // Do not create a folder if there is no physical file to move!
 
-            // Use the actual Status value directly as the sub-folder name
-            string targetSubFolder = status.Trim();
-            if (string.IsNullOrWhiteSpace(targetSubFolder))
+            // Clean/Trim status
+            string trimmedStatus = status.Trim();
+            if (string.IsNullOrWhiteSpace(trimmedStatus))
+                return;
+
+            // Restrict target subfolders to a predefined set of valid print statuses to prevent creating 
+            // strange subfolders (e.g., teacher names like "Kimheang-BS") in the monitored folder.
+            string[] allowedStatuses = { 
+                "Storing Complete", 
+                "Print Complete",
+                "Successfully Printed",
+                "Processing", 
+                "Sent to Printer", 
+                "Printing", 
+                "Storing",
+                "Error",
+                "Skipped - Invalid Format"
+            };
+
+            string targetSubFolder = null;
+            foreach (var allowed in allowedStatuses)
+            {
+                if (trimmedStatus.Contains(allowed, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Map "Successfully Printed" or "Print Complete" to "Print Complete"
+                    if (allowed.Equals("Successfully Printed", StringComparison.OrdinalIgnoreCase) || 
+                        allowed.Equals("Print Complete", StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetSubFolder = "Print Complete";
+                    }
+                    else if (allowed.Equals("Storing Complete", StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetSubFolder = "Storing Complete";
+                    }
+                    else
+                    {
+                        targetSubFolder = allowed;
+                    }
+                    break;
+                }
+            }
+
+            // If the status is not allowed (e.g. custom user entries or invalid Web Monitor scraping values), 
+            // do not create any subfolders or move files.
+            if (targetSubFolder == null)
                 return;
 
             // Sanitize invalid filename characters

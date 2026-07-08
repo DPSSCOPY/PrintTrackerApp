@@ -1,3 +1,10 @@
+Update Version 1.0.25 Features:
+- Fixed subfolder creation issue in UpdateFileStatusLocation (restricted to standard print statuses).
+- Fixed duplicate files count sync in verification panel (aligned with duplicate window regex scanning).
+- Optimized dashboard performance (added normalization caching, reduced search iterations, and optimized file reads).
+- Added daily duplicate print deduplication to dashboard page counts.
+- Added automatic daily duplicate print job highlighting in the main print grid.
+
 Update Version 1.0.24 Features:
 - Fixed empty status folder creation bug: Prevented the application from automatically creating empty subdirectories in the watch folder for print jobs when their physical PDF files do not exist (e.g., historical print logs loaded from external CSVs).
 
