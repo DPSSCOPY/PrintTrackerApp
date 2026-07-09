@@ -145,8 +145,8 @@ namespace PrintTrackerApp.Services
             };
 
             int tables = 4;
-            int colsPerTable = (sheetName == "PT") ? 2 : 3;
-            int totalCols = (colsPerTable + 1) * tables - 1; // 11 for PT, 15 for FT/KH
+            int colsPerTable = (sheetName == "PT") ? 4 : 3;
+            int totalCols = (colsPerTable + 1) * tables - 1; // 19 for PT, 15 for FT/KH
 
             // Format Header Row (Row 0)
             for (int t = 0; t < tables; t++)
@@ -183,7 +183,7 @@ namespace PrintTrackerApp.Services
                     int startCol = t * (colsPerTable + 1);
                     int gradeCol = startCol + colsPerTable - 1;
 
-                    // Format non-Grade columns (Teacher, Level)
+                    // Format non-Grade columns (Teacher)
                     requests.Add(new Request
                     {
                         RepeatCell = new RepeatCellRequest
@@ -203,13 +203,35 @@ namespace PrintTrackerApp.Services
                         }
                     });
 
-                    if (colsPerTable == 3) // Level column
+                    if (colsPerTable >= 3) // Level column (FT/KH have colsPerTable == 3, PT has colsPerTable == 4)
                     {
                         requests.Add(new Request
                         {
                             RepeatCell = new RepeatCellRequest
                             {
                                 Range = new GridRange { SheetId = sheetId, StartRowIndex = 1, EndRowIndex = data.Count, StartColumnIndex = startCol + 1, EndColumnIndex = startCol + 2 },
+                                Cell = new CellData
+                                {
+                                    UserEnteredFormat = new CellFormat
+                                    {
+                                        TextFormat = new TextFormat { FontSize = 10 },
+                                        HorizontalAlignment = "CENTER",
+                                        VerticalAlignment = "MIDDLE",
+                                        Borders = borders
+                                    }
+                                },
+                                Fields = "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment,borders)"
+                            }
+                        });
+                    }
+
+                    if (colsPerTable == 4) // Session column for PT
+                    {
+                        requests.Add(new Request
+                        {
+                            RepeatCell = new RepeatCellRequest
+                            {
+                                Range = new GridRange { SheetId = sheetId, StartRowIndex = 1, EndRowIndex = data.Count, StartColumnIndex = startCol + 2, EndColumnIndex = startCol + 3 },
                                 Cell = new CellData
                                 {
                                     UserEnteredFormat = new CellFormat
@@ -301,7 +323,7 @@ namespace PrintTrackerApp.Services
             });
 
             // Set spacer column widths
-            int[] spacers = (sheetName == "PT") ? new[] { 2, 5, 8 } : new[] { 3, 7, 11 };
+            int[] spacers = (sheetName == "PT") ? new[] { 4, 9, 14 } : new[] { 3, 7, 11 };
             foreach (int sp in spacers)
             {
                 requests.Add(new Request

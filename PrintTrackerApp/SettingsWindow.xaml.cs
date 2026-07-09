@@ -34,6 +34,9 @@ namespace PrintTrackerApp
                 NotifySentToPrinter = settings.NotifySentToPrinter,
                 NotifyStoringCompleted = settings.NotifyStoringCompleted,
                 NotifyPrintCompleted = settings.NotifyPrintCompleted,
+                FtLevels = settings.FtLevels,
+                PtLevels = settings.PtLevels,
+                KhLevels = settings.KhLevels,
                 CustomDateFilters = settings.CustomDateFilters != null ? new System.Collections.Generic.List<Services.CustomDateFilter>(settings.CustomDateFilters) : new System.Collections.Generic.List<Services.CustomDateFilter>()
             };
 
@@ -41,6 +44,9 @@ namespace PrintTrackerApp
             txtPrinterName.Text = CurrentSettings.PrinterName;
             txtCsvPath.Text = CurrentSettings.CsvExportPath;
             txtSourcePath.Text = CurrentSettings.SourceFolderPath;
+            txtFtLevels.Text = CurrentSettings.FtLevels;
+            txtPtLevels.Text = CurrentSettings.PtLevels;
+            txtKhLevels.Text = CurrentSettings.KhLevels;
 
             chkPriority1.IsChecked = CurrentSettings.EnablePriority1;
             txtPriority1.Text = CurrentSettings.Priority1Prefixes;
@@ -146,6 +152,9 @@ namespace PrintTrackerApp
             CurrentSettings.NotifySentToPrinter = chkNotifySentToPrinter.IsChecked ?? true;
             CurrentSettings.NotifyStoringCompleted = chkNotifyStoringCompleted.IsChecked ?? true;
             CurrentSettings.NotifyPrintCompleted = chkNotifyPrintCompleted.IsChecked ?? true;
+            CurrentSettings.FtLevels = txtFtLevels.Text.Trim();
+            CurrentSettings.PtLevels = txtPtLevels.Text.Trim();
+            CurrentSettings.KhLevels = txtKhLevels.Text.Trim();
             
             CurrentSettings.EnableAutoShutdown = chkAutoShutdown.IsChecked ?? false;
             CurrentSettings.AutoShutdownMode = (rbShutdownAtTime.IsChecked == true) ? 1 : 0;

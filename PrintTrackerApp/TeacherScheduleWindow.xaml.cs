@@ -21,6 +21,7 @@ namespace PrintTrackerApp
             public string Name { get; set; }
             public string Level { get; set; }
             public string Category { get; set; }
+            public string RawName { get; set; }
         }
 
         private UndoManager _undoManager = new UndoManager();
@@ -33,6 +34,15 @@ namespace PrintTrackerApp
         private object _fillSourceValue;
         private int _fillStartRowIdx = -1;
         private int _fillStartColIdx = -1;
+
+        // Schedules grid fields
+        private System.Windows.Controls.CheckBox _headerCheckBox = null;
+        private bool _selectAllState = true;
+
+        // Visibility grid fields
+        private DataTable _visibilityTable;
+        private System.Windows.Controls.CheckBox _visibilityHeaderCheckBox = null;
+        private bool _visibilitySelectAllState = true;
 
         private static T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
         {
@@ -75,20 +85,62 @@ namespace PrintTrackerApp
 
         public TeacherScheduleWindow(List<TeacherIdentifier> teachers)
         {
+            _isUpdating = true; // Prevent BuildTable from running during initialization
             InitializeComponent();
             _teachers = teachers;
             _manager = TeacherScheduleManager.Load();
             
             LoadCustomDateFilters();
             
-            int diff = (7 + (DateTime.Now.DayOfWeek - DayOfWeek.Monday)) % 7;
-            dpStart.SelectedDate = DateTime.Now.AddDays(-1 * diff).Date;
-            dpEnd.SelectedDate = dpStart.SelectedDate.Value.AddDays(4);
+            string lastFilter = _manager.LastFilterName;
+            bool foundFilter = false;
+            if (!string.IsNullOrEmpty(lastFilter))
+            {
+                for (int i = 0; i < cmbDateFilter.Items.Count; i++)
+                {
+                    if (cmbDateFilter.Items[i] is ComboBoxItem item && string.Equals(item.Content?.ToString(), lastFilter, StringComparison.OrdinalIgnoreCase))
+                    {
+                        cmbDateFilter.SelectedIndex = i;
+                        foundFilter = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!foundFilter)
+            {
+                cmbDateFilter.SelectedIndex = 0; // Default to Custom Range
+            }
+
+            if (cmbDateFilter.SelectedIndex == 0)
+            {
+                if (_manager.LastCustomStartDate.HasValue && _manager.LastCustomEndDate.HasValue)
+                {
+                    dpStart.SelectedDate = _manager.LastCustomStartDate.Value;
+                    dpEnd.SelectedDate = _manager.LastCustomEndDate.Value;
+                }
+                else
+                {
+                    int diff = (7 + (DateTime.Now.DayOfWeek - DayOfWeek.Monday)) % 7;
+                    dpStart.SelectedDate = DateTime.Now.AddDays(-1 * diff).Date;
+                    dpEnd.SelectedDate = dpStart.SelectedDate.Value.AddDays(4);
+                }
+            }
+            else
+            {
+                // Force populate the dates from the selected CustomDateFilter item
+                if (cmbDateFilter.SelectedItem is ComboBoxItem item && item.Tag is PrintTrackerApp.Services.CustomDateFilter filter)
+                {
+                    dpStart.SelectedDate = filter.StartDate.Date;
+                    dpEnd.SelectedDate = filter.EndDate.Date;
+                }
+            }
             
             _autoScrollTimer = new System.Windows.Threading.DispatcherTimer();
             _autoScrollTimer.Interval = TimeSpan.FromMilliseconds(50);
             _autoScrollTimer.Tick += AutoScrollTimer_Tick;
 
+            _isUpdating = false; // Re-enable BuildTable
             BuildTable();
         }
 
@@ -166,6 +218,101 @@ namespace PrintTrackerApp
             BuildTable();
         }
 
+        public void LocateTeacher(string name, string level, string category)
+        {
+            if (string.IsNullOrEmpty(name)) return;
+
+            // Clear search filter so the teacher isn't filtered out
+            if (txtSearch != null)
+            {
+                txtSearch.Text = "";
+            }
+
+            // Switch to Schedules tab in the main tab control
+            if (mainTabControl != null)
+            {
+                mainTabControl.SelectedIndex = 0;
+            }
+
+            // Select category tab
+            if (tabCategory != null)
+            {
+                if (string.Equals(category, "FT", StringComparison.OrdinalIgnoreCase))
+                    tabCategory.SelectedIndex = 1;
+                else if (string.Equals(category, "PT", StringComparison.OrdinalIgnoreCase))
+                    tabCategory.SelectedIndex = 2;
+                else if (string.Equals(category, "KH", StringComparison.OrdinalIgnoreCase))
+                    tabCategory.SelectedIndex = 3;
+                else
+                    tabCategory.SelectedIndex = 0; // All Teachers
+            }
+
+            // Force layout/filters update to ensure dgSchedule has the correct items
+            ApplyFilters();
+
+            // Find matching row
+            DataRowView bestMatch = null;
+            int bestScore = -1;
+
+            if (dgSchedule.ItemsSource != null)
+            {
+                foreach (var item in dgSchedule.ItemsSource)
+                {
+                    if (item is DataRowView rowView)
+                    {
+                        string rName = rowView["Teacher Name"]?.ToString() ?? "";
+                        string rLevel = rowView["Level"]?.ToString() ?? "";
+
+                        int score = 0;
+                        if (string.Equals(rName, name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            score += 100;
+                        }
+                        else if (TeacherDashboardControl.IsNameMatch(rName, name, false))
+                        {
+                            score += 50;
+                        }
+
+                        if (string.Equals(rLevel, level, StringComparison.OrdinalIgnoreCase))
+                        {
+                            score += 10;
+                        }
+                        else if (TeacherDashboardControl.IsLevelMatch(rLevel, level))
+                        {
+                            score += 5;
+                        }
+
+                        if (score > bestScore && score > 0)
+                        {
+                            bestScore = score;
+                            bestMatch = rowView;
+                        }
+                    }
+                }
+            }
+
+            if (bestMatch != null)
+            {
+                dgSchedule.SelectedItem = bestMatch;
+                
+                // Scroll to the selected item on Dispatcher background priority
+                this.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    dgSchedule.UpdateLayout();
+                    dgSchedule.ScrollIntoView(bestMatch);
+                    
+                    // Also select cell to highlight
+                    if (dgSchedule.Columns.Count > 1)
+                    {
+                        var cellInfo = new DataGridCellInfo(bestMatch, dgSchedule.Columns[1]);
+                        dgSchedule.CurrentCell = cellInfo;
+                        dgSchedule.SelectedCells.Clear();
+                        dgSchedule.SelectedCells.Add(cellInfo);
+                    }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+        }
+
         private void BuildTable()
         {
             if (_isUpdating || dpStart.SelectedDate == null || dpEnd.SelectedDate == null) return;
@@ -184,12 +331,45 @@ namespace PrintTrackerApp
             _scheduleTable.ColumnChanging += ScheduleTable_ColumnChanging;
             _undoManager.Clear();
             
+            _scheduleTable.Columns.Add("Show", typeof(bool)); // visibility checkbox column
+            _scheduleTable.Columns.Add("Display Name", typeof(string));
             _scheduleTable.Columns.Add("Teacher Name", typeof(string));
             _scheduleTable.Columns.Add("Level", typeof(string));
             _scheduleTable.Columns.Add("Category", typeof(string));
 
             dgSchedule.Columns.Clear();
-            dgSchedule.Columns.Add(new DataGridTextColumn { Header = "Teacher Name", Binding = new System.Windows.Data.Binding("Teacher Name"), IsReadOnly = true, Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+
+            // ── Checkbox column (Show in Tab) ────────────────────────────────────
+            _headerCheckBox = new System.Windows.Controls.CheckBox
+            {
+                IsChecked = true,
+                IsThreeState = true,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                VerticalAlignment = System.Windows.VerticalAlignment.Center,
+                ToolTip = "Show / Hide all teachers in dashboard tabs",
+                Margin = new Thickness(2)
+            };
+            _headerCheckBox.Click += ChkSelectAll_Click;
+
+            var showCellFactory = new FrameworkElementFactory(typeof(System.Windows.Controls.CheckBox));
+            showCellFactory.SetValue(System.Windows.Controls.CheckBox.HorizontalAlignmentProperty, System.Windows.HorizontalAlignment.Center);
+            showCellFactory.SetValue(System.Windows.Controls.CheckBox.VerticalAlignmentProperty, System.Windows.VerticalAlignment.Center);
+            showCellFactory.SetBinding(System.Windows.Controls.CheckBox.IsCheckedProperty,
+                new System.Windows.Data.Binding("[Show]") { Mode = System.Windows.Data.BindingMode.TwoWay, UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged });
+            showCellFactory.AddHandler(System.Windows.Controls.CheckBox.ClickEvent, new RoutedEventHandler(RowShowChk_Click));
+            var showCellTemplate = new DataTemplate { VisualTree = showCellFactory };
+
+            var showCol = new DataGridTemplateColumn
+            {
+                Header = _headerCheckBox,
+                Width = new DataGridLength(36),
+                IsReadOnly = false,
+                CellTemplate = showCellTemplate
+            };
+            dgSchedule.Columns.Add(showCol);
+            // ────────────────────────────────────────────────────────────────────
+
+            dgSchedule.Columns.Add(new DataGridTextColumn { Header = "Teacher Name", Binding = new System.Windows.Data.Binding("Display Name"), IsReadOnly = true, Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
             dgSchedule.Columns.Add(new DataGridTextColumn { Header = "Level", Binding = new System.Windows.Data.Binding("Level"), IsReadOnly = true, Width = new DataGridLength(100) });
 
             // Generate date columns
@@ -211,28 +391,84 @@ namespace PrintTrackerApp
                 dgSchedule.Columns.Add(comboCol);
             }
 
+            BuildVisibilityTable();
             PopulateData(start, end);
+        }
+
+        private void BuildVisibilityTable()
+        {
+            _visibilityTable = new DataTable();
+            _visibilityTable.Columns.Add("Show", typeof(bool));
+            _visibilityTable.Columns.Add("Teacher Name", typeof(string));
+            _visibilityTable.Columns.Add("Category", typeof(string));
+
+            dgVisibility.Columns.Clear();
+
+            _visibilityHeaderCheckBox = new System.Windows.Controls.CheckBox
+            {
+                IsChecked = true,
+                IsThreeState = true,
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                VerticalAlignment = System.Windows.VerticalAlignment.Center,
+                ToolTip = "Show / Hide all teachers in dashboard tabs",
+                Margin = new Thickness(2)
+            };
+            _visibilityHeaderCheckBox.Click += VisibilityChkSelectAll_Click;
+
+            var showCellFactory = new FrameworkElementFactory(typeof(System.Windows.Controls.CheckBox));
+            showCellFactory.SetValue(System.Windows.Controls.CheckBox.HorizontalAlignmentProperty, System.Windows.HorizontalAlignment.Center);
+            showCellFactory.SetValue(System.Windows.Controls.CheckBox.VerticalAlignmentProperty, System.Windows.VerticalAlignment.Center);
+            showCellFactory.SetBinding(System.Windows.Controls.CheckBox.IsCheckedProperty,
+                new System.Windows.Data.Binding("[Show]") { Mode = System.Windows.Data.BindingMode.TwoWay, UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged });
+            showCellFactory.AddHandler(System.Windows.Controls.CheckBox.ClickEvent, new RoutedEventHandler(VisibilityRowShowChk_Click));
+            var showCellTemplate = new DataTemplate { VisualTree = showCellFactory };
+
+            var showCol = new DataGridTemplateColumn
+            {
+                Header = _visibilityHeaderCheckBox,
+                Width = new DataGridLength(36),
+                IsReadOnly = false,
+                CellTemplate = showCellTemplate
+            };
+            dgVisibility.Columns.Add(showCol);
+
+            dgVisibility.Columns.Add(new DataGridTextColumn 
+            { 
+                Header = "Teacher Name", 
+                Binding = new System.Windows.Data.Binding("Teacher Name"), 
+                IsReadOnly = true, 
+                Width = new DataGridLength(1, DataGridLengthUnitType.Star) 
+            });
         }
 
         private void PopulateData(DateTime start, DateTime end)
         {
             _scheduleTable.Rows.Clear();
+            _visibilityTable.Rows.Clear();
             string searchText = txtSearch.Text?.ToLower()?.Trim() ?? "";
 
-            foreach (var teacher in _teachers.OrderBy(t => t.Name).ThenBy(t => t.Level))
+            // 1. Schedules Grid
+            foreach (var teacher in _teachers.OrderBy(t => t.RawName).ThenBy(t => t.Level))
             {
                 if (!string.IsNullOrEmpty(searchText))
                 {
-                    if (!teacher.Name.ToLower().Contains(searchText) && !teacher.Level.ToLower().Contains(searchText))
+                    if (!teacher.RawName.ToLower().Contains(searchText) && !teacher.Level.ToLower().Contains(searchText))
                         continue;
                 }
 
                 DataRow row = _scheduleTable.NewRow();
+                row["Display Name"] = teacher.RawName;
                 row["Teacher Name"] = teacher.Name;
                 row["Level"] = teacher.Level;
                 row["Category"] = teacher.Category ?? "Unknown";
-                string key = $"{teacher.Name}_{teacher.Level}";
 
+                string levelKey = string.IsNullOrEmpty(teacher.Level) ? teacher.Name : $"{teacher.Name}_{teacher.Level}";
+                string dateKey = $"{levelKey}_{start.ToString("yyyy-MM-dd")}_{end.ToString("yyyy-MM-dd")}";
+                row["Show"] = !_manager.HiddenTeachers.Contains(teacher.Name) && 
+                              !_manager.HiddenTeachers.Contains(levelKey) && 
+                              !_manager.HiddenTeachers.Contains(dateKey);
+
+                string key = $"{teacher.Name}_{teacher.Level}";
                 bool hasSchedule = _manager.Schedules.ContainsKey(key);
 
                 for (DateTime date = start; date <= end; date = date.AddDays(1))
@@ -254,8 +490,38 @@ namespace PrintTrackerApp
                 _scheduleTable.Rows.Add(row);
             }
 
+            // 2. Visibility Grid (group by unique teacher names and categories)
+            var uniqueTeachers = _teachers
+                .GroupBy(t => new { t.Name, t.Category })
+                .Select(g => g.First())
+                .OrderBy(t => t.Name);
+
+            foreach (var teacher in uniqueTeachers)
+            {
+                if (!string.IsNullOrEmpty(searchText))
+                {
+                    if (!teacher.Name.ToLower().Contains(searchText))
+                        continue;
+                }
+
+                DataRow row = _visibilityTable.NewRow();
+                row["Teacher Name"] = teacher.Name;
+                row["Category"] = teacher.Category ?? "Unknown";
+                row["Show"] = !_manager.HiddenTeachers.Contains(teacher.Name);
+
+                _visibilityTable.Rows.Add(row);
+            }
+
             ApplyFilters();
             txtStatus.Text = "";
+        }
+
+        private void MainTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.Source == mainTabControl)
+            {
+                ApplyFilters();
+            }
         }
 
         private void TabCategory_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -263,34 +529,94 @@ namespace PrintTrackerApp
             ApplyFilters();
         }
 
+        private void TabCategoryVisibility_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ApplyFilters();
+        }
+
         private void ApplyFilters()
         {
-            if (_scheduleTable == null) return;
-            string searchText = txtSearch.Text?.ToLower()?.Trim() ?? "";
-            string categoryFilter = "";
-
-            if (tabCategory != null && tabCategory.SelectedItem is TabItem tabItem && tabItem.Header != null)
+            // Schedules Filter
+            if (_scheduleTable != null)
             {
-                string header = tabItem.Header.ToString();
-                if (header != "All Teachers")
+                string searchText = txtSearch.Text?.ToLower()?.Trim() ?? "";
+                string categoryFilter = "";
+
+                if (tabCategory != null && tabCategory.SelectedItem is TabItem tabItem && tabItem.Header != null)
                 {
-                    categoryFilter = $"Category = '{header}'";
+                    string header = tabItem.Header.ToString();
+                    if (header != "All Teachers")
+                    {
+                        categoryFilter = $"Category = '{header}'";
+                    }
+                }
+
+                string finalFilter = categoryFilter;
+
+                if (!string.IsNullOrEmpty(searchText))
+                {
+                    string searchFilter = $"([Display Name] LIKE '%{searchText}%' OR Level LIKE '%{searchText}%')";
+                    if (string.IsNullOrEmpty(finalFilter))
+                        finalFilter = searchFilter;
+                    else
+                        finalFilter += $" AND {searchFilter}";
+                }
+                
+                _scheduleTable.DefaultView.RowFilter = finalFilter;
+                dgSchedule.ItemsSource = _scheduleTable.DefaultView;
+
+                // Sync Header checkbox for schedules grid
+                int total = _scheduleTable.DefaultView.Count;
+                if (total > 0 && _headerCheckBox != null)
+                {
+                    int shown = _scheduleTable.DefaultView.Cast<DataRowView>()
+                        .Count(r => (bool)(r["Show"] ?? true));
+                    _headerCheckBox.IsChecked = shown == total ? (bool?)true
+                                                        : shown == 0     ? (bool?)false
+                                                        : null;
                 }
             }
 
-            string finalFilter = categoryFilter;
-
-            if (!string.IsNullOrEmpty(searchText))
+            // Visibility Filter
+            if (_visibilityTable != null)
             {
-                string searchFilter = $"([Teacher Name] LIKE '%{searchText}%' OR Level LIKE '%{searchText}%')";
-                if (string.IsNullOrEmpty(finalFilter))
-                    finalFilter = searchFilter;
-                else
-                    finalFilter += $" AND {searchFilter}";
+                string searchText = txtSearch.Text?.ToLower()?.Trim() ?? "";
+                string categoryFilter = "";
+
+                if (tabCategoryVisibility != null && tabCategoryVisibility.SelectedItem is TabItem tabItemVis && tabItemVis.Header != null)
+                {
+                    string header = tabItemVis.Header.ToString();
+                    if (header != "All Teachers")
+                    {
+                        categoryFilter = $"Category = '{header}'";
+                    }
+                }
+
+                string finalFilter = categoryFilter;
+
+                if (!string.IsNullOrEmpty(searchText))
+                {
+                    string searchFilter = $"[Teacher Name] LIKE '%{searchText}%'";
+                    if (string.IsNullOrEmpty(finalFilter))
+                        finalFilter = searchFilter;
+                    else
+                        finalFilter += $" AND {searchFilter}";
+                }
+
+                _visibilityTable.DefaultView.RowFilter = finalFilter;
+                dgVisibility.ItemsSource = _visibilityTable.DefaultView;
+
+                // Sync Header checkbox
+                int total = _visibilityTable.DefaultView.Count;
+                if (total > 0 && _visibilityHeaderCheckBox != null)
+                {
+                    int shown = _visibilityTable.DefaultView.Cast<DataRowView>()
+                        .Count(r => (bool)(r["Show"] ?? true));
+                    _visibilityHeaderCheckBox.IsChecked = shown == total ? (bool?)true
+                                                        : shown == 0     ? (bool?)false
+                                                        : null;
+                }
             }
-            
-            _scheduleTable.DefaultView.RowFilter = finalFilter;
-            dgSchedule.ItemsSource = _scheduleTable.DefaultView;
         }
 
         private void TxtSearch_TextChanged(object sender, TextChangedEventArgs e)
@@ -298,15 +624,63 @@ namespace PrintTrackerApp
             ApplyFilters();
         }
 
+        private void VisibilityChkSelectAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (_visibilityHeaderCheckBox == null || _visibilityTable == null) return;
+            _visibilitySelectAllState = !_visibilitySelectAllState;
+            _visibilityHeaderCheckBox.IsChecked = _visibilitySelectAllState;
+            foreach (DataRowView rowView in _visibilityTable.DefaultView)
+                rowView["Show"] = _visibilitySelectAllState;
+        }
+
+        private void VisibilityRowShowChk_Click(object sender, RoutedEventArgs e)
+        {
+            if (_visibilityHeaderCheckBox == null || _visibilityTable == null) return;
+            int total = _visibilityTable.DefaultView.Count;
+            if (total == 0) return;
+            int shown = _visibilityTable.DefaultView.Cast<DataRowView>()
+                .Count(r => (bool)(r["Show"] ?? true));
+            _visibilityHeaderCheckBox.IsChecked = shown == total ? (bool?)true
+                                                : shown == 0     ? (bool?)false
+                                                : null;
+        }
+
+        private void ChkSelectAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (_headerCheckBox == null || _scheduleTable == null) return;
+            _selectAllState = !_selectAllState;
+            _headerCheckBox.IsChecked = _selectAllState;
+            foreach (DataRowView rowView in _scheduleTable.DefaultView)
+                rowView["Show"] = _selectAllState;
+        }
+
+        private void RowShowChk_Click(object sender, RoutedEventArgs e)
+        {
+            if (_headerCheckBox == null || _scheduleTable == null) return;
+            int total = _scheduleTable.DefaultView.Count;
+            if (total == 0) return;
+            int shown = _scheduleTable.DefaultView.Cast<DataRowView>()
+                .Count(r => (bool)(r["Show"] ?? true));
+            _headerCheckBox.IsChecked = shown == total ? (bool?)true
+                                                : shown == 0     ? (bool?)false
+                                                : null;
+        }
+
         private void BtnSave_Click(object sender, RoutedEventArgs e)
         {
-            // Commit any pending cell/row edits so the DataTable has the latest values
             dgSchedule.CommitEdit(DataGridEditingUnit.Cell, true);
             dgSchedule.CommitEdit(DataGridEditingUnit.Row, true);
+            
+            if (dgVisibility != null)
+            {
+                dgVisibility.CommitEdit(DataGridEditingUnit.Cell, true);
+                dgVisibility.CommitEdit(DataGridEditingUnit.Row, true);
+            }
 
             DateTime start = dpStart.SelectedDate.Value;
             DateTime end = dpEnd.SelectedDate.Value;
 
+            // Save schedules
             foreach (DataRow row in _scheduleTable.Rows)
             {
                 string tName = row["Teacher Name"].ToString();
@@ -314,9 +688,7 @@ namespace PrintTrackerApp
                 string key = $"{tName}_{tLevel}";
 
                 if (!_manager.Schedules.ContainsKey(key))
-                {
                     _manager.Schedules[key] = new Dictionary<string, string>();
-                }
 
                 for (DateTime date = start; date <= end; date = date.AddDays(1))
                 {
@@ -324,6 +696,56 @@ namespace PrintTrackerApp
                     string status = row[dateStr]?.ToString() ?? "Teach";
                     _manager.Schedules[key][dateStr] = status;
                 }
+            }
+
+            // Save hidden teachers (update selectively to avoid overwriting settings for other weeks)
+            if (_visibilityTable != null)
+            {
+                foreach (DataRow row in _visibilityTable.Rows)
+                {
+                    string tName = row["Teacher Name"].ToString();
+                    bool isShown = row["Show"] as bool? ?? true;
+                    if (isShown)
+                    {
+                        _manager.HiddenTeachers.Remove(tName);
+                    }
+                    else
+                    {
+                        _manager.HiddenTeachers.Add(tName);
+                    }
+                }
+            }
+            if (_scheduleTable != null)
+            {
+                foreach (DataRow row in _scheduleTable.Rows)
+                {
+                    string tName = row["Teacher Name"].ToString();
+                    string tLevel = row["Level"].ToString();
+                    string levelKey = string.IsNullOrEmpty(tLevel) ? tName : $"{tName}_{tLevel}";
+                    string dateKey = $"{levelKey}_{start.ToString("yyyy-MM-dd")}_{end.ToString("yyyy-MM-dd")}";
+
+                    bool isShown = row["Show"] as bool? ?? true;
+                    if (isShown)
+                    {
+                        _manager.HiddenTeachers.Remove(levelKey);
+                        _manager.HiddenTeachers.Remove(dateKey);
+                    }
+                    else
+                    {
+                        _manager.HiddenTeachers.Add(dateKey);
+                    }
+                }
+            }
+
+            // Save last selected filter and custom range dates
+            if (cmbDateFilter.SelectedItem is ComboBoxItem selectedItem)
+            {
+                _manager.LastFilterName = selectedItem.Content?.ToString() ?? "";
+            }
+            if (cmbDateFilter.SelectedIndex == 0)
+            {
+                _manager.LastCustomStartDate = dpStart.SelectedDate;
+                _manager.LastCustomEndDate = dpEnd.SelectedDate;
             }
 
             _manager.Save();

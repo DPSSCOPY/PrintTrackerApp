@@ -138,6 +138,27 @@
                         <ComboBoxItem Content="10 Seconds (Very Slow)" Tag="10"/>
                     </ComboBox>
                 </StackPanel>
+
+                <GroupBox Header="Dashboard Level Categorization" Margin="0,10,0,15" BorderBrush="#D1D5DB" Padding="10">
+                    <StackPanel>
+                        <TextBlock Text="Enter comma-separated level prefixes for each tab:" Margin="0,0,0,10" Foreground="#6B7280" FontStyle="Italic"/>
+                        
+                        <StackPanel Margin="0,0,0,8">
+                            <TextBlock Text="FT (Full-Time) Levels:" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
+                            <TextBox x:Name="txtFtLevels" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. 1A, 1B, Pre2AI, KGMA"/>
+                        </StackPanel>
+                        
+                        <StackPanel Margin="0,0,0,8">
+                            <TextBlock Text="PT (Part-Time) Levels:" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
+                            <TextBox x:Name="txtPtLevels" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. FA, L1, Pre5"/>
+                        </StackPanel>
+                        
+                        <StackPanel Margin="0,0,0,8">
+                            <TextBlock Text="KH (Khmer) Levels:" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
+                            <TextBox x:Name="txtKhLevels" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. G1, G2, KGL"/>
+                        </StackPanel>
+                    </StackPanel>
+                </GroupBox>
             </StackPanel>
 
             <!-- RIGHT COLUMN -->

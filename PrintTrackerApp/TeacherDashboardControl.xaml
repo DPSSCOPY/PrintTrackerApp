@@ -112,8 +112,20 @@
                 <TextBlock x:Name="txtDataSource" Text="Data Source: App Log" VerticalAlignment="Center" Margin="0,0,10,10" Foreground="#666666" FontStyle="Italic"/>
                 
                 <TextBlock Text="Search:" VerticalAlignment="Center" Margin="0,0,5,10" Foreground="#1F2937" FontWeight="SemiBold"/>
-                <TextBox x:Name="txtSearch" Width="150" VerticalAlignment="Center" Margin="0,0,10,10" TextChanged="TxtSearch_TextChanged"/>
+                <TextBox x:Name="txtSearch" Width="150" VerticalAlignment="Center" Margin="0,0,5,10" TextChanged="TxtSearch_TextChanged"/>
                 
+                <TextBlock Text="Sort:" VerticalAlignment="Center" Margin="0,0,5,10" Foreground="#1F2937" FontWeight="SemiBold"/>
+                <ComboBox x:Name="cmbSort" Width="115" VerticalAlignment="Center" Margin="0,0,10,10"
+                          SelectionChanged="CmbSort_SelectionChanged">
+                    <ComboBoxItem Content="Default" Tag="default"/>
+                    <ComboBoxItem Content="Name A→Z" Tag="name_asc"/>
+                    <ComboBoxItem Content="Name Z→A" Tag="name_desc"/>
+                    <ComboBoxItem Content="Level A→Z" Tag="level_asc"/>
+                    <ComboBoxItem Content="Level Z→A" Tag="level_desc"/>
+                    <ComboBoxItem Content="Grade A→E" Tag="grade_asc"/>
+                    <ComboBoxItem Content="Grade E→A" Tag="grade_desc"/>
+                </ComboBox>
+
                 <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="0,0,5,10" Foreground="#1F2937" FontWeight="SemiBold"/>
                 <ComboBox x:Name="cmbDateFilter" Width="120" SelectionChanged="CmbDateFilter_SelectionChanged" SelectedIndex="0" Margin="0,0,5,10" VerticalAlignment="Center">
                     <ComboBoxItem Content="Today"/>

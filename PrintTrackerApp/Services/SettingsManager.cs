@@ -39,6 +39,11 @@ namespace PrintTrackerApp.Services
         // Google Sheets Integration
         public string GoogleSpreadsheetId { get; set; } = "";
         public string TeacherDataSpreadsheetId { get; set; } = "";
+
+        // Dashboard Level Categorization
+        public string FtLevels { get; set; } = "1A, 1B, 2A, 2B, 3A, 3B, 4A, 4B, 5A, 5B, Pre2AI, Pre2AII, KGMA, KGMB, KGHA, KGHB, KGHC";
+        public string PtLevels { get; set; } = "FA, FB, L1, L2, L3, L4, L5, L6, L7, L8, Pre5, Pre8, PreA";
+        public string KhLevels { get; set; } = "G1, G2, KGL, SMC3";
         
         // Auto Print Settings
         public string FoxitPath { get; set; } = "";
@@ -98,6 +103,9 @@ namespace PrintTrackerApp.Services
         public int AutoShutdownMode { get; set; } = 0; // 0 = After Print Complete, 1 = Specific Time
         public int AutoShutdownDelayMinutes { get; set; } = 5;
         public string AutoShutdownTime { get; set; } = "18:00";
+
+        // Dashboard UI Preferences
+        public string DashboardSortOrder { get; set; } = "default"; // default, name_asc, name_desc, level_asc, level_desc, grade_asc, grade_desc
     }
 
     public static class SettingsManager

@@ -11,6 +11,8 @@ namespace PrintTrackerApp.Services
 {
     public static class CsvLogger
     {
+        private static readonly Dictionary<string, (DateTime LastWriteTime, List<PrintJobInfo> Jobs)> _csvFileCache = new Dictionary<string, (DateTime, List<PrintJobInfo>)>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object _cacheLock = new object();
         public static void ExportJobsToCsv(IEnumerable<PrintJobInfo> jobs, string folderPath)
         {
             if (string.IsNullOrWhiteSpace(folderPath))
@@ -243,50 +245,75 @@ namespace PrintTrackerApp.Services
                     {
                         if (fileDate.Date >= startDate.Date && fileDate.Date <= endDate.Date)
                         {
-                            using (var reader = new StreamReader(new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite), Encoding.UTF8))
+                            List<PrintJobInfo> fileJobs = null;
+                            DateTime currentWriteTime = File.GetLastWriteTime(filePath);
+
+                            lock (_cacheLock)
                             {
-                                string header = reader.ReadLine();
-                                var headerParts = ParseCsvLine(header);
-                                var dynamicHeaders = new List<string>();
-                                for (int i = 10; i < headerParts.Count; i++)
+                                if (_csvFileCache.TryGetValue(filePath, out var cachedInfo) && cachedInfo.LastWriteTime == currentWriteTime)
                                 {
-                                    dynamicHeaders.Add(headerParts[i]);
-                                }
-
-                                while (!reader.EndOfStream)
-                                {
-                                    var line = reader.ReadLine();
-                                    if (string.IsNullOrWhiteSpace(line)) continue;
-
-                                    var parts = ParseCsvLine(line);
-                                    if (parts.Count >= 9)
-                                    {
-                                        var job = new PrintJobInfo
-                                        {
-                                            Timestamp = parts[0],
-                                            DocumentName = parts[1],
-                                            WebFileName = parts[2],
-                                            RicohUserId = parts[3],
-                                            TotalPages = int.TryParse(parts[4], out int p) ? p : 1,
-                                            Copies = int.TryParse(parts[5], out int c) ? c : 1,
-                                            Owner = parts[6],
-                                            PrinterName = parts[7],
-                                            Status = parts[8],
-                                            JobId = Guid.NewGuid().ToString(),
-                                            WebJobId = parts.Count >= 10 && int.TryParse(parts[9], out int wid) ? wid : -1,
-                                            SourceFilePath = filePath
-                                        };
-                                        
-                                        for (int i = 10; i < parts.Count && (i - 10) < dynamicHeaders.Count; i++)
-                                        {
-                                            job.DynamicProperties[dynamicHeaders[i - 10]] = parts[i];
-                                        }
-                                        
-                                        job.CleanDownlevelNames();
-                                        allJobs.Add(job);
-                                    }
+                                    fileJobs = cachedInfo.Jobs;
                                 }
                             }
+
+                            if (fileJobs == null)
+                            {
+                                fileJobs = new List<PrintJobInfo>();
+                                using (var reader = new StreamReader(new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite), Encoding.UTF8))
+                                {
+                                    string header = reader.ReadLine();
+                                    if (header != null)
+                                    {
+                                        var headerParts = ParseCsvLine(header);
+                                        var dynamicHeaders = new List<string>();
+                                        for (int i = 10; i < headerParts.Count; i++)
+                                        {
+                                            dynamicHeaders.Add(headerParts[i]);
+                                        }
+
+                                        while (!reader.EndOfStream)
+                                        {
+                                            var line = reader.ReadLine();
+                                            if (string.IsNullOrWhiteSpace(line)) continue;
+
+                                            var parts = ParseCsvLine(line);
+                                            if (parts.Count >= 9)
+                                            {
+                                                var job = new PrintJobInfo
+                                                {
+                                                    Timestamp = parts[0],
+                                                    DocumentName = parts[1],
+                                                    WebFileName = parts[2],
+                                                    RicohUserId = parts[3],
+                                                    TotalPages = int.TryParse(parts[4], out int p) ? p : 1,
+                                                    Copies = int.TryParse(parts[5], out int c) ? c : 1,
+                                                    Owner = parts[6],
+                                                    PrinterName = parts[7],
+                                                    Status = parts[8],
+                                                    JobId = Guid.NewGuid().ToString(),
+                                                    WebJobId = parts.Count >= 10 && int.TryParse(parts[9], out int wid) ? wid : -1,
+                                                    SourceFilePath = filePath
+                                                };
+                                                
+                                                for (int i = 10; i < parts.Count && (i - 10) < dynamicHeaders.Count; i++)
+                                                {
+                                                    job.DynamicProperties[dynamicHeaders[i - 10]] = parts[i];
+                                                }
+                                                
+                                                job.CleanDownlevelNames();
+                                                fileJobs.Add(job);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                lock (_cacheLock)
+                                {
+                                    _csvFileCache[filePath] = (currentWriteTime, fileJobs);
+                                }
+                            }
+
+                            allJobs.AddRange(fileJobs);
                         }
                     }
                 }

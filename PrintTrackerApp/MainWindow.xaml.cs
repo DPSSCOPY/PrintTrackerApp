@@ -1473,6 +1473,9 @@ namespace PrintTrackerApp
                 latestSettings.RefreshIntervalSeconds = sw.CurrentSettings.RefreshIntervalSeconds;
                 latestSettings.FoxitWindowStyle = sw.CurrentSettings.FoxitWindowStyle;
                 latestSettings.DelayBetweenPrints = sw.CurrentSettings.DelayBetweenPrints;
+                latestSettings.FtLevels = sw.CurrentSettings.FtLevels;
+                latestSettings.PtLevels = sw.CurrentSettings.PtLevels;
+                latestSettings.KhLevels = sw.CurrentSettings.KhLevels;
                 
                 _appSettings = latestSettings;
                 SettingsManager.SaveSettings(_appSettings);

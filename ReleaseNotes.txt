@@ -1,3 +1,7 @@
+Update Version 1.0.26 Features:
+- Added double-click navigation: Double-clicking on a teacher cell in the print statistics dashboard automatically opens the schedules dialog and focuses on that teacher.
+- Added persistent filter settings: Preserves the selected custom range or date filter in the schedule settings when closed and reopened.
+
 Update Version 1.0.25 Features:
 - Fixed subfolder creation issue in UpdateFileStatusLocation (restricted to standard print statuses).
 - Fixed duplicate files count sync in verification panel (aligned with duplicate window regex scanning).
