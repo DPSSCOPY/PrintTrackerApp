@@ -903,18 +903,31 @@ namespace PrintTrackerApp
                     }
                 }
 
-                string key = (matchingExcel != null && statTab == "PT") 
-                    ? $"{matchingExcel.Name}_{matchingExcel.Level}" 
-                    : (matchingExcel != null ? $"{matchingExcel.Name}_{stat.Level}" : $"{stat.TeacherName}_{stat.Level}");
+                string lookupName = matchingExcel != null ? matchingExcel.Name : stat.TeacherName;
+                string lookupLvl = matchingExcel != null ? matchingExcel.Level : stat.Level;
+                string lookupSes = "";
+                if (lookupLvl.Contains("-"))
+                {
+                    var parts = lookupLvl.Split('-');
+                    if (parts.Length >= 2)
+                    {
+                        lookupLvl = parts[0].Trim();
+                        lookupSes = parts[1].Trim();
+                    }
+                }
+                else if (statTab == "PT" && string.IsNullOrEmpty(lookupSes))
+                {
+                    lookupSes = stat.Session;
+                }
 
-                if (manager.Schedules.ContainsKey(key))
+                var dict = GetScheduleDict(manager, lookupName, lookupLvl, lookupSes);
+                if (dict != null)
                 {
                     for (DateTime date = start.Date; date <= end.Date; date = date.AddDays(1))
                     {
                         string dateStr = date.ToString("yyyy-MM-dd");
-                        if (manager.Schedules[key].ContainsKey(dateStr))
+                        if (dict.TryGetValue(dateStr, out string status))
                         {
-                            string status = manager.Schedules[key][dateStr];
                             if (status?.ToLower() == "no teach" || status?.ToLower() == "exam")
                             {
                                 stat.ExemptedDates.Add(dateStr);
@@ -1315,17 +1328,7 @@ namespace PrintTrackerApp
                                 continue;
                             }
                             
-                            string lvl = levelFromSchedule;
-                            string ses = string.Empty;
-                            if (levelFromSchedule.Contains("-"))
-                            {
-                                var parts = levelFromSchedule.Split('-');
-                                if (parts.Length >= 2)
-                                {
-                                    lvl = parts[0].Trim();
-                                    ses = parts[1].Trim();
-                                }
-                            }
+                            CleanLevelAndSession(levelFromSchedule, out string lvl, out string ses);
 
                             // Filter out schedule settings for levels not officially assigned to the teacher in the roster table (if roster defines any levels)
                             bool hasOfficialLevels = officialScheduledClasses.Any(sc => !string.IsNullOrWhiteSpace(sc.Level));
@@ -1545,11 +1548,8 @@ namespace PrintTrackerApp
             string session,
             string dateStr)
         {
-            if (manager?.Schedules == null) return null;
-
-            // Primary key: "TeacherName_Level-Session" (or "TeacherName_Level" if session is empty)
-            string key = string.IsNullOrEmpty(session) ? $"{teacherName}_{level}" : $"{teacherName}_{level}-{session}";
-            if (manager.Schedules.TryGetValue(key, out var dict) && dict.TryGetValue(dateStr, out string status))
+            var dict = GetScheduleDict(manager, teacherName, level, session);
+            if (dict != null && dict.TryGetValue(dateStr, out string status))
             {
                 return status;
             }
@@ -1557,8 +1557,8 @@ namespace PrintTrackerApp
             // Fallback 1: Try "TeacherName_Level-BS"
             if (!string.IsNullOrEmpty(session) && !string.Equals(session, "BS", StringComparison.OrdinalIgnoreCase))
             {
-                string keyBS = $"{teacherName}_{level}-BS";
-                if (manager.Schedules.TryGetValue(keyBS, out var dictBS) && dictBS.TryGetValue(dateStr, out string statusBS))
+                var dictBS = GetScheduleDict(manager, teacherName, level, "BS");
+                if (dictBS != null && dictBS.TryGetValue(dateStr, out string statusBS))
                 {
                     return statusBS;
                 }
@@ -1567,8 +1567,8 @@ namespace PrintTrackerApp
             // Fallback 2: Try "TeacherName_Level"
             if (!string.IsNullOrEmpty(session))
             {
-                string keyLvlOnly = $"{teacherName}_{level}";
-                if (manager.Schedules.TryGetValue(keyLvlOnly, out var dictLvl) && dictLvl.TryGetValue(dateStr, out string statusLvl))
+                var dictLvl = GetScheduleDict(manager, teacherName, level, "");
+                if (dictLvl != null && dictLvl.TryGetValue(dateStr, out string statusLvl))
                 {
                     return statusLvl;
                 }
@@ -2148,10 +2148,15 @@ namespace PrintTrackerApp
                     {
                         if (sKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                         {
-                            string lvl = sKey.Substring(prefix.Length);
-                            if (!string.IsNullOrEmpty(lvl))
+                            string rawLvl = sKey.Substring(prefix.Length);
+                            if (!string.IsNullOrEmpty(rawLvl))
                             {
-                                levels.Add(lvl);
+                                CleanLevelAndSession(rawLvl, out string cleanLvl, out string cleanSes);
+                                string levelKey = string.IsNullOrEmpty(cleanSes) ? cleanLvl : $"{cleanLvl}-{cleanSes}";
+                                if (!string.IsNullOrEmpty(levelKey))
+                                {
+                                    levels.Add(levelKey);
+                                }
                             }
                         }
                     }
@@ -2306,25 +2311,34 @@ namespace PrintTrackerApp
                 stat.ExemptedDates.Clear();
                 
                 var matchingExcel = excelTeachers.FirstOrDefault(et => IsLevelMatch(et.Level, stat.Level) && IsNameMatch(et.Name, stat.TeacherName, strict: false));
-                string key = "";
                 
-                if (matchingExcel != null)
+                string lookupName = matchingExcel != null ? matchingExcel.Name : stat.TeacherName;
+                string lookupLvl = matchingExcel != null ? matchingExcel.Level : stat.Level;
+                string lookupSes = "";
+                string statTab = GetCategoryOfStat(stat);
+                
+                if (lookupLvl.Contains("-"))
                 {
-                    key = $"{matchingExcel.Name}_{matchingExcel.Level}";
+                    var parts = lookupLvl.Split('-');
+                    if (parts.Length >= 2)
+                    {
+                        lookupLvl = parts[0].Trim();
+                        lookupSes = parts[1].Trim();
+                    }
                 }
-                else
+                else if (statTab == "PT" && string.IsNullOrEmpty(lookupSes))
                 {
-                    key = $"{stat.TeacherName}_{stat.Level}";
+                    lookupSes = stat.Session;
                 }
 
-                if (manager.Schedules.ContainsKey(key))
+                var dict = GetScheduleDict(manager, lookupName, lookupLvl, lookupSes);
+                if (dict != null)
                 {
                     for (DateTime date = _currentStart.Date; date <= _currentEnd.Date; date = date.AddDays(1))
                     {
                         string dateStr = date.ToString("yyyy-MM-dd");
-                        if (manager.Schedules[key].ContainsKey(dateStr))
+                        if (dict.TryGetValue(dateStr, out string status))
                         {
-                            string status = manager.Schedules[key][dateStr];
                             if (status?.ToLower() == "no teach" || status?.ToLower() == "exam")
                             {
                                 stat.ExemptedDates.Add(dateStr);
@@ -3541,17 +3555,7 @@ namespace PrintTrackerApp
                     if (sKey.Length > teacherName.Length + 1)
                     {
                         string levelPart = sKey.Substring(teacherName.Length + 1);
-                        string lvl = levelPart;
-                        string ses = string.Empty;
-                        if (levelPart.Contains("-"))
-                        {
-                            var parts = levelPart.Split('-');
-                            if (parts.Length >= 2)
-                            {
-                                lvl = parts[0].Trim();
-                                ses = parts[1].Trim();
-                            }
-                        }
+                        CleanLevelAndSession(levelPart, out string lvl, out string ses);
                         if (!string.IsNullOrWhiteSpace(lvl))
                         {
                             if (!teacherScheduledClasses.Any(sc => sc.Level.Equals(lvl, StringComparison.OrdinalIgnoreCase) && sc.Session.Equals(ses, StringComparison.OrdinalIgnoreCase)))
@@ -3734,6 +3738,66 @@ namespace PrintTrackerApp
             T parent = parentObject as T;
             if (parent != null) return parent;
             return FindVisualParent<T>(parentObject);
+        }
+
+        private static void CleanLevelAndSession(string levelPart, out string lvl, out string ses)
+        {
+            lvl = levelPart;
+            ses = string.Empty;
+            if (levelPart.Contains("-"))
+            {
+                var parts = levelPart.Split('-');
+                if (parts.Length >= 2)
+                {
+                    string first = parts[0].Trim();
+                    string second = parts[1].Trim();
+                    string secondUpper = second.ToUpper();
+                    if (secondUpper == "S1" || secondUpper == "S2" || secondUpper == "BS")
+                    {
+                        lvl = first;
+                        ses = second;
+                    }
+                    else
+                    {
+                        lvl = first;
+                        ses = string.Empty;
+                    }
+                }
+            }
+        }
+
+        private Dictionary<string, string> GetScheduleDict(
+            PrintTrackerApp.Services.TeacherScheduleManager manager,
+            string teacherName,
+            string level,
+            string session)
+        {
+            if (manager?.Schedules == null) return null;
+            
+            // 1. Direct match
+            string key = string.IsNullOrEmpty(session) ? $"{teacherName}_{level}" : $"{teacherName}_{level}-{session}";
+            if (manager.Schedules.TryGetValue(key, out var dict))
+            {
+                return dict;
+            }
+
+            // 2. Cleaned key fallback
+            string prefix = $"{teacherName}_";
+            foreach (var pair in manager.Schedules)
+            {
+                if (pair.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    string rawLvl = pair.Key.Substring(prefix.Length);
+                    CleanLevelAndSession(rawLvl, out string cleanLvl, out string cleanSes);
+                    if (string.Equals(cleanLvl, level, StringComparison.OrdinalIgnoreCase) && 
+                        string.Equals(cleanSes, session, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return pair.Value;
+                    }
+                }
+            }
+
+            return null;
         }
     }
 }

@@ -472,15 +472,35 @@ namespace PrintTrackerApp
 
                 string key = $"{teacher.Name}_{teacher.Level}";
                 bool hasSchedule = _manager.Schedules.ContainsKey(key);
+                string targetDictKey = key;
+                if (!hasSchedule)
+                {
+                    string prefix = $"{teacher.Name}_";
+                    foreach (var sKey in _manager.Schedules.Keys)
+                    {
+                        if (sKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        {
+                            string rawLvl = sKey.Substring(prefix.Length);
+                            CleanLevelAndSession(rawLvl, out string cleanLvl, out string cleanSes);
+                            string resolvedLevelKey = string.IsNullOrEmpty(cleanSes) ? cleanLvl : $"{cleanLvl}-{cleanSes}";
+                            if (string.Equals(resolvedLevelKey, teacher.Level, StringComparison.OrdinalIgnoreCase))
+                            {
+                                hasSchedule = true;
+                                targetDictKey = sKey;
+                                break;
+                            }
+                        }
+                    }
+                }
 
                 for (DateTime date = start; date <= end; date = date.AddDays(1))
                 {
                     string dateStr = date.ToString("yyyy-MM-dd");
                     string status = "Teach";
 
-                    if (hasSchedule && _manager.Schedules[key].ContainsKey(dateStr))
+                    if (hasSchedule && _manager.Schedules[targetDictKey].ContainsKey(dateStr))
                     {
-                        status = _manager.Schedules[key][dateStr];
+                        status = _manager.Schedules[targetDictKey][dateStr];
                         if (status == "teach") status = "Teach";
                         else if (status == "no teach") status = "No Teach";
                         else if (status == "exam") status = "Exam";
@@ -953,6 +973,31 @@ namespace PrintTrackerApp
                 }), System.Windows.Threading.DispatcherPriority.Background);
                 
                 e.Handled = true;
+            }
+        }
+        private static void CleanLevelAndSession(string levelPart, out string lvl, out string ses)
+        {
+            lvl = levelPart;
+            ses = string.Empty;
+            if (levelPart.Contains("-"))
+            {
+                var parts = levelPart.Split('-');
+                if (parts.Length >= 2)
+                {
+                    string first = parts[0].Trim();
+                    string second = parts[1].Trim();
+                    string secondUpper = second.ToUpper();
+                    if (secondUpper == "S1" || secondUpper == "S2" || secondUpper == "BS")
+                    {
+                        lvl = first;
+                        ses = second;
+                    }
+                    else
+                    {
+                        lvl = first;
+                        ses = string.Empty;
+                    }
+                }
             }
         }
     }
