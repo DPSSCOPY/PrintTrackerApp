@@ -2109,56 +2109,57 @@ namespace PrintTrackerApp
         private void OpenScheduleSettings(string locateTeacherName = null, string locateLevel = null, string locateSession = null)
         {
             var teachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
-            
-            ExtractTeachersFromTable(_ftTable, "FT", teachers);
-            ExtractTeachersFromTable(_ptTable, "PT", teachers);
-            ExtractTeachersFromTable(_khTable, "KH", teachers);
 
-            // For FT/KH teachers with no Level in Excel, expand per-level using dashboard print stats.
-            // This ensures the Schedule window shows rows like "Sros Seavchhinh | G5B" so that
-            // schedule keys saved by the UI match the keys used by the grade calculation.
-            if (_statsDict != null && _statsDict.Count > 0)
+            // Primary source: use the last dashboard records which already have every
+            // teacher+level combination currently shown in the FT / PT / KH grids.
+            // This ensures the Schedule Settings mirrors the dashboard exactly.
+            if (_lastResult != null)
             {
-                var expandedTeachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
-                foreach (var teacher in teachers)
+                void AddFromRecords(IEnumerable<PrintTrackerApp.Models.TeacherExcelRecord> records, string category)
                 {
-                    if ((teacher.Category == "FT" || teacher.Category == "KH") && string.IsNullOrEmpty(teacher.Level))
+                    if (records == null) return;
+                    foreach (var rec in records)
                     {
-                        // Find all matching stats for this teacher in the same category
-                        var matchingStats = _statsDict.Values
-                            .Where(stat => GetCategoryOfStat(stat) == teacher.Category &&
-                                           IsNameMatch(teacher.Name, stat.TeacherName, false))
-                            .GroupBy(stat => new { stat.Level, stat.Session })
-                            .Select(g => g.First())
-                            .ToList();
-
-                        if (matchingStats.Count > 0)
+                        if (string.IsNullOrWhiteSpace(rec.TeacherName)) continue;
+                        string levelKey = string.IsNullOrEmpty(rec.Session)
+                            ? rec.Level
+                            : $"{rec.Level}-{rec.Session}";
+                        if (!teachers.Any(t =>
+                            t.Name == rec.TeacherName &&
+                            t.Level == levelKey &&
+                            t.Category == category))
                         {
-                            foreach (var stat in matchingStats)
+                            teachers.Add(new TeacherScheduleWindow.TeacherIdentifier
                             {
-                                string levelKey = string.IsNullOrEmpty(stat.Session)
-                                    ? stat.Level
-                                    : $"{stat.Level}-{stat.Session}";
-                                if (!expandedTeachers.Any(t =>
-                                    t.Name == teacher.Name &&
-                                    t.Level == levelKey &&
-                                    t.Category == teacher.Category))
-                                {
-                                    expandedTeachers.Add(new TeacherScheduleWindow.TeacherIdentifier
-                                    {
-                                        Name     = teacher.Name,
-                                        Level    = levelKey,
-                                        Category = teacher.Category,
-                                        RawName  = teacher.RawName
-                                    });
-                                }
-                            }
-                            continue; // Skip original empty-level entry — replaced by per-level entries
+                                Name    = rec.TeacherName,
+                                Level   = levelKey,
+                                Category = category,
+                                RawName = rec.TeacherName
+                            });
                         }
                     }
-                    expandedTeachers.Add(teacher);
                 }
-                teachers = expandedTeachers;
+                AddFromRecords(_lastResult.FtRecords, "FT");
+                AddFromRecords(_lastResult.PtRecords, "PT");
+                AddFromRecords(_lastResult.KhRecords, "KH");
+            }
+
+            // Fallback: also extract from Excel tables so teachers who have not yet
+            // appeared in any print job (but exist in the Excel roster) are included.
+            var excelTeachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
+            ExtractTeachersFromTable(_ftTable, "FT", excelTeachers);
+            ExtractTeachersFromTable(_ptTable, "PT", excelTeachers);
+            ExtractTeachersFromTable(_khTable, "KH", excelTeachers);
+
+            foreach (var t in excelTeachers)
+            {
+                if (!teachers.Any(x =>
+                    x.Name     == t.Name &&
+                    x.Level    == t.Level &&
+                    x.Category == t.Category))
+                {
+                    teachers.Add(t);
+                }
             }
 
             var window = new TeacherScheduleWindow(teachers);
