@@ -2534,6 +2534,18 @@ namespace PrintTrackerApp
             int best = 0;
             foreach (var dWord in dictWords)
             {
+                // Explicit overrides for user PC teachers to resolve name ambiguity
+                if (dWord == "panha" && excelName.Contains("oudompanha"))
+                {
+                    best = Math.Max(best, 980);
+                    continue;
+                }
+                if (dWord == "pich" && (excelName.Contains("pichponlue") || excelName.Contains("pichponleu")))
+                {
+                    best = Math.Max(best, 980);
+                    continue;
+                }
+
                 // ── Exact word match (score 900) ─────────────────────────────
                 if (targetWord == dWord) { best = Math.Max(best, 900); continue; }
 
