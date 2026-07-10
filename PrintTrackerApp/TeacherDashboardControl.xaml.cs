@@ -2499,21 +2499,20 @@ namespace PrintTrackerApp
 
         public static bool IsNameMatch(string excelName, string dictName, bool strict)
         {
-            return ScoreNameMatch(excelName, dictName, strict) > 0;
+            return ScoreNameMatch(excelName, dictName) > 0;
         }
 
         /// <summary>
         /// Returns a numeric confidence score for how well a filename teacher token (dictName)
         /// matches a roster teacher name (excelName).  Higher = better / more specific.
         ///   1000 – exact full-name match
-        ///    950 – contains match (length >= 4)
         ///    900 – exact word-level match   (e.g. "Chanra" == "Chanra")
-        ///    850 – word-level contains match (length >= 4)
-        ///    800 – typo / LCS similarity match (only if strict is false, length >= 4)
+        ///    700 – suffix of last name      (e.g. "Smey"   ends  "Chanreaksmey")
+        ///    500 – prefix of last name      (e.g. "Pich"   starts "Pichponleu", min 4 chars)
         ///      0 – no match
         /// The ScoreNameMatch result is also the gate for IsNameMatch (score > 0 = match).
         /// </summary>
-        public static int ScoreNameMatch(string excelName, string dictName, bool strict = false)
+        public static int ScoreNameMatch(string excelName, string dictName)
         {
             if (string.IsNullOrWhiteSpace(excelName) || string.IsNullOrWhiteSpace(dictName)) return 0;
 
@@ -2522,48 +2521,46 @@ namespace PrintTrackerApp
 
             if (excelName == dictName) return 1000;
 
-            if ((excelName.Contains(dictName) && dictName.Length >= 4) || 
-                (dictName.Contains(excelName) && excelName.Length >= 4)) 
-                return 950;
+            var excelWords = excelName.Split(new[] { ' ', '-', '_', '.' },
+                                             StringSplitOptions.RemoveEmptyEntries);
+            var dictWords  = dictName.Split(new[] { ' ', '-', '_', '.' },
+                                            StringSplitOptions.RemoveEmptyEntries);
 
-            var excelWords = excelName.Split(new[] { ' ', '-', '_', '.' }, StringSplitOptions.RemoveEmptyEntries);
-            var dictWords  = dictName.Split(new[] { ' ', '-', '_', '.' }, StringSplitOptions.RemoveEmptyEntries);
+            if (excelWords.Length == 0) return 0;
 
-            if (excelWords.Length == 0 || dictWords.Length == 0) return 0;
+            // Only match against the last word of the excel name (the given name in Cambodia)
+            string targetWord = excelWords[excelWords.Length - 1];
 
             int best = 0;
-            foreach (var eWord in excelWords)
+            foreach (var dWord in dictWords)
             {
-                foreach (var dWord in dictWords)
-                {
-                    if (eWord == dWord)
-                    {
-                        best = Math.Max(best, 900);
-                        continue;
-                    }
+                // ── Exact word match (score 900) ─────────────────────────────
+                if (targetWord == dWord) { best = Math.Max(best, 900); continue; }
 
-                    if ((eWord.Contains(dWord) && dWord.Length >= 4) || 
-                        (dWord.Contains(eWord) && eWord.Length >= 4))
-                    {
-                        best = Math.Max(best, 850);
-                        continue;
-                    }
+                // ── Suffix of last name, right-to-left (score 700) ───────────
+                // e.g. "smey" is a suffix of "chanreaksmey"
+                // e.g. "net"  is a suffix of "vannet"
+                if (dWord.Length >= 3 && targetWord.EndsWith(dWord, StringComparison.Ordinal))
+                    best = Math.Max(best, 700);
 
-                    if (!strict && eWord.Length >= 4 && dWord.Length >= 4)
-                    {
-                        int lcs = ComputeLCS(eWord, dWord);
-                        int minLen = Math.Min(eWord.Length, dWord.Length);
-                        if (lcs >= minLen - 1 && lcs >= 4)
-                        {
-                            best = Math.Max(best, 800);
-                        }
-                    }
-                }
+                // symmetric: excelWord is a suffix of dictWord
+                if (targetWord.Length >= 3 && dWord.EndsWith(targetWord, StringComparison.Ordinal))
+                    best = Math.Max(best, 700);
+
+                // ── Prefix of last name, left-to-right (score 500) ───────────
+                // e.g. "pich" is a prefix of "pichponleu"  (teacher uses first syllable)
+                // Minimum 4 chars to avoid accidental 3-letter collisions.
+                if (dWord.Length >= 4 && targetWord.StartsWith(dWord, StringComparison.Ordinal))
+                    best = Math.Max(best, 500);
+
+                // symmetric: excelWord is a prefix of dictWord
+                if (targetWord.Length >= 4 && dWord.StartsWith(targetWord, StringComparison.Ordinal))
+                    best = Math.Max(best, 500);
             }
             return best;
         }
 
-        private static int ComputeLCS(string s, string t)
+        private int ComputeLCS(string s, string t)
         {
             int n = s.Length;
             int m = t.Length;
