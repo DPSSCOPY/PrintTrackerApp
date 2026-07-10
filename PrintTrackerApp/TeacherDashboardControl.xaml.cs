@@ -2114,6 +2114,53 @@ namespace PrintTrackerApp
             ExtractTeachersFromTable(_ptTable, "PT", teachers);
             ExtractTeachersFromTable(_khTable, "KH", teachers);
 
+            // For FT/KH teachers with no Level in Excel, expand per-level using dashboard print stats.
+            // This ensures the Schedule window shows rows like "Sros Seavchhinh | G5B" so that
+            // schedule keys saved by the UI match the keys used by the grade calculation.
+            if (_statsDict != null && _statsDict.Count > 0)
+            {
+                var expandedTeachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
+                foreach (var teacher in teachers)
+                {
+                    if ((teacher.Category == "FT" || teacher.Category == "KH") && string.IsNullOrEmpty(teacher.Level))
+                    {
+                        // Find all matching stats for this teacher in the same category
+                        var matchingStats = _statsDict.Values
+                            .Where(stat => GetCategoryOfStat(stat) == teacher.Category &&
+                                           IsNameMatch(teacher.Name, stat.TeacherName, false))
+                            .GroupBy(stat => new { stat.Level, stat.Session })
+                            .Select(g => g.First())
+                            .ToList();
+
+                        if (matchingStats.Count > 0)
+                        {
+                            foreach (var stat in matchingStats)
+                            {
+                                string levelKey = string.IsNullOrEmpty(stat.Session)
+                                    ? stat.Level
+                                    : $"{stat.Level}-{stat.Session}";
+                                if (!expandedTeachers.Any(t =>
+                                    t.Name == teacher.Name &&
+                                    t.Level == levelKey &&
+                                    t.Category == teacher.Category))
+                                {
+                                    expandedTeachers.Add(new TeacherScheduleWindow.TeacherIdentifier
+                                    {
+                                        Name     = teacher.Name,
+                                        Level    = levelKey,
+                                        Category = teacher.Category,
+                                        RawName  = teacher.RawName
+                                    });
+                                }
+                            }
+                            continue; // Skip original empty-level entry — replaced by per-level entries
+                        }
+                    }
+                    expandedTeachers.Add(teacher);
+                }
+                teachers = expandedTeachers;
+            }
+
             var window = new TeacherScheduleWindow(teachers);
             window.Owner = Window.GetWindow(this);
 
