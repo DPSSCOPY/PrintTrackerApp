@@ -13,7 +13,8 @@ namespace PrintTrackerApp
     {
         private TeacherScheduleManager _manager;
         private DataTable _scheduleTable;
-        private List<TeacherIdentifier> _teachers;
+        private List<TeacherIdentifier> _teachers;          // schedule tab rows
+        private List<TeacherIdentifier> _visibilityTeachers; // visibility tab rows (all Excel teachers)
         private bool _isUpdating = false;
 
         public class TeacherIdentifier
@@ -83,11 +84,12 @@ namespace PrintTrackerApp
             return (DataGridRow)dgSchedule.ItemContainerGenerator.ContainerFromItem(item);
         }
 
-        public TeacherScheduleWindow(List<TeacherIdentifier> teachers)
+        public TeacherScheduleWindow(List<TeacherIdentifier> scheduleTeachers, List<TeacherIdentifier> visibilityTeachers)
         {
             _isUpdating = true; // Prevent BuildTable from running during initialization
             InitializeComponent();
-            _teachers = teachers;
+            _teachers = scheduleTeachers;
+            _visibilityTeachers = visibilityTeachers ?? scheduleTeachers;
             _manager = TeacherScheduleManager.Load();
             
             LoadCustomDateFilters();
@@ -490,13 +492,14 @@ namespace PrintTrackerApp
                 _scheduleTable.Rows.Add(row);
             }
 
-            // 2. Visibility Grid (group by unique teacher names and categories)
-            var uniqueTeachers = _teachers
+            // 2. Visibility Grid — unique teacher names sourced from the Excel roster.
+            // One row per teacher (no level). Unchecking hides ALL levels of that teacher.
+            var uniqueVisibility = _visibilityTeachers
                 .GroupBy(t => new { t.Name, t.Category })
                 .Select(g => g.First())
                 .OrderBy(t => t.Name);
 
-            foreach (var teacher in uniqueTeachers)
+            foreach (var teacher in uniqueVisibility)
             {
                 if (!string.IsNullOrEmpty(searchText))
                 {

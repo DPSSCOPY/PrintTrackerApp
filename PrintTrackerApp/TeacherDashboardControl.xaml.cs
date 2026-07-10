@@ -2108,61 +2108,114 @@ namespace PrintTrackerApp
 
         private void OpenScheduleSettings(string locateTeacherName = null, string locateLevel = null, string locateSession = null)
         {
-            var teachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
+            // ── Schedule teachers ─────────────────────────────────────────────────
+            // Mirrors all teacher+level rows. Bypasses visibility filters so hidden
+            // teachers do not disappear from the settings window, allowing them to be unhidden.
+            var scheduleTeachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
 
-            // Primary source: use the last dashboard records which already have every
-            // teacher+level combination currently shown in the FT / PT / KH grids.
-            // This ensures the Schedule Settings mirrors the dashboard exactly.
-            if (_lastResult != null)
-            {
-                void AddFromRecords(IEnumerable<PrintTrackerApp.Models.TeacherExcelRecord> records, string category)
-                {
-                    if (records == null) return;
-                    foreach (var rec in records)
-                    {
-                        if (string.IsNullOrWhiteSpace(rec.TeacherName)) continue;
-                        string levelKey = string.IsNullOrEmpty(rec.Session)
-                            ? rec.Level
-                            : $"{rec.Level}-{rec.Session}";
-                        if (!teachers.Any(t =>
-                            t.Name == rec.TeacherName &&
-                            t.Level == levelKey &&
-                            t.Category == category))
-                        {
-                            teachers.Add(new TeacherScheduleWindow.TeacherIdentifier
-                            {
-                                Name    = rec.TeacherName,
-                                Level   = levelKey,
-                                Category = category,
-                                RawName = rec.TeacherName
-                            });
-                        }
-                    }
-                }
-                AddFromRecords(_lastResult.FtRecords, "FT");
-                AddFromRecords(_lastResult.PtRecords, "PT");
-                AddFromRecords(_lastResult.KhRecords, "KH");
-            }
-
-            // Fallback: also extract from Excel tables so teachers who have not yet
-            // appeared in any print job (but exist in the Excel roster) are included.
             var excelTeachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
             ExtractTeachersFromTable(_ftTable, "FT", excelTeachers);
             ExtractTeachersFromTable(_ptTable, "PT", excelTeachers);
             ExtractTeachersFromTable(_khTable, "KH", excelTeachers);
 
+            var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
+
             foreach (var t in excelTeachers)
             {
-                if (!teachers.Any(x =>
-                    x.Name     == t.Name &&
-                    x.Level    == t.Level &&
-                    x.Category == t.Category))
+                var levels = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                // 1. Get levels from print statistics (non-filtered raw stats)
+                if (_statsDict != null)
                 {
-                    teachers.Add(t);
+                    foreach (var stat in _statsDict.Values)
+                    {
+                        if (GetCategoryOfStat(stat) == t.Category && IsNameMatch(t.Name, stat.TeacherName, false))
+                        {
+                            string lvlKey = string.IsNullOrEmpty(stat.Session) ? stat.Level : $"{stat.Level}-{stat.Session}";
+                            if (!string.IsNullOrEmpty(lvlKey))
+                            {
+                                levels.Add(lvlKey);
+                            }
+                        }
+                    }
+                }
+
+                // 2. Get levels from existing schedule configurations
+                if (manager?.Schedules != null)
+                {
+                    string prefix = $"{t.Name}_";
+                    foreach (var sKey in manager.Schedules.Keys)
+                    {
+                        if (sKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        {
+                            string lvl = sKey.Substring(prefix.Length);
+                            if (!string.IsNullOrEmpty(lvl))
+                            {
+                                levels.Add(lvl);
+                            }
+                        }
+                    }
+                }
+
+                // 3. Add Level from Excel table if it has one
+                if (!string.IsNullOrEmpty(t.Level))
+                {
+                    levels.Add(t.Level);
+                }
+
+                if (levels.Count > 0)
+                {
+                    foreach (var lvl in levels)
+                    {
+                        if (!scheduleTeachers.Any(x => x.Name == t.Name && x.Level == lvl && x.Category == t.Category))
+                        {
+                            scheduleTeachers.Add(new TeacherScheduleWindow.TeacherIdentifier
+                            {
+                                Name     = t.Name,
+                                Level    = lvl,
+                                Category = t.Category,
+                                RawName  = t.RawName
+                            });
+                        }
+                    }
+                }
+                else
+                {
+                    // Fallback for teachers with absolutely no stats or schedules
+                    scheduleTeachers.Add(new TeacherScheduleWindow.TeacherIdentifier
+                    {
+                        Name     = t.Name,
+                        Level    = "",
+                        Category = t.Category,
+                        RawName  = t.RawName
+                    });
                 }
             }
 
-            var window = new TeacherScheduleWindow(teachers);
+            // ── Visibility teachers ───────────────────────────────────────────────
+            // All unique teacher names from the Excel roster (not filtered by print data).
+            // One row per teacher; unchecking hides ALL levels of that teacher in the dashboard.
+            var visibilityTeachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
+            var allExcelRaw = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
+            ExtractTeachersFromTable(_ftTable, "FT", allExcelRaw);
+            ExtractTeachersFromTable(_ptTable, "PT", allExcelRaw);
+            ExtractTeachersFromTable(_khTable, "KH", allExcelRaw);
+
+            foreach (var t in allExcelRaw)
+            {
+                if (!visibilityTeachers.Any(x => x.Name == t.Name && x.Category == t.Category))
+                {
+                    visibilityTeachers.Add(new TeacherScheduleWindow.TeacherIdentifier
+                    {
+                        Name     = t.Name,
+                        Level    = "",   // Visibility tab shows name only, no level
+                        Category = t.Category,
+                        RawName  = t.RawName
+                    });
+                }
+            }
+
+            var window = new TeacherScheduleWindow(scheduleTeachers, visibilityTeachers);
             window.Owner = Window.GetWindow(this);
 
             if (!string.IsNullOrEmpty(locateTeacherName))

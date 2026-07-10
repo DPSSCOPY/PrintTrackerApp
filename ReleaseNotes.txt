@@ -5,6 +5,7 @@ Update Version 1.0.27 Features:
 - Fixed duplicate check logic to include Category, ensuring teachers listed in multiple categories (e.g., both FT and PT) appear in all corresponding tabs.
 - Fixed Schedule Settings Level column: FT/KH teachers now show their actual class levels (e.g., G5B, G7A) copied from the dashboard print stats instead of being blank.
 - Fixed false No Teach grade: FT/KH teachers with level-specific print data no longer incorrectly show "No Teach" due to a key mismatch between the schedule save key and the grade lookup key.
+- Fixed Settings UI behavior for Hidden Teachers: Unchecked/hidden teachers are no longer filtered out of the settings window, allowing them to remain visible in the grid (with unchecked boxes) so they can be re-enabled/unhidden at any time.
 
 Update Version 1.0.26 Features:
 - Added double-click navigation: Double-clicking on a teacher cell in the print statistics dashboard automatically opens the schedules dialog and focuses on that teacher.
