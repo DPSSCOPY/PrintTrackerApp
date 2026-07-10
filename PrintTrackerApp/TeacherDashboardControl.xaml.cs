@@ -959,7 +959,16 @@ namespace PrintTrackerApp
             InitializeCategorySets();
             var records = new List<TeacherExcelRecord>();
             if (table == null) return records;
-            int startRow = (tabType == "KH") ? 2 : 1; 
+            int startRow = 0;
+            for (int r = 0; r < table.Rows.Count; r++)
+            {
+                var noStr = table.Rows[r][0]?.ToString();
+                if (!string.IsNullOrWhiteSpace(noStr) && int.TryParse(noStr, out _))
+                {
+                    startRow = r;
+                    break;
+                }
+            }
 
             // Pre-filter stats to only those belonging to the current tab type
             var tabStats = statsDict.Values.Where(stat => GetCategoryOfStat(stat) == tabType).ToList();
@@ -995,6 +1004,7 @@ namespace PrintTrackerApp
                 if (string.IsNullOrWhiteSpace(rrow[0]?.ToString())) continue;
 
                 string rRaw = rrow[1]?.ToString() ?? "";
+                if (IsInvalidTeacherName(rRaw)) continue;
                 string rName = rRaw.Trim();
                 if (rName.Contains("-"))
                     rName = rName.Split('-')[0].Trim();
@@ -1060,6 +1070,7 @@ namespace PrintTrackerApp
                 if (string.IsNullOrWhiteSpace(no)) continue;
 
                 string rawTeacher = row[1]?.ToString() ?? "";
+                if (IsInvalidTeacherName(rawTeacher)) continue;
                 string teacherName = rawTeacher.Trim();
                 if (teacherName.Contains("-"))
                 {
@@ -2088,53 +2099,20 @@ namespace PrintTrackerApp
             OpenScheduleSettings();
         }
 
+        private static bool IsInvalidTeacherName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return true;
+            string lower = name.ToLower().Trim();
+            return lower == "teacher name" || lower == "teacher" || lower == "teacher and level" || lower == "no" || lower == "no." || lower == "level";
+        }
+
         private void OpenScheduleSettings(string locateTeacherName = null, string locateLevel = null, string locateSession = null)
         {
             var teachers = new System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier>();
             
-            // Get all records (including hidden ones) for FT, PT, KH
-            var ftRecords = GetRecordsForTab(_ftTable, "FT", ignoreSearch: true, includeHidden: true);
-            var ptRecords = GetRecordsForTab(_ptTable, "PT", ignoreSearch: true, includeHidden: true);
-            var khRecords = GetRecordsForTab(_khTable, "KH", ignoreSearch: true, includeHidden: true);
-
-            foreach (var r in ftRecords)
-            {
-                if (string.IsNullOrEmpty(r.TeacherName)) continue;
-                teachers.Add(new TeacherScheduleWindow.TeacherIdentifier 
-                { 
-                    Name = r.TeacherName, 
-                    Level = r.Level ?? "", 
-                    Category = "FT", 
-                    RawName = r.TeacherName 
-                });
-            }
-            foreach (var r in ptRecords)
-            {
-                if (string.IsNullOrEmpty(r.TeacherName)) continue;
-                string rawName = r.TeacherName;
-                if (!string.IsNullOrEmpty(r.Level))
-                {
-                    rawName = string.IsNullOrEmpty(r.Session) ? $"{r.TeacherName}-{r.Level}" : $"{r.TeacherName}-{r.Level}-{r.Session}";
-                }
-                teachers.Add(new TeacherScheduleWindow.TeacherIdentifier 
-                { 
-                    Name = r.TeacherName, 
-                    Level = string.IsNullOrEmpty(r.Session) ? (r.Level ?? "") : $"{r.Level}-{r.Session}", 
-                    Category = "PT", 
-                    RawName = rawName 
-                });
-            }
-            foreach (var r in khRecords)
-            {
-                if (string.IsNullOrEmpty(r.TeacherName)) continue;
-                teachers.Add(new TeacherScheduleWindow.TeacherIdentifier 
-                { 
-                    Name = r.TeacherName, 
-                    Level = r.Level ?? "", 
-                    Category = "KH", 
-                    RawName = r.TeacherName 
-                });
-            }
+            ExtractTeachersFromTable(_ftTable, "FT", teachers);
+            ExtractTeachersFromTable(_ptTable, "PT", teachers);
+            ExtractTeachersFromTable(_khTable, "KH", teachers);
 
             var window = new TeacherScheduleWindow(teachers);
             window.Owner = Window.GetWindow(this);
@@ -2173,14 +2151,15 @@ namespace PrintTrackerApp
         private void ExtractTeachersFromTable(DataTable table, string tabType, System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier> teachers)
         {
             if (table == null) return;
-            int startRow = (tabType == "KH") ? 2 : 1;
-            for (int i = startRow; i < table.Rows.Count; i++)
+            for (int i = 0; i < table.Rows.Count; i++)
             {
                 DataRow row = table.Rows[i];
                 var no = row[0]?.ToString();
-                if (string.IsNullOrWhiteSpace(no)) continue;
+                if (string.IsNullOrWhiteSpace(no) || !int.TryParse(no, out _)) continue;
 
                 string rawTeacher = row[1]?.ToString() ?? "";
+                if (IsInvalidTeacherName(rawTeacher)) continue;
+
                 string rawLevel = table.Columns.Count > 2 ? (row[2]?.ToString() ?? "") : "";
 
                 string teacherName = rawTeacher.Trim();
@@ -2203,7 +2182,7 @@ namespace PrintTrackerApp
                     Category = tabType,
                     RawName = rawTeacher.Trim() 
                 };
-                if (!teachers.Any(t => t.Name == tId.Name && t.Level == tId.Level))
+                if (!teachers.Any(t => t.Name == tId.Name && t.Level == tId.Level && t.Category == tId.Category))
                 {
                     teachers.Add(tId);
                 }
@@ -2619,7 +2598,16 @@ namespace PrintTrackerApp
             InitializeCategorySets();
             var records = new List<TeacherExcelRecord>();
             if (table == null) return records;
-            int startRow = (tabType == "KH") ? 2 : 1; 
+            int startRow = 0;
+            for (int r = 0; r < table.Rows.Count; r++)
+            {
+                var noStr = table.Rows[r][0]?.ToString();
+                if (!string.IsNullOrWhiteSpace(noStr) && int.TryParse(noStr, out _))
+                {
+                    startRow = r;
+                    break;
+                }
+            }
             string searchText = ignoreSearch ? "" : (txtSearch?.Text?.ToLower()?.Trim() ?? "");
 
             var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
@@ -2659,6 +2647,7 @@ namespace PrintTrackerApp
                 if (string.IsNullOrWhiteSpace(rrow[0]?.ToString())) continue;
 
                 string rRaw = rrow[1]?.ToString() ?? "";
+                if (IsInvalidTeacherName(rRaw)) continue;
                 string rName = rRaw.Trim();
                 if (rName.Contains("-"))
                     rName = rName.Split('-')[0].Trim();
@@ -2724,6 +2713,7 @@ namespace PrintTrackerApp
                 if (string.IsNullOrWhiteSpace(no)) continue;
 
                 string rawTeacher = row[1]?.ToString() ?? "";
+                if (IsInvalidTeacherName(rawTeacher)) continue;
                 string teacherName = rawTeacher.Trim();
                 if (teacherName.Contains("-"))
                 {

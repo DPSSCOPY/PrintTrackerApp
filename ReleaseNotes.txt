@@ -1,3 +1,9 @@
+Update Version 1.0.27 Features:
+- Fixed Visibility tab loading: Loaded all teachers from the Excel worksheets directly instead of filtering out teachers without print job activity.
+- Fixed skipped teachers in KH tab: Implemented dynamic header detection to avoid skipping the first teacher in the KH list due to hardcoded offsets.
+- Filtered out sheet header row labels (like "Teacher Name") from the teacher list.
+- Fixed duplicate check logic to include Category, ensuring teachers listed in multiple categories (e.g., both FT and PT) appear in all corresponding tabs.
+
 Update Version 1.0.26 Features:
 - Added double-click navigation: Double-clicking on a teacher cell in the print statistics dashboard automatically opens the schedules dialog and focuses on that teacher.
 - Added persistent filter settings: Preserves the selected custom range or date filter in the schedule settings when closed and reopened.
