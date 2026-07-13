@@ -207,6 +207,10 @@
                             <TextBlock Text="Teacher Data Spreadsheet ID (Import):" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
                             <TextBox x:Name="txtTeacherDataSpreadsheetId" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"/>
                         </StackPanel>
+                        <StackPanel Margin="0,0,0,8">
+                            <TextBlock Text="Start Cell / Row (e.g., A4 or 4):" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
+                            <TextBox x:Name="txtGoogleSheetStartCell" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. A4 or 4 (leaves top rows for headers)"/>
+                        </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,5,0,0" VerticalAlignment="Center">
                             <Button Content="Upload Credentials JSON" Padding="10,5" Background="#0D6EFD" Foreground="White" BorderThickness="0" Click="BtnUploadCredentials_Click"/>
                             <TextBlock x:Name="txtCredentialsStatus" Text="❌ Not Loaded" Margin="10,0,0,0" VerticalAlignment="Center" FontWeight="Bold" Foreground="#DC3545"/>

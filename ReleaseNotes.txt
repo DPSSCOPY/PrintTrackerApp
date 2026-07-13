@@ -1,3 +1,7 @@
+Update Version 1.0.28 Features:
+- Fixed columns alignment/per-table layout mismatch in the PT tab to ensure correct grid positioning and cell borders formatting.
+- Added custom Google Sheets export start cell/row offset configuration in settings (e.g. A4 or 4) to leave empty rows at the top of the sheets for manual headers.
+
 Update Version 1.0.27 Features:
 - Fixed Visibility tab loading: Loaded all teachers from the Excel worksheets directly instead of filtering out teachers without print job activity.
 - Fixed skipped teachers in KH tab: Implemented dynamic header detection to avoid skipping the first teacher in the KH list due to hardcoded offsets.

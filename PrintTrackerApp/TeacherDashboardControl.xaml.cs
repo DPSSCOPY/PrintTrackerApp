@@ -1060,6 +1060,8 @@ namespace PrintTrackerApp
 
                 foreach (var sStat in tabStats)
                 {
+                    if (IsVannetCollisionForbidden(rName, sStat.Level)) continue;
+
                     int sc = ScoreNameMatch(rName, sStat.TeacherName);
                     if (sc <= 0) continue;
 
@@ -1180,6 +1182,7 @@ namespace PrintTrackerApp
                 }
 
                 var matches = tabStats.Where(stat =>
+                    !IsVannetCollisionForbidden(teacherName, stat.Level) &&
                     GetIsNameMatch(teacherName, stat.TeacherName, false, nameCache) &&
                     (HasExactWordMatch(teacherName, stat.TeacherName) || LevelMatchesTeacher(stat.Level, teacherLevels, levelCache)) &&
                     // Disambiguation: only claim this stat if this teacher is the best-scoring owner
@@ -2572,6 +2575,25 @@ namespace PrintTrackerApp
             return best;
         }
 
+        private static bool IsVannetCollisionForbidden(string teacherName, string level)
+        {
+            if (string.IsNullOrWhiteSpace(teacherName) || string.IsNullOrWhiteSpace(level)) return false;
+            string tLower = teacherName.ToLower();
+            string lLower = level.ToLower();
+
+            // If teacher is Chheang Vannet, she only teaches SMC levels.
+            if (tLower.Contains("chheang") && tLower.Contains("vannet"))
+            {
+                if (!lLower.Contains("smc")) return true; // Forbidden for non-SMC levels
+            }
+            // If teacher is Meas Vannet, she teaches other levels (not SMC).
+            if (tLower.Contains("meas") && tLower.Contains("vannet"))
+            {
+                if (lLower.Contains("smc")) return true; // Forbidden for SMC levels
+            }
+            return false;
+        }
+
         private int ComputeLCS(string s, string t)
         {
             int n = s.Length;
@@ -2817,6 +2839,8 @@ namespace PrintTrackerApp
 
                 foreach (var sStat in tabStats)
                 {
+                    if (IsVannetCollisionForbidden(rName, sStat.Level)) continue;
+
                     int sc = ScoreNameMatch(rName, sStat.TeacherName);
                     if (sc <= 0) continue;
 
@@ -2940,6 +2964,7 @@ namespace PrintTrackerApp
                 }
 
                 var matches = tabStats.Where(stat =>
+                    !IsVannetCollisionForbidden(teacherName, stat.Level) &&
                     GetIsNameMatch(teacherName, stat.TeacherName, false, nameCache) &&
                     (HasExactWordMatch(teacherName, stat.TeacherName) || LevelMatchesTeacher(stat.Level, teacherLevels, levelCache)) &&
                     // Disambiguation: only claim this stat if this teacher is the best-scoring owner
@@ -3308,9 +3333,10 @@ namespace PrintTrackerApp
                 foreach (var (tabName, table) in tabs)
                 {
                     if (table == null) continue;
-                    var records = GetRecordsForTab(table, tabName, true); // ignore UI search
-                    
+
+                    string startCell = settings.GoogleSheetStartCell;
                     int columns = 4;
+                    var records = GetRecordsForTab(table, tabName, true); // ignore UI search
                     int itemsPerColumn = (int)Math.Ceiling(records.Count / (double)columns);
                     var sheetData = new List<IList<object>>();
                     var sheetNotes = new List<IList<string>>();
@@ -3388,8 +3414,8 @@ namespace PrintTrackerApp
                         sheetNotes.Add(noteRow);
                     }
 
-                    await service.ClearSheetAsync(tabName);
-                    await service.WriteAndFormatDashboardDataAsync(tabName, sheetData, sheetNotes);
+                    await service.ClearSheetAsync(tabName, startCell);
+                    await service.WriteAndFormatDashboardDataAsync(tabName, sheetData, sheetNotes, startCell);
                 }
 
                 System.Windows.MessageBox.Show("Successfully exported to Google Sheets!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);

@@ -27,6 +27,7 @@ namespace PrintTrackerApp
                 Priority3Prefixes = settings.Priority3Prefixes,
                 GoogleSpreadsheetId = settings.GoogleSpreadsheetId,
                 TeacherDataSpreadsheetId = settings.TeacherDataSpreadsheetId,
+                GoogleSheetStartCell = settings.GoogleSheetStartCell,
                 TelegramBotUrl = settings.TelegramBotUrl,
                 TelegramBotToken = settings.TelegramBotToken,
                 TelegramChatId = settings.TelegramChatId,
@@ -57,6 +58,7 @@ namespace PrintTrackerApp
 
             txtGoogleSpreadsheetId.Text = CurrentSettings.GoogleSpreadsheetId;
             txtTeacherDataSpreadsheetId.Text = CurrentSettings.TeacherDataSpreadsheetId;
+            txtGoogleSheetStartCell.Text = CurrentSettings.GoogleSheetStartCell;
             txtTelegramBotUrl.Text = CurrentSettings.TelegramBotUrl;
             txtTelegramToken.Text = CurrentSettings.TelegramBotToken;
             txtTelegramChatId.Text = CurrentSettings.TelegramChatId;
@@ -145,6 +147,7 @@ namespace PrintTrackerApp
             
             CurrentSettings.GoogleSpreadsheetId = txtGoogleSpreadsheetId.Text.Trim();
             CurrentSettings.TeacherDataSpreadsheetId = txtTeacherDataSpreadsheetId.Text.Trim();
+            CurrentSettings.GoogleSheetStartCell = txtGoogleSheetStartCell.Text.Trim();
             CurrentSettings.TelegramBotUrl = txtTelegramBotUrl.Text.Trim();
             CurrentSettings.TelegramBotToken = txtTelegramToken.Text.Trim();
             CurrentSettings.TelegramChatId = txtTelegramChatId.Text.Trim();

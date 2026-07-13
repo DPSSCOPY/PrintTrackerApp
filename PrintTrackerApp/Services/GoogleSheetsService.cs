@@ -88,11 +88,15 @@ namespace PrintTrackerApp.Services
             return response.Replies[0].AddSheet.Properties.SheetId.Value;
         }
 
-        public async Task ClearSheetAsync(string sheetName)
+        public async Task ClearSheetAsync(string sheetName, string startCell = "A1")
         {
             await EnsureSheetExistsAsync(sheetName);
             var requestBody = new ClearValuesRequest();
-            var deleteRequest = _service.Spreadsheets.Values.Clear(requestBody, _spreadsheetId, $"{sheetName}");
+            string normalized = NormalizeStartCell(startCell);
+            string colLetter = System.Text.RegularExpressions.Regex.Match(normalized, @"[A-Z]+").Value;
+            int startRow = ParseStartRow(normalized);
+            string range = (startRow > 1 || colLetter != "A") ? $"{sheetName}!{colLetter}{startRow}:Z" : $"{sheetName}";
+            var deleteRequest = _service.Spreadsheets.Values.Clear(requestBody, _spreadsheetId, range);
             await deleteRequest.ExecuteAsync();
         }
 
@@ -105,15 +109,21 @@ namespace PrintTrackerApp.Services
             await updateRequest.ExecuteAsync();
         }
 
-        public async Task WriteAndFormatDashboardDataAsync(string sheetName, IList<IList<object>> data, IList<IList<string>> notes = null)
+        public async Task WriteAndFormatDashboardDataAsync(string sheetName, IList<IList<object>> data, IList<IList<string>> notes = null, string startCell = "A1")
         {
             if (data == null || data.Count == 0) return;
 
             int sheetId = await EnsureSheetExistsAsync(sheetName);
 
+            string normalizedStart = NormalizeStartCell(startCell);
+            int startRow = ParseStartRow(normalizedStart);
+            var colMatch = System.Text.RegularExpressions.Regex.Match(normalizedStart, @"[A-Z]+");
+            int colOffset = colMatch.Success ? ColumnLetterToColumnIndex(colMatch.Value) : 0;
+            int rowOffset = startRow - 1;
+
             // 1. Write text values
             var valueRange = new ValueRange { Values = data };
-            var updateRequest = _service.Spreadsheets.Values.Update(valueRange, _spreadsheetId, $"{sheetName}!A1");
+            var updateRequest = _service.Spreadsheets.Values.Update(valueRange, _spreadsheetId, $"{sheetName}!{normalizedStart}");
             updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
             await updateRequest.ExecuteAsync();
 
@@ -125,7 +135,7 @@ namespace PrintTrackerApp.Services
             {
                 RepeatCell = new RepeatCellRequest
                 {
-                    Range = new GridRange { SheetId = sheetId },
+                    Range = new GridRange { SheetId = sheetId, StartRowIndex = rowOffset, StartColumnIndex = colOffset },
                     Cell = new CellData { UserEnteredFormat = new CellFormat(), Note = "" },
                     Fields = "userEnteredFormat,note"
                 }
@@ -145,8 +155,8 @@ namespace PrintTrackerApp.Services
             };
 
             int tables = 4;
-            int colsPerTable = (sheetName == "PT") ? 4 : 3;
-            int totalCols = (colsPerTable + 1) * tables - 1; // 19 for PT, 15 for FT/KH
+            int colsPerTable = (sheetName == "PT") ? 2 : 3;
+            int totalCols = (colsPerTable + 1) * tables - 1; // 11 for PT, 15 for FT/KH
 
             // Format Header Row (Row 0)
             for (int t = 0; t < tables; t++)
@@ -158,7 +168,13 @@ namespace PrintTrackerApp.Services
                 {
                     RepeatCell = new RepeatCellRequest
                     {
-                        Range = new GridRange { SheetId = sheetId, StartRowIndex = 0, EndRowIndex = 1, StartColumnIndex = startCol, EndColumnIndex = endCol },
+                        Range = new GridRange { 
+                            SheetId = sheetId, 
+                            StartRowIndex = rowOffset, 
+                            EndRowIndex = rowOffset + 1, 
+                            StartColumnIndex = colOffset + startCol, 
+                            EndColumnIndex = colOffset + endCol 
+                        },
                         Cell = new CellData
                         {
                             UserEnteredFormat = new CellFormat
@@ -188,7 +204,13 @@ namespace PrintTrackerApp.Services
                     {
                         RepeatCell = new RepeatCellRequest
                         {
-                            Range = new GridRange { SheetId = sheetId, StartRowIndex = 1, EndRowIndex = data.Count, StartColumnIndex = startCol, EndColumnIndex = startCol + 1 },
+                            Range = new GridRange { 
+                                SheetId = sheetId, 
+                                StartRowIndex = rowOffset + 1, 
+                                EndRowIndex = rowOffset + data.Count, 
+                                StartColumnIndex = colOffset + startCol, 
+                                EndColumnIndex = colOffset + startCol + 1 
+                            },
                             Cell = new CellData
                             {
                                 UserEnteredFormat = new CellFormat
@@ -203,35 +225,19 @@ namespace PrintTrackerApp.Services
                         }
                     });
 
-                    if (colsPerTable >= 3) // Level column (FT/KH have colsPerTable == 3, PT has colsPerTable == 4)
+                    if (colsPerTable >= 3) // Level column (FT/KH have colsPerTable == 3)
                     {
                         requests.Add(new Request
                         {
                             RepeatCell = new RepeatCellRequest
                             {
-                                Range = new GridRange { SheetId = sheetId, StartRowIndex = 1, EndRowIndex = data.Count, StartColumnIndex = startCol + 1, EndColumnIndex = startCol + 2 },
-                                Cell = new CellData
-                                {
-                                    UserEnteredFormat = new CellFormat
-                                    {
-                                        TextFormat = new TextFormat { FontSize = 10 },
-                                        HorizontalAlignment = "CENTER",
-                                        VerticalAlignment = "MIDDLE",
-                                        Borders = borders
-                                    }
+                                Range = new GridRange { 
+                                    SheetId = sheetId, 
+                                    StartRowIndex = rowOffset + 1, 
+                                    EndRowIndex = rowOffset + data.Count, 
+                                    StartColumnIndex = colOffset + startCol + 1, 
+                                    EndColumnIndex = colOffset + startCol + 2 
                                 },
-                                Fields = "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment,borders)"
-                            }
-                        });
-                    }
-
-                    if (colsPerTable == 4) // Session column for PT
-                    {
-                        requests.Add(new Request
-                        {
-                            RepeatCell = new RepeatCellRequest
-                            {
-                                Range = new GridRange { SheetId = sheetId, StartRowIndex = 1, EndRowIndex = data.Count, StartColumnIndex = startCol + 2, EndColumnIndex = startCol + 3 },
                                 Cell = new CellData
                                 {
                                     UserEnteredFormat = new CellFormat
@@ -252,7 +258,13 @@ namespace PrintTrackerApp.Services
                     {
                         RepeatCell = new RepeatCellRequest
                         {
-                            Range = new GridRange { SheetId = sheetId, StartRowIndex = 1, EndRowIndex = data.Count, StartColumnIndex = gradeCol, EndColumnIndex = gradeCol + 1 },
+                            Range = new GridRange { 
+                                SheetId = sheetId, 
+                                StartRowIndex = rowOffset + 1, 
+                                EndRowIndex = rowOffset + data.Count, 
+                                StartColumnIndex = colOffset + gradeCol, 
+                                EndColumnIndex = colOffset + gradeCol + 1 
+                            },
                             Cell = new CellData
                             {
                                 UserEnteredFormat = new CellFormat
@@ -286,7 +298,13 @@ namespace PrintTrackerApp.Services
                                 {
                                     RepeatCell = new RepeatCellRequest
                                     {
-                                        Range = new GridRange { SheetId = sheetId, StartRowIndex = r, EndRowIndex = r + 1, StartColumnIndex = gradeCol, EndColumnIndex = gradeCol + 1 },
+                                        Range = new GridRange { 
+                                            SheetId = sheetId, 
+                                            StartRowIndex = rowOffset + r, 
+                                            EndRowIndex = rowOffset + r + 1, 
+                                            StartColumnIndex = colOffset + gradeCol, 
+                                            EndColumnIndex = colOffset + gradeCol + 1 
+                                        },
                                         Cell = new CellData
                                         {
                                             UserEnteredFormat = new CellFormat
@@ -316,14 +334,14 @@ namespace PrintTrackerApp.Services
                     {
                         SheetId = sheetId,
                         Dimension = "COLUMNS",
-                        StartIndex = 0,
-                        EndIndex = totalCols
+                        StartIndex = colOffset,
+                        EndIndex = colOffset + totalCols
                     }
                 }
             });
 
             // Set spacer column widths
-            int[] spacers = (sheetName == "PT") ? new[] { 4, 9, 14 } : new[] { 3, 7, 11 };
+            int[] spacers = (sheetName == "PT") ? new[] { 2, 5, 8 } : new[] { 3, 7, 11 };
             foreach (int sp in spacers)
             {
                 requests.Add(new Request
@@ -334,8 +352,8 @@ namespace PrintTrackerApp.Services
                         {
                             SheetId = sheetId,
                             Dimension = "COLUMNS",
-                            StartIndex = sp,
-                            EndIndex = sp + 1
+                            StartIndex = colOffset + sp,
+                            EndIndex = colOffset + sp + 1
                         },
                         Properties = new DimensionProperties { PixelSize = 25 },
                         Fields = "pixelSize"
@@ -363,7 +381,7 @@ namespace PrintTrackerApp.Services
                 {
                     UpdateCells = new UpdateCellsRequest
                     {
-                        Start = new GridCoordinate { SheetId = sheetId, RowIndex = 0, ColumnIndex = 0 },
+                        Start = new GridCoordinate { SheetId = sheetId, RowIndex = rowOffset, ColumnIndex = colOffset },
                         Rows = rowsData,
                         Fields = "note"
                     }
@@ -372,6 +390,46 @@ namespace PrintTrackerApp.Services
 
             var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = requests };
             await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
+        }
+
+        private string NormalizeStartCell(string startCell)
+        {
+            if (string.IsNullOrWhiteSpace(startCell)) return "A1";
+            startCell = startCell.Trim().ToUpperInvariant();
+            
+            var colMatch = System.Text.RegularExpressions.Regex.Match(startCell, @"[A-Z]+");
+            string col = colMatch.Success ? colMatch.Value : "A";
+            
+            var rowMatch = System.Text.RegularExpressions.Regex.Match(startCell, @"\d+");
+            string row = rowMatch.Success && int.TryParse(rowMatch.Value, out int r) && r >= 1 ? r.ToString() : "1";
+            
+            return col + row;
+        }
+
+        private int ParseStartRow(string startCell)
+        {
+            if (string.IsNullOrWhiteSpace(startCell)) return 1;
+            var match = System.Text.RegularExpressions.Regex.Match(startCell, @"\d+");
+            if (match.Success && int.TryParse(match.Value, out int row) && row >= 1)
+            {
+                return row;
+            }
+            return 1;
+        }
+
+        private int ColumnLetterToColumnIndex(string columnLetter)
+        {
+            if (string.IsNullOrWhiteSpace(columnLetter)) return 0;
+            columnLetter = columnLetter.Trim().ToUpperInvariant();
+            int index = 0;
+            foreach (char c in columnLetter)
+            {
+                if (c >= 'A' && c <= 'Z')
+                {
+                    index = index * 26 + (c - 'A' + 1);
+                }
+            }
+            return index - 1;
         }
 
         private SheetColor GetGradeBackgroundColor(string grade)

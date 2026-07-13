@@ -1459,6 +1459,7 @@ namespace PrintTrackerApp
                 latestSettings.Priority3Prefixes = sw.CurrentSettings.Priority3Prefixes;
                 latestSettings.GoogleSpreadsheetId = sw.CurrentSettings.GoogleSpreadsheetId;
                 latestSettings.TeacherDataSpreadsheetId = sw.CurrentSettings.TeacherDataSpreadsheetId;
+                latestSettings.GoogleSheetStartCell = sw.CurrentSettings.GoogleSheetStartCell;
                 latestSettings.TelegramBotUrl = sw.CurrentSettings.TelegramBotUrl;
                 latestSettings.TelegramBotToken = sw.CurrentSettings.TelegramBotToken;
                 latestSettings.TelegramChatId = sw.CurrentSettings.TelegramChatId;
