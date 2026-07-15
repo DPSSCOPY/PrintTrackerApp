@@ -685,6 +685,7 @@ namespace PrintTrackerApp
 
             if (nowTime == _appSettings.DailyReportTime && _lastReportDate != today)
             {
+                // 1. Get Folder Stats Summary (Report A - Detail Summary)
                 int GetPdfCount(string folder)
                 {
                     try { return System.IO.Directory.Exists(folder) ? System.IO.Directory.GetFiles(folder, "*.pdf").Length : 0; }
@@ -694,9 +695,9 @@ namespace PrintTrackerApp
                 int sourceCount = GetPdfCount(_appSettings.SourceFolderPath);
                 int totalCount = sourceCount;
                 
-                System.Text.StringBuilder sb = new System.Text.StringBuilder();
-                sb.AppendLine($"📊 *Daily Print Report* ({today})");
-                sb.AppendLine($"📂 Source: {sourceCount}");
+                System.Text.StringBuilder summarySb = new System.Text.StringBuilder();
+                summarySb.AppendLine($"📊 *Daily Print Summary* ({today})");
+                summarySb.AppendLine($"📂 Source: {sourceCount}");
 
                 try
                 {
@@ -715,29 +716,97 @@ namespace PrintTrackerApp
                         else if (lowerName.Contains("stor")) icon = "🗃️";
                         else if (lowerName.Contains("sort")) icon = "🗂️";
                         
-                        sb.AppendLine($"{icon} {dirName}: {count}");
+                        summarySb.AppendLine($"{icon} {dirName}: {count}");
                     }
                 }
                 catch { }
+                string summaryText = summarySb.ToString().TrimEnd();
 
-                if (totalCount > 0)
+                // 2. Load today's print jobs & build Emoji List (Report B)
+                List<string> emojiListMessages = new List<string>();
+                try
                 {
-                    string reportText = sb.ToString().TrimEnd();
+                    var todayJobs = CsvLogger.LoadJobsFromCsv(_appSettings.CsvExportPath);
+                    if (todayJobs != null && todayJobs.Count > 0)
+                    {
+                        todayJobs.Reverse();
+                        string dateHeader = DateTime.Now.ToString("dd-MMMM-yyyy", System.Globalization.CultureInfo.InvariantCulture);
+                        
+                        var currentSb = new System.Text.StringBuilder();
+                        currentSb.AppendLine($"🖨️ *Daily File Print on {dateHeader}*");
+                        currentSb.AppendLine();
+
+                        foreach (var job in todayJobs)
+                        {
+                            string truncatedName = TruncateFileName(job.DocumentName ?? "Unknown Document", 56);
+                            string docName = EscapeMarkdown(truncatedName);
+                            string status = job.Status ?? "";
+                            string icon = "⚙️";
+                            string lower = status.ToLower();
+                            if (lower.Contains("sent")) icon = "📤";
+                            else if (lower.Contains("stor")) icon = "🗃️";
+                            else if (lower.Contains("complete")) icon = "✅";
+
+                            string jobText = $"• {icon} {docName}\n";
+
+                            if (currentSb.Length + jobText.Length > 4000)
+                            {
+                                emojiListMessages.Add(currentSb.ToString().TrimEnd());
+                                currentSb.Clear();
+                            }
+                            currentSb.Append(jobText);
+                        }
+
+                        if (currentSb.Length > 0)
+                        {
+                            emojiListMessages.Add(currentSb.ToString().TrimEnd());
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("Error generating daily emoji list report: " + ex.Message);
+                }
+
+                // 3. Process sending for each Chat ID
+                if (!string.IsNullOrWhiteSpace(_appSettings.TelegramChatId))
+                {
                     string csvPath = System.IO.Path.Combine(_appSettings.CsvExportPath, $"PrintLog_{today}.csv");
                     string webMonitorCsvPath = System.IO.Path.Combine(_appSettings.CsvExportPath, $"WebMonitorHistory_{today}.csv");
 
+                    var chatIds = _appSettings.TelegramChatId.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+
                     _ = Task.Run(async () =>
                     {
-                        await SendTelegramMessageWithDocumentAsync(reportText, csvPath);
-
-                        // Also send WebMonitorHistory CSV file (no caption, just the document) sequentially below PrintLog
-                        if (System.IO.File.Exists(webMonitorCsvPath))
+                        foreach (var chatId in chatIds)
                         {
-                            await SendTelegramMessageWithDocumentAsync("", webMonitorCsvPath);
+                            string trimmedId = chatId.Trim();
+                            if (string.IsNullOrEmpty(trimmedId)) continue;
+
+                            // Check if Chat ID is negative => Group / Channel
+                            if (trimmedId.StartsWith("-"))
+                            {
+                                // Send Report B (Emoji List text table)
+                                foreach (var msg in emojiListMessages)
+                                {
+                                    await SendTelegramMessageAsync(msg, trimmedId);
+                                }
+                            }
+                            else
+                            {
+                                // Send Report A (Detail Summary with CSV files) to Personal chat
+                                await SendTelegramMessageWithDocumentAsync(summaryText, csvPath, trimmedId);
+
+                                // Also send WebMonitorHistory CSV file (no caption, just the document)
+                                if (System.IO.File.Exists(webMonitorCsvPath))
+                                {
+                                    await SendTelegramMessageWithDocumentAsync("", webMonitorCsvPath, trimmedId);
+                                }
+                            }
                         }
                     });
                 }
-                
+
                 _lastReportDate = today;
             }
         }
@@ -1676,6 +1745,8 @@ namespace PrintTrackerApp
                 {
                     _alertedSentToPrinter = false;
                     _alertedStoringCompleted = false;
+                    _alertedPrintCompleted = false;
+                    _hasStartedPrinting = true; // Priming status
                     
                     if (_appSettings.EnableAutoShutdown)
                     {
@@ -1703,7 +1774,7 @@ namespace PrintTrackerApp
                     
                     if (_appSettings.NotifySentToPrinter)
                     {
-                        _ = SendTelegramMessageAsync("📤 *ឯកសារត្រូវបានបញ្ជូនទៅម៉ាស៊ីនព្រីនរួចរាល់!* (Sent to Printer)");
+                        _ = SendTelegramNotificationToPersonalOnlyAsync("📤 *ឯកសារត្រូវបានបញ្ជូនទៅម៉ាស៊ីនព្រីនរួចរាល់!* (Sent to Printer)");
                     }
                 }
 
@@ -1714,7 +1785,7 @@ namespace PrintTrackerApp
                     
                     if (_appSettings.NotifyStoringCompleted)
                     {
-                        _ = SendTelegramMessageAsync("🗃️ *ឯកសារបានដំណើរការរក្សាទុកចប់សព្វគ្រប់!* (Storing Completed)");
+                        _ = SendTelegramNotificationToPersonalOnlyAsync("🗃️ *ឯកសារបានដំណើរការរក្សាទុកចប់សព្វគ្រប់!* (Storing Completed)");
                     }
                 }
 
@@ -1727,7 +1798,7 @@ namespace PrintTrackerApp
                     
                     if (_appSettings.NotifyPrintCompleted)
                     {
-                        _ = SendTelegramMessageAsync("✅ *ឯកសារត្រូវបានព្រីនរួចរាល់ពីម៉ាស៊ីន!* (All Print Completed)");
+                        _ = SendTelegramNotificationToPersonalOnlyAsync("✅ *ឯកសារត្រូវបានព្រីនរួចរាល់ពីម៉ាស៊ីន!* (All Print Completed)");
                     }
 
                     // Auto Shutdown after print complete (Specific Time mode) is disabled for now (Coming Soon)
@@ -1906,9 +1977,72 @@ namespace PrintTrackerApp
             catch { }
         }
 
-        private async Task SendTelegramMessageAsync(string message)
+        private string EscapeMarkdown(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            return text.Replace("_", "\\_")
+                       .Replace("*", "\\*")
+                       .Replace("[", "\\[")
+                       .Replace("`", "\\`");
+        }
+
+        private string TruncateFileName(string fileName, int maxLength = 35)
+        {
+            if (string.IsNullOrEmpty(fileName)) return "";
+            if (fileName.Length <= maxLength) return fileName;
+
+            try
+            {
+                string ext = System.IO.Path.GetExtension(fileName) ?? "";
+                string nameWithoutExt = System.IO.Path.GetFileNameWithoutExtension(fileName) ?? "";
+                
+                int extLen = ext.Length;
+                int nameMaxLen = maxLength - 3 - extLen; // 3 for "..."
+                
+                if (nameMaxLen > 0 && nameWithoutExt.Length > nameMaxLen)
+                {
+                    return nameWithoutExt.Substring(0, nameMaxLen) + "..." + ext;
+                }
+            }
+            catch { }
+
+            if (fileName.Length > maxLength)
+            {
+                return fileName.Substring(0, maxLength - 3) + "...";
+            }
+            return fileName;
+        }
+
+        private async Task SendTelegramNotificationToPersonalOnlyAsync(string message)
         {
             if (string.IsNullOrWhiteSpace(message) || string.IsNullOrWhiteSpace(_appSettings.TelegramBotToken) || string.IsNullOrWhiteSpace(_appSettings.TelegramChatId))
+                return;
+
+            try
+            {
+                var chatIds = _appSettings.TelegramChatId.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var chatId in chatIds)
+                {
+                    string trimmedId = chatId.Trim();
+                    if (string.IsNullOrEmpty(trimmedId)) continue;
+
+                    // Only send to personal (positive ID, not starting with '-')
+                    if (!trimmedId.StartsWith("-"))
+                    {
+                        await SendTelegramMessageAsync(message, trimmedId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to send personal Telegram message: {ex.Message}");
+            }
+        }
+
+        private async Task SendTelegramMessageAsync(string message, string? targetChatId = null)
+        {
+            string chatIdsStr = targetChatId ?? _appSettings.TelegramChatId;
+            if (string.IsNullOrWhiteSpace(message) || string.IsNullOrWhiteSpace(_appSettings.TelegramBotToken) || string.IsNullOrWhiteSpace(chatIdsStr))
                 return;
 
             try
@@ -1918,7 +2052,7 @@ namespace PrintTrackerApp
                     string baseUrl = string.IsNullOrWhiteSpace(_appSettings.TelegramBotUrl) ? "https://api.telegram.org/bot" : _appSettings.TelegramBotUrl;
                     string url = $"{baseUrl}{_appSettings.TelegramBotToken}/sendMessage";
                     
-                    var chatIds = _appSettings.TelegramChatId.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                    var chatIds = chatIdsStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var chatId in chatIds)
                     {
                         string trimmedId = chatId.Trim();
@@ -1933,7 +2067,12 @@ namespace PrintTrackerApp
                         
                         string json = System.Text.Json.JsonSerializer.Serialize(payload);
                         var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-                        await client.PostAsync(url, content);
+                        var response = await client.PostAsync(url, content);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            string errContent = await response.Content.ReadAsStringAsync();
+                            Debug.WriteLine($"Telegram send failed: {response.StatusCode} - {errContent}");
+                        }
                     }
                 }
             }
@@ -1943,16 +2082,17 @@ namespace PrintTrackerApp
             }
         }
 
-        private async Task SendTelegramMessageWithDocumentAsync(string message, string filePath)
+        private async Task SendTelegramMessageWithDocumentAsync(string message, string filePath, string? targetChatId = null)
         {
-            if (string.IsNullOrWhiteSpace(_appSettings.TelegramBotToken) || string.IsNullOrWhiteSpace(_appSettings.TelegramChatId))
+            string chatIdsStr = targetChatId ?? _appSettings.TelegramChatId;
+            if (string.IsNullOrWhiteSpace(_appSettings.TelegramBotToken) || string.IsNullOrWhiteSpace(chatIdsStr))
                 return;
 
             if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
             {
                 if (!string.IsNullOrWhiteSpace(message))
                 {
-                    await SendTelegramMessageAsync(message);
+                    await SendTelegramMessageAsync(message, targetChatId);
                 }
                 return;
             }
@@ -1964,7 +2104,7 @@ namespace PrintTrackerApp
                     string baseUrl = string.IsNullOrWhiteSpace(_appSettings.TelegramBotUrl) ? "https://api.telegram.org/bot" : _appSettings.TelegramBotUrl;
                     string url = $"{baseUrl}{_appSettings.TelegramBotToken}/sendDocument";
                     
-                    var chatIds = _appSettings.TelegramChatId.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                    var chatIds = chatIdsStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var chatId in chatIds)
                     {
                         string trimmedId = chatId.Trim();
@@ -1993,7 +2133,7 @@ namespace PrintTrackerApp
                 Debug.WriteLine($"Failed to send Telegram document: {ex.Message}");
                 if (!string.IsNullOrWhiteSpace(message))
                 {
-                    await SendTelegramMessageAsync(message);
+                    await SendTelegramMessageAsync(message, targetChatId);
                 }
             }
         }

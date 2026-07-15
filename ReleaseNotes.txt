@@ -1,3 +1,7 @@
+Update Version 1.0.29 Features:
+- Added Level and Session columns to the PT tab in Google Sheets export to match the dashboard layout exactly.
+- Made Google Sheets export sorting respect the active sorting selected on the dashboard.
+
 Update Version 1.0.28 Features:
 - Fixed columns alignment/per-table layout mismatch in the PT tab to ensure correct grid positioning and cell borders formatting.
 - Added custom Google Sheets export start cell/row offset configuration in settings (e.g. A4 or 4) to leave empty rows at the top of the sheets for manual headers.

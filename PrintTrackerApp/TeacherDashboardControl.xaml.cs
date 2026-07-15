@@ -559,6 +559,16 @@ namespace PrintTrackerApp
                 int weeks = (int)Math.Ceiling(duration / 7.0);
                 if (weeks == 0) weeks = 1;
 
+                int weekdayCount = 0;
+                for (DateTime d = start.Date; d <= end.Date; d = d.AddDays(1))
+                {
+                    if (d.DayOfWeek != DayOfWeek.Saturday && d.DayOfWeek != DayOfWeek.Sunday)
+                    {
+                        weekdayCount++;
+                    }
+                }
+                if (weekdayCount == 0) weekdayCount = 1;
+
                 var excelTeachers = new List<TeacherScheduleWindow.TeacherIdentifier>();
                 ExtractTeachersFromTable(_ftTable, "FT", excelTeachers);
                 ExtractTeachersFromTable(_ptTable, "PT", excelTeachers);
@@ -568,7 +578,7 @@ namespace PrintTrackerApp
                 {
                     int activeDays = stat.PrintDays.Union(stat.ExemptedDates).Count();
                     
-                    if (stat.ExemptedDates.Count >= duration)
+                    if (stat.ExemptedDates.Count >= weekdayCount)
                     {
                         string statTab = GetCategoryOfStat(stat);
                         TeacherScheduleWindow.TeacherIdentifier matchingExcel = null;
@@ -610,6 +620,9 @@ namespace PrintTrackerApp
                         {
                             for (DateTime date = start.Date; date <= end.Date; date = date.AddDays(1))
                             {
+                                if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
+                                    continue;
+
                                 string dateStr = date.ToString("yyyy-MM-dd");
                                 if (manager.Schedules[key].ContainsKey(dateStr))
                                 {
@@ -1221,63 +1234,7 @@ namespace PrintTrackerApp
                         if (addedKeys.Add(key))
                         {
                             var combinedPrintDays    = groupData.PrintDays;
-                            var combinedExemptedDates = groupData.ExemptedDates;
                             var combinedTooltips     = groupData.TooltipLines;
-
-                            int duration = (end.Date - start.Date).Days + 1;
-
-                            // ── Schedule-aware teach-day count ────────────────────────────────────
-                            int scheduledTeachDays = 0;
-                            for (DateTime d = start.Date; d <= end.Date; d = d.AddDays(1))
-                            {
-                                string dayStatus = GetScheduleStatus(manager, teacherName, lvl, ses, d.ToString("yyyy-MM-dd"));
-                                if (dayStatus != null)
-                                {
-                                    string ds = dayStatus.ToLower();
-                                    if (ds == "no teach" || ds == "exam") continue; // excluded day
-                                }
-                                scheduledTeachDays++;
-                            }
-                            if (scheduledTeachDays <= 0) scheduledTeachDays = duration;
-
-                            int weeks = (int)Math.Ceiling(duration / 7.0);
-                            if (weeks == 0) weeks = 1;
-
-                            // Effective print days = unique days teacher actually printed
-                            int printedCount = combinedPrintDays.Count;
-
-                            string combinedGrade = "E";
-
-                            if (combinedExemptedDates.Count >= duration)
-                            {
-                                bool hasExam    = false;
-                                bool hasNoTeach = false;
-
-                                for (DateTime date = start.Date; date <= end.Date; date = date.AddDays(1))
-                                {
-                                    string dateStr = date.ToString("yyyy-MM-dd");
-                                    string status = GetScheduleStatus(manager, teacherName, lvl, ses, dateStr);
-                                    if (status != null)
-                                    {
-                                        string s = status.ToLower();
-                                        if (s == "exam")     hasExam    = true;
-                                        if (s == "no teach") hasNoTeach = true;
-                                    }
-                                }
-                                if (hasExam && hasNoTeach) combinedGrade = "Exam/No Teach";
-                                else if (hasExam)          combinedGrade = "Exam";
-                                else if (hasNoTeach)       combinedGrade = "No Teach";
-                                else                       combinedGrade = "Exam/No Teach";
-                            }
-                            else
-                            {
-                                int activeDays = combinedPrintDays.Union(combinedExemptedDates).Count();
-                                if      (activeDays >= 4 * weeks) combinedGrade = "A";
-                                else if (activeDays >= 3 * weeks) combinedGrade = "B";
-                                else if (activeDays >= 2 * weeks) combinedGrade = "C";
-                                else if (activeDays >= 1 * weeks) combinedGrade = "D";
-                                else                              combinedGrade = "E";
-                            }
 
                             // ── BS (Both Sessions) expansion ───────────────────────────────
                             if (string.Equals(ses, "BS", StringComparison.OrdinalIgnoreCase))
@@ -1287,13 +1244,14 @@ namespace PrintTrackerApp
                                     string bsKey = $"{teacherName.ToLower()}_{lvl.ToLower()}_{expandedSes.ToLower()}";
                                     if (addedKeys.Add(bsKey))
                                     {
+                                        string grade = CalculateGradeForSessionInternal(teacherName, lvl, expandedSes, combinedPrintDays, manager, start, end);
                                         records.Add(new TeacherExcelRecord
                                         {
                                             No = no,
                                             TeacherName = teacherName,
                                             Level = lvl,
                                             Session = expandedSes,
-                                            Grade = combinedGrade,
+                                            Grade = grade,
                                             JobsTooltip = string.Join("\n", combinedTooltips) + (combinedTooltips.Count > 0 ? "\n" : "")
                                         });
                                     }
@@ -1301,52 +1259,65 @@ namespace PrintTrackerApp
                             }
                             else
                             {
+                                string grade = CalculateGradeForSessionInternal(teacherName, lvl, ses, combinedPrintDays, manager, start, end);
                                 records.Add(new TeacherExcelRecord
                                 {
                                     No = no,
                                     TeacherName = teacherName,
                                     Level = lvl,
                                     Session = ses,
-                                    Grade = combinedGrade,
+                                    Grade = grade,
                                     JobsTooltip = string.Join("\n", combinedTooltips) + (combinedTooltips.Count > 0 ? "\n" : "")
                                 });
                             }
                         }
                     }
                 }
-                else
+
                 {
-                    bool addedFromSchedule = false;
-                    if (schedulesByTeacher.TryGetValue(teacherName, out var matchingKeys) && matchingKeys.Count > 0)
+                    string rawLevel = table.Columns.Count > 2 ? (row[2]?.ToString() ?? "") : "";
+                    string lvl = rawLevel.Trim();
+                    string ses = string.Empty;
+                    if (tabType == "PT" && string.IsNullOrWhiteSpace(lvl))
                     {
-                        var officialScheduledClasses = GetTeacherScheduledClasses(teacherName, tabType, table, startRow, schedulesByTeacher, nameCache);
-                        foreach (var key in matchingKeys)
+                        var parts = rawTeacher.Split('-');
+                        if (parts.Length >= 3)
                         {
-                            string levelFromSchedule = key.Substring(teacherName.Length + 1);
+                            lvl = parts[1].Trim();
+                            ses = parts[2].Trim();
+                        }
+                    }
+                    else if (lvl.Contains("-"))
+                    {
+                        var parts = lvl.Split('-');
+                        if (parts.Length >= 2)
+                        {
+                            lvl = parts[0].Trim();
+                            ses = parts[1].Trim();
+                        }
+                    }
+                    else if (table.Columns.Count > 3)
+                    {
+                        ses = row[3]?.ToString()?.Trim() ?? "";
+                    }
 
-                            // Visibility filter check
-                            string dateKey = $"{key}_{start.ToString("yyyy-MM-dd")}_{end.ToString("yyyy-MM-dd")}";
-                            if (manager.HiddenTeachers.Contains(key) || manager.HiddenTeachers.Contains(dateKey))
-                            {
-                                continue;
-                            }
-                            
-                            CleanLevelAndSession(levelFromSchedule, out string lvl, out string ses);
+                    // If raw level doesn't match tabType, clear it so we don't show wrong level
+                    if (!string.IsNullOrWhiteSpace(lvl) && GetCategoryOfLevel(lvl, ses) != tabType)
+                    {
+                        lvl = "";
+                        ses = "";
+                    }
 
-                            // Filter out schedule settings for levels not officially assigned to the teacher in the roster table (if roster defines any levels)
-                            bool hasOfficialLevels = officialScheduledClasses.Any(sc => !string.IsNullOrWhiteSpace(sc.Level));
-                            if (hasOfficialLevels && !officialScheduledClasses.Any(sc => sc.Level.Equals(lvl, StringComparison.OrdinalIgnoreCase) && sc.Session.Equals(ses, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                continue;
-                            }
-
-                            // Filter schedule levels by tabType!
-                            if (string.IsNullOrWhiteSpace(lvl) || GetCategoryOfLevel(lvl, ses) != tabType)
-                            {
-                                continue;
-                            }
-
-                            string grade = CalculateGradeFromExemptionsOnlyInternal(teacherName, levelFromSchedule, manager, start, end);
+                    if (!string.IsNullOrWhiteSpace(lvl))
+                    {
+                        // Visibility filter check
+                        string scheduleLevelKey = (tabType == "PT")
+                            ? (string.IsNullOrEmpty(ses) ? lvl : $"{lvl}-{ses}")
+                            : lvl;
+                        string hiddenCheckKey = $"{teacherName}_{scheduleLevelKey}";
+                        string dateKey = $"{hiddenCheckKey}_{start.ToString("yyyy-MM-dd")}_{end.ToString("yyyy-MM-dd")}";
+                        if (!manager.HiddenTeachers.Contains(teacherName) && !manager.HiddenTeachers.Contains(hiddenCheckKey) && !manager.HiddenTeachers.Contains(dateKey))
+                        {
                             string mapKey = $"{teacherName.ToLower()}_{lvl.ToLower()}_{ses.ToLower()}";
 
                             if (string.Equals(ses, "BS", StringComparison.OrdinalIgnoreCase))
@@ -1356,6 +1327,7 @@ namespace PrintTrackerApp
                                     string bsKey = $"{teacherName.ToLower()}_{lvl.ToLower()}_{expandedSes.ToLower()}";
                                     if (addedKeys.Add(bsKey))
                                     {
+                                        string grade = CalculateGradeForSessionInternal(teacherName, lvl, expandedSes, new System.Collections.Generic.HashSet<string>(), manager, start, end);
                                         records.Add(new TeacherExcelRecord
                                         {
                                             No = no,
@@ -1365,7 +1337,6 @@ namespace PrintTrackerApp
                                             Grade = grade,
                                             JobsTooltip = ""
                                         });
-                                        addedFromSchedule = true;
                                     }
                                 }
                             }
@@ -1373,6 +1344,7 @@ namespace PrintTrackerApp
                             {
                                 if (addedKeys.Add(mapKey))
                                 {
+                                    string grade = CalculateGradeForSessionInternal(teacherName, lvl, ses, new System.Collections.Generic.HashSet<string>(), manager, start, end);
                                     records.Add(new TeacherExcelRecord
                                     {
                                         No = no,
@@ -1382,121 +1354,61 @@ namespace PrintTrackerApp
                                         Grade = grade,
                                         JobsTooltip = ""
                                     });
-                                    addedFromSchedule = true;
                                 }
-                            }
-                        }
-                    }
-
-                    if (!addedFromSchedule)
-                    {
-                        string rawLevel = table.Columns.Count > 2 ? (row[2]?.ToString() ?? "") : "";
-                        string lvl = rawLevel.Trim();
-                        string ses = string.Empty;
-                        if (tabType == "PT" && string.IsNullOrWhiteSpace(lvl))
-                        {
-                            var parts = rawTeacher.Split('-');
-                            if (parts.Length >= 3)
-                            {
-                                lvl = parts[1].Trim();
-                                ses = parts[2].Trim();
-                            }
-                        }
-                        else if (lvl.Contains("-"))
-                        {
-                            var parts = lvl.Split('-');
-                            if (parts.Length >= 2)
-                            {
-                                lvl = parts[0].Trim();
-                                ses = parts[1].Trim();
-                            }
-                        }
-                        else if (table.Columns.Count > 3)
-                        {
-                            ses = row[3]?.ToString()?.Trim() ?? "";
-                        }
-
-                        // If raw level doesn't match tabType, clear it so we don't show wrong level
-                        if (!string.IsNullOrWhiteSpace(lvl) && GetCategoryOfLevel(lvl, ses) != tabType)
-                        {
-                            lvl = "";
-                            ses = "";
-                        }
-
-                        if (string.IsNullOrWhiteSpace(lvl))
-                        {
-                            continue;
-                        }
-
-                        // Visibility filter check
-                        string scheduleLevelKey = (tabType == "PT")
-                            ? (string.IsNullOrEmpty(ses) ? lvl : $"{lvl}-{ses}")
-                            : lvl;
-                        string hiddenCheckKey = $"{teacherName}_{scheduleLevelKey}";
-                        string dateKey = $"{hiddenCheckKey}_{start.ToString("yyyy-MM-dd")}_{end.ToString("yyyy-MM-dd")}";
-                        if (manager.HiddenTeachers.Contains(hiddenCheckKey) || manager.HiddenTeachers.Contains(dateKey))
-                        {
-                            continue;
-                        }
-
-                        string grade = CalculateGradeFromExemptionsOnlyInternal(teacherName, scheduleLevelKey, manager, start, end);
-                        string mapKey = $"{teacherName.ToLower()}_{lvl.ToLower()}_{ses.ToLower()}";
-
-                        if (string.Equals(ses, "BS", StringComparison.OrdinalIgnoreCase))
-                        {
-                            foreach (var expandedSes in new[] { "S1", "S2" })
-                            {
-                                string bsKey = $"{teacherName.ToLower()}_{lvl.ToLower()}_{expandedSes.ToLower()}";
-                                if (addedKeys.Add(bsKey))
-                                {
-                                    records.Add(new TeacherExcelRecord
-                                    {
-                                        No = no,
-                                        TeacherName = teacherName,
-                                        Level = lvl,
-                                        Session = expandedSes,
-                                        Grade = grade,
-                                        JobsTooltip = ""
-                                    });
-                                }
-                            }
-                        }
-                        else
-                        {
-                            if (addedKeys.Add(mapKey))
-                            {
-                                records.Add(new TeacherExcelRecord
-                                {
-                                    No = no,
-                                    TeacherName = teacherName,
-                                    Level = lvl,
-                                    Session = ses,
-                                    Grade = grade,
-                                    JobsTooltip = ""
-                                });
                             }
                         }
                     }
                 }
             }
 
-            if (tabType == "PT")
+            // Remove exact duplicates and overlapping bare level records across all tabs
             {
-                var groups = records.GroupBy(r => new { TeacherName = (r.TeacherName ?? "").ToLower(), Level = (r.Level ?? "").ToLower() }).ToList();
+                var teacherGroups = records.GroupBy(r => (r.TeacherName ?? "").Trim().ToLower()).ToList();
                 var filteredRecords = new List<TeacherExcelRecord>();
-                foreach (var group in groups)
+                foreach (var group in teacherGroups)
                 {
                     var list = group.ToList();
-                    if (list.Count > 1)
+                    
+                    var uniqueLvlSes = new List<TeacherExcelRecord>();
+                    foreach (var r in list)
                     {
-                        var hasSession = list.Any(r => !string.IsNullOrWhiteSpace(r.Session));
-                        if (hasSession)
+                        if (!uniqueLvlSes.Any(x => string.Equals(x.Level, r.Level, StringComparison.OrdinalIgnoreCase) && 
+                                                   string.Equals(x.Session, r.Session, StringComparison.OrdinalIgnoreCase)))
                         {
-                            filteredRecords.AddRange(list.Where(r => !string.IsNullOrWhiteSpace(r.Session)));
-                            continue;
+                            uniqueLvlSes.Add(r);
                         }
                     }
-                    filteredRecords.AddRange(list);
+
+                    var toRemove = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in uniqueLvlSes)
+                    {
+                        string l = item.Level ?? "";
+                        if (!string.IsNullOrEmpty(l))
+                        {
+                            if (uniqueLvlSes.Any(other => other != item && 
+                                                          (other.Level ?? "").StartsWith(l, StringComparison.OrdinalIgnoreCase) &&
+                                                          (other.Level ?? "").Length > l.Length &&
+                                                          !char.IsDigit((other.Level ?? "")[l.Length])))
+                            {
+                                toRemove.Add(l);
+                            }
+                            else if (uniqueLvlSes.Any(other => other != item && 
+                                                               string.Equals(other.Level, l, StringComparison.OrdinalIgnoreCase) &&
+                                                               !string.IsNullOrEmpty(other.Session) &&
+                                                               string.IsNullOrEmpty(item.Session)))
+                            {
+                                toRemove.Add(l);
+                            }
+                        }
+                    }
+
+                    foreach (var item in uniqueLvlSes)
+                    {
+                        if (!toRemove.Contains(item.Level ?? ""))
+                        {
+                            filteredRecords.Add(item);
+                        }
+                    }
                 }
                 records = filteredRecords;
             }
@@ -1580,50 +1492,61 @@ namespace PrintTrackerApp
             return null;
         }
 
-        private string CalculateGradeFromExemptionsOnlyInternal(string teacherName, string level, PrintTrackerApp.Services.TeacherScheduleManager manager, DateTime start, DateTime end)
+        private string CalculateGradeForSessionInternal(
+            string teacherName,
+            string lvl,
+            string targetSes,
+            System.Collections.Generic.HashSet<string> combinedPrintDays,
+            PrintTrackerApp.Services.TeacherScheduleManager manager,
+            DateTime start,
+            DateTime end)
         {
-            string lvl = level;
-            string ses = "";
-            if (level.Contains("-"))
-            {
-                var parts = level.Split('-');
-                lvl = parts[0].Trim();
-                ses = parts[1].Trim();
-            }
-
-            int exemptedCount = 0;
+            var exemptedDates = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
             bool hasExam = false;
             bool hasNoTeach = false;
+            int weekdayCount = 0;
 
             for (DateTime date = start.Date; date <= end.Date; date = date.AddDays(1))
             {
+                if (date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
+                    continue;
+
+                weekdayCount++;
                 string dateStr = date.ToString("yyyy-MM-dd");
-                string status = GetScheduleStatus(manager, teacherName, lvl, ses, dateStr);
+                string status = GetScheduleStatus(manager, teacherName, lvl, targetSes, dateStr);
                 if (status != null)
                 {
                     string s = status.ToLower();
                     if (s == "no teach" || s == "exam")
                     {
-                        exemptedCount++;
+                        exemptedDates.Add(dateStr);
                         if (s == "exam") hasExam = true;
                         if (s == "no teach") hasNoTeach = true;
                     }
                 }
             }
 
-            int totalDurationDays = (end.Date - start.Date).Days + 1;
-            int teachDaysCount = totalDurationDays - exemptedCount;
-            if (teachDaysCount > 0)
+            if (weekdayCount == 0) weekdayCount = 1;
+
+            int duration = (end.Date - start.Date).Days + 1;
+            int weeks = (int)Math.Ceiling(duration / 7.0);
+            if (weeks == 0) weeks = 1;
+
+            if (exemptedDates.Count >= weekdayCount)
             {
-                // If they had ANY teaching days but printed 0 times, they fail.
-                return "E";
+                if (hasExam && hasNoTeach) return "Exam/No Teach";
+                if (hasExam) return "Exam";
+                if (hasNoTeach) return "No Teach";
+                return "Exam/No Teach";
             }
 
-            if (hasExam && hasNoTeach) return "Exam/No Teach";
-            if (hasExam) return "Exam";
-            if (hasNoTeach) return "No Teach";
+            int activeDays = combinedPrintDays.Union(exemptedDates).Count();
             
-            return "Exam/No Teach";
+            if      (activeDays >= 4 * weeks) return "A";
+            else if (activeDays >= 3 * weeks) return "B";
+            else if (activeDays >= 2 * weeks) return "C";
+            else if (activeDays >= 1 * weeks) return "D";
+            else                              return "E";
         }
 
         private void GenerateDynamicColumns(DateTime start, DateTime end)
@@ -2123,7 +2046,12 @@ namespace PrintTrackerApp
 
             var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
 
-            foreach (var t in excelTeachers)
+            var uniqueExcelTeachers = excelTeachers
+                .GroupBy(et => new { Name = et.Name.ToLower(), Category = et.Category })
+                .Select(g => g.First())
+                .ToList();
+
+            foreach (var t in uniqueExcelTeachers)
             {
                 var levels = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -2143,9 +2071,10 @@ namespace PrintTrackerApp
                     }
                 }
 
-                // 2. Get levels from existing schedule configurations
+                // 2. Get levels from existing schedule configurations (filter by category of the level)
                 if (manager?.Schedules != null)
                 {
+                    InitializeCategorySets();
                     string prefix = $"{t.Name}_";
                     foreach (var sKey in manager.Schedules.Keys)
                     {
@@ -2155,21 +2084,60 @@ namespace PrintTrackerApp
                             if (!string.IsNullOrEmpty(rawLvl))
                             {
                                 CleanLevelAndSession(rawLvl, out string cleanLvl, out string cleanSes);
-                                string levelKey = string.IsNullOrEmpty(cleanSes) ? cleanLvl : $"{cleanLvl}-{cleanSes}";
-                                if (!string.IsNullOrEmpty(levelKey))
+                                if (string.Equals(GetCategoryOfLevel(cleanLvl, cleanSes), t.Category, StringComparison.OrdinalIgnoreCase))
                                 {
-                                    levels.Add(levelKey);
+                                    string levelKey = string.IsNullOrEmpty(cleanSes) ? cleanLvl : $"{cleanLvl}-{cleanSes}";
+                                    if (!string.IsNullOrEmpty(levelKey))
+                                    {
+                                        levels.Add(levelKey);
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // 3. Add Level from Excel table if it has one
-                if (!string.IsNullOrEmpty(t.Level))
+                // 3. Add Levels from Excel table for this teacher
+                foreach (var et in excelTeachers.Where(x => string.Equals(x.Name, t.Name, StringComparison.OrdinalIgnoreCase) && x.Category == t.Category))
                 {
-                    levels.Add(t.Level);
+                    if (!string.IsNullOrEmpty(et.Level))
+                    {
+                        levels.Add(et.Level);
+                    }
                 }
+
+                // Expand any "BS" (Both Sessions) level into S1 and S2, removing the BS level
+                var bsLevels = levels.Where(l => l.EndsWith("-BS", StringComparison.OrdinalIgnoreCase) || string.Equals(l, "BS", StringComparison.OrdinalIgnoreCase)).ToList();
+                foreach (var bsLvl in bsLevels)
+                {
+                    levels.Remove(bsLvl);
+                    if (bsLvl.EndsWith("-BS", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string prefix = bsLvl.Substring(0, bsLvl.Length - 3);
+                        levels.Add($"{prefix}-S1");
+                        levels.Add($"{prefix}-S2");
+                    }
+                    else
+                    {
+                        levels.Add("S1");
+                        levels.Add("S2");
+                    }
+                }
+
+                // Deduplicate overlapping levels: if both bare Level (e.g. "L6", "Pre2") and specific/session Level (e.g. "L6-S1", "Pre2AI") exist,
+                // remove the bare level so they don't overlap or duplicate.
+                var toRemove = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var l in levels)
+                {
+                    if (levels.Any(other => !string.Equals(other, l, StringComparison.OrdinalIgnoreCase) &&
+                                            other.StartsWith(l, StringComparison.OrdinalIgnoreCase) &&
+                                            other.Length > l.Length &&
+                                            !char.IsDigit(other[l.Length])))
+                    {
+                        toRemove.Add(l);
+                    }
+                }
+                levels.ExceptWith(toRemove);
 
                 if (levels.Count > 0)
                 {
@@ -3006,61 +2974,7 @@ namespace PrintTrackerApp
                         if (addedKeys.Add(key))
                         {
                             var combinedPrintDays    = groupData.PrintDays;
-                            var combinedExemptedDates = groupData.ExemptedDates;
                             var combinedTooltips     = groupData.TooltipLines;
-
-                            int duration = (_currentEnd.Date - _currentStart.Date).Days + 1;
-
-                            // Schedule-aware teach-day count (excludes No Teach / Exam days)
-                            int scheduledTeachDays2 = 0;
-                            for (DateTime d = _currentStart.Date; d <= _currentEnd.Date; d = d.AddDays(1))
-                            {
-                                string dayStatus = GetScheduleStatus(manager, teacherName, lvl, ses, d.ToString("yyyy-MM-dd"));
-                                if (dayStatus != null)
-                                {
-                                    string ds = dayStatus.ToLower();
-                                    if (ds == "no teach" || ds == "exam") continue;
-                                }
-                                scheduledTeachDays2++;
-                            }
-                            if (scheduledTeachDays2 <= 0) scheduledTeachDays2 = duration;
-
-                            int weeks = (int)Math.Ceiling(duration / 7.0);
-                            if (weeks == 0) weeks = 1;
-
-                            int printedCount2 = combinedPrintDays.Count;
-                            string combinedGrade = "E";
-
-                            if (combinedExemptedDates.Count >= duration)
-                            {
-                                bool hasExam    = false;
-                                bool hasNoTeach = false;
-
-                                for (DateTime date = _currentStart.Date; date <= _currentEnd.Date; date = date.AddDays(1))
-                                {
-                                    string dateStr = date.ToString("yyyy-MM-dd");
-                                    string status = GetScheduleStatus(manager, teacherName, lvl, ses, dateStr);
-                                    if (status != null)
-                                    {
-                                        string s = status.ToLower();
-                                        if (s == "exam")     hasExam    = true;
-                                        if (s == "no teach") hasNoTeach = true;
-                                    }
-                                }
-                                if (hasExam && hasNoTeach) combinedGrade = "Exam/No Teach";
-                                else if (hasExam)          combinedGrade = "Exam";
-                                else if (hasNoTeach)       combinedGrade = "No Teach";
-                                else                       combinedGrade = "Exam/No Teach";
-                            }
-                            else
-                            {
-                                int activeDays = combinedPrintDays.Union(combinedExemptedDates).Count();
-                                if      (activeDays >= 4 * weeks) combinedGrade = "A";
-                                else if (activeDays >= 3 * weeks) combinedGrade = "B";
-                                else if (activeDays >= 2 * weeks) combinedGrade = "C";
-                                else if (activeDays >= 1 * weeks) combinedGrade = "D";
-                                else                              combinedGrade = "E";
-                            }
 
                             // ── BS (Both Sessions) expansion ───────────────────────────────
                             if (string.Equals(ses, "BS", StringComparison.OrdinalIgnoreCase))
@@ -3070,88 +2984,7 @@ namespace PrintTrackerApp
                                     string bsKey = $"{teacherName.ToLower()}_{lvl.ToLower()}_{expandedSes.ToLower()}";
                                     if (addedKeys.Add(bsKey))
                                     {
-                                        records.Add(new TeacherExcelRecord
-                                        {
-                                            No = no,
-                                            TeacherName = teacherName,
-                                            Level = lvl,
-                                            Session = expandedSes,
-                                            Grade = combinedGrade,
-                                            JobsTooltip = string.Join("\n", combinedTooltips) + (combinedTooltips.Count > 0 ? "\n" : "")
-                                        });
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                records.Add(new TeacherExcelRecord
-                                {
-                                    No = no,
-                                    TeacherName = teacherName,
-                                    Level = lvl,
-                                    Session = ses,
-                                    Grade = combinedGrade,
-                                    JobsTooltip = string.Join("\n", combinedTooltips) + (combinedTooltips.Count > 0 ? "\n" : "")
-                                });
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    bool addedFromSchedule = false;
-                    if (schedulesByTeacher.TryGetValue(teacherName, out var matchingKeys) && matchingKeys.Count > 0)
-                    {
-                        var officialScheduledClasses = GetTeacherScheduledClasses(teacherName, tabType, table, startRow, schedulesByTeacher, nameCache);
-                        foreach (var key in matchingKeys)
-                        {
-                            string levelFromSchedule = key.Substring(teacherName.Length + 1);
-
-                            // Visibility filter check
-                            string dateKey = $"{key}_{_currentStart.ToString("yyyy-MM-dd")}_{_currentEnd.ToString("yyyy-MM-dd")}";
-                            if (!includeHidden)
-                            {
-                                if (manager.HiddenTeachers.Contains(key) || manager.HiddenTeachers.Contains(dateKey))
-                                {
-                                    continue;
-                                }
-                            }
-                            
-                            string lvl = levelFromSchedule;
-                            string ses = string.Empty;
-                            if (levelFromSchedule.Contains("-"))
-                            {
-                                var parts = levelFromSchedule.Split('-');
-                                if (parts.Length >= 2)
-                                {
-                                    lvl = parts[0].Trim();
-                                    ses = parts[1].Trim();
-                                }
-                            }
-
-                            // Filter out schedule settings for levels not officially assigned to the teacher in the roster table (if roster defines any levels)
-                            bool hasOfficialLevels = officialScheduledClasses.Any(sc => !string.IsNullOrWhiteSpace(sc.Level));
-                            if (hasOfficialLevels && !officialScheduledClasses.Any(sc => sc.Level.Equals(lvl, StringComparison.OrdinalIgnoreCase) && sc.Session.Equals(ses, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                continue;
-                            }
-
-                            // Filter schedule levels by tabType!
-                            if (string.IsNullOrWhiteSpace(lvl) || GetCategoryOfLevel(lvl, ses) != tabType)
-                            {
-                                continue;
-                            }
-
-                            string grade = CalculateGradeFromExemptionsOnlyInternal(teacherName, levelFromSchedule, manager, _currentStart, _currentEnd);
-                            string mapKey = $"{teacherName.ToLower()}_{lvl.ToLower()}_{ses.ToLower()}";
-
-                            if (string.Equals(ses, "BS", StringComparison.OrdinalIgnoreCase))
-                            {
-                                foreach (var expandedSes in new[] { "S1", "S2" })
-                                {
-                                    string bsKey = $"{teacherName.ToLower()}_{lvl.ToLower()}_{expandedSes.ToLower()}";
-                                    if (addedKeys.Add(bsKey))
-                                    {
+                                        string grade = CalculateGradeForSessionInternal(teacherName, lvl, expandedSes, combinedPrintDays, manager, _currentStart, _currentEnd);
                                         records.Add(new TeacherExcelRecord
                                         {
                                             No = no,
@@ -3159,71 +2992,64 @@ namespace PrintTrackerApp
                                             Level = lvl,
                                             Session = expandedSes,
                                             Grade = grade,
-                                            JobsTooltip = ""
+                                            JobsTooltip = string.Join("\n", combinedTooltips) + (combinedTooltips.Count > 0 ? "\n" : "")
                                         });
-                                        addedFromSchedule = true;
                                     }
                                 }
                             }
                             else
                             {
-                                if (addedKeys.Add(mapKey))
+                                string grade = CalculateGradeForSessionInternal(teacherName, lvl, ses, combinedPrintDays, manager, _currentStart, _currentEnd);
+                                records.Add(new TeacherExcelRecord
                                 {
-                                    records.Add(new TeacherExcelRecord
-                                    {
-                                        No = no,
-                                        TeacherName = teacherName,
-                                        Level = lvl,
-                                        Session = ses,
-                                        Grade = grade,
-                                        JobsTooltip = ""
-                                    });
-                                    addedFromSchedule = true;
-                                }
+                                    No = no,
+                                    TeacherName = teacherName,
+                                    Level = lvl,
+                                    Session = ses,
+                                    Grade = grade,
+                                    JobsTooltip = string.Join("\n", combinedTooltips) + (combinedTooltips.Count > 0 ? "\n" : "")
+                                });
                             }
                         }
                     }
+                }
 
-                    if (!addedFromSchedule)
+                {
+                    string rawLevel = table.Columns.Count > 2 ? (row[2]?.ToString() ?? "") : "";
+                    string lvl = rawLevel.Trim();
+                    string ses = string.Empty;
+                    if (tabType == "PT" && string.IsNullOrWhiteSpace(lvl))
                     {
-                        string rawLevel = table.Columns.Count > 2 ? (row[2]?.ToString() ?? "") : "";
-                        string lvl = rawLevel.Trim();
-                        string ses = string.Empty;
-                        if (tabType == "PT" && string.IsNullOrWhiteSpace(lvl))
+                        var parts = rawTeacher.Split('-');
+                        if (parts.Length >= 3)
                         {
-                            var parts = rawTeacher.Split('-');
-                            if (parts.Length >= 3)
-                            {
-                                lvl = parts[1].Trim();
-                                ses = parts[2].Trim();
-                            }
+                            lvl = parts[1].Trim();
+                            ses = parts[2].Trim();
                         }
-                        else if (lvl.Contains("-"))
+                    }
+                    else if (lvl.Contains("-"))
+                    {
+                        var parts = lvl.Split('-');
+                        if (parts.Length >= 2)
                         {
-                            var parts = lvl.Split('-');
-                            if (parts.Length >= 2)
-                            {
-                                lvl = parts[0].Trim();
-                                ses = parts[1].Trim();
-                            }
+                            lvl = parts[0].Trim();
+                            ses = parts[1].Trim();
                         }
-                        else if (table.Columns.Count > 3)
-                        {
-                            ses = row[3]?.ToString()?.Trim() ?? "";
-                        }
+                    }
+                    else if (table.Columns.Count > 3)
+                    {
+                        ses = row[3]?.ToString()?.Trim() ?? "";
+                    }
 
-                        // If raw level doesn't match tabType, clear it so we don't show wrong level
-                        if (!string.IsNullOrWhiteSpace(lvl) && GetCategoryOfLevel(lvl, ses) != tabType)
-                        {
-                            lvl = "";
-                            ses = "";
-                        }
+                    // If raw level doesn't match tabType, clear it so we don't show wrong level
+                    if (!string.IsNullOrWhiteSpace(lvl) && GetCategoryOfLevel(lvl, ses) != tabType)
+                    {
+                        lvl = "";
+                        ses = "";
+                    }
 
-                        if (string.IsNullOrWhiteSpace(lvl))
-                        {
-                            continue;
-                        }
-
+                    if (!string.IsNullOrWhiteSpace(lvl))
+                    {
                         // Visibility filter check
                         string scheduleLevelKey = (tabType == "PT")
                             ? (string.IsNullOrEmpty(ses) ? lvl : $"{lvl}-{ses}")
@@ -3232,13 +3058,12 @@ namespace PrintTrackerApp
                         string dateKey = $"{hiddenCheckKey}_{_currentStart.ToString("yyyy-MM-dd")}_{_currentEnd.ToString("yyyy-MM-dd")}";
                         if (!includeHidden)
                         {
-                            if (manager.HiddenTeachers.Contains(hiddenCheckKey) || manager.HiddenTeachers.Contains(dateKey))
+                            if (manager.HiddenTeachers.Contains(teacherName) || manager.HiddenTeachers.Contains(hiddenCheckKey) || manager.HiddenTeachers.Contains(dateKey))
                             {
                                 continue;
                             }
                         }
 
-                        string grade = CalculateGradeFromExemptionsOnlyInternal(teacherName, scheduleLevelKey, manager, _currentStart, _currentEnd);
                         string mapKey = $"{teacherName.ToLower()}_{lvl.ToLower()}_{ses.ToLower()}";
 
                         if (string.Equals(ses, "BS", StringComparison.OrdinalIgnoreCase))
@@ -3248,6 +3073,7 @@ namespace PrintTrackerApp
                                 string bsKey = $"{teacherName.ToLower()}_{lvl.ToLower()}_{expandedSes.ToLower()}";
                                 if (addedKeys.Add(bsKey))
                                 {
+                                    string grade = CalculateGradeForSessionInternal(teacherName, lvl, expandedSes, new System.Collections.Generic.HashSet<string>(), manager, _currentStart, _currentEnd);
                                     records.Add(new TeacherExcelRecord
                                     {
                                         No = no,
@@ -3264,6 +3090,7 @@ namespace PrintTrackerApp
                         {
                             if (addedKeys.Add(mapKey))
                             {
+                                string grade = CalculateGradeForSessionInternal(teacherName, lvl, ses, new System.Collections.Generic.HashSet<string>(), manager, _currentStart, _currentEnd);
                                 records.Add(new TeacherExcelRecord
                                 {
                                     No = no,
@@ -3279,23 +3106,54 @@ namespace PrintTrackerApp
                 }
             }
 
-            if (tabType == "PT")
+            // Remove exact duplicates and overlapping bare level records across all tabs
             {
-                var groups = records.GroupBy(r => new { TeacherName = (r.TeacherName ?? "").ToLower(), Level = (r.Level ?? "").ToLower() }).ToList();
+                var teacherGroups = records.GroupBy(r => (r.TeacherName ?? "").Trim().ToLower()).ToList();
                 var filteredRecords = new List<TeacherExcelRecord>();
-                foreach (var group in groups)
+                foreach (var group in teacherGroups)
                 {
                     var list = group.ToList();
-                    if (list.Count > 1)
+                    
+                    var uniqueLvlSes = new List<TeacherExcelRecord>();
+                    foreach (var r in list)
                     {
-                        var hasSession = list.Any(r => !string.IsNullOrWhiteSpace(r.Session));
-                        if (hasSession)
+                        if (!uniqueLvlSes.Any(x => string.Equals(x.Level, r.Level, StringComparison.OrdinalIgnoreCase) && 
+                                                   string.Equals(x.Session, r.Session, StringComparison.OrdinalIgnoreCase)))
                         {
-                            filteredRecords.AddRange(list.Where(r => !string.IsNullOrWhiteSpace(r.Session)));
-                            continue;
+                            uniqueLvlSes.Add(r);
                         }
                     }
-                    filteredRecords.AddRange(list);
+
+                    var toRemove = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in uniqueLvlSes)
+                    {
+                        string l = item.Level ?? "";
+                        if (!string.IsNullOrEmpty(l))
+                        {
+                            if (uniqueLvlSes.Any(other => other != item && 
+                                                          (other.Level ?? "").StartsWith(l, StringComparison.OrdinalIgnoreCase) &&
+                                                          (other.Level ?? "").Length > l.Length &&
+                                                          !char.IsDigit((other.Level ?? "")[l.Length])))
+                            {
+                                toRemove.Add(l);
+                            }
+                            else if (uniqueLvlSes.Any(other => other != item && 
+                                                               string.Equals(other.Level, l, StringComparison.OrdinalIgnoreCase) &&
+                                                               !string.IsNullOrEmpty(other.Session) &&
+                                                               string.IsNullOrEmpty(item.Session)))
+                            {
+                                toRemove.Add(l);
+                            }
+                        }
+                    }
+
+                    foreach (var item in uniqueLvlSes)
+                    {
+                        if (!toRemove.Contains(item.Level ?? ""))
+                        {
+                            filteredRecords.Add(item);
+                        }
+                    }
                 }
                 records = filteredRecords;
             }
@@ -3329,6 +3187,7 @@ namespace PrintTrackerApp
                 var service = new PrintTrackerApp.Services.GoogleSheetsService(spreadsheetId, credentialsPath);
 
                 var tabs = new[] { ("FT", _ftTable), ("PT", _ptTable), ("KH", _khTable) };
+                string sortKey = GetCurrentSortKey();
                 
                 foreach (var (tabName, table) in tabs)
                 {
@@ -3337,6 +3196,7 @@ namespace PrintTrackerApp
                     string startCell = settings.GoogleSheetStartCell;
                     int columns = 4;
                     var records = GetRecordsForTab(table, tabName, true); // ignore UI search
+                    records = ApplySortToRecords(records, sortKey);
                     int itemsPerColumn = (int)Math.Ceiling(records.Count / (double)columns);
                     var sheetData = new List<IList<object>>();
                     var sheetNotes = new List<IList<string>>();
@@ -3349,6 +3209,8 @@ namespace PrintTrackerApp
                         if (tabName == "PT")
                         {
                             headerRow.Add("Teacher"); headerNotes.Add("");
+                            headerRow.Add("Level"); headerNotes.Add("");
+                            headerRow.Add("Session"); headerNotes.Add("");
                             headerRow.Add("Grade"); headerNotes.Add("");
                         }
                         else
@@ -3381,6 +3243,8 @@ namespace PrintTrackerApp
                                 if (tabName == "PT")
                                 {
                                     row.Add(rec.TeacherName); noteRow.Add(teacherNote);
+                                    row.Add(rec.Level); noteRow.Add("");
+                                    row.Add(rec.Session); noteRow.Add("");
                                     row.Add(rec.Grade); noteRow.Add("");
                                 }
                                 else
@@ -3394,6 +3258,8 @@ namespace PrintTrackerApp
                             {
                                 if (tabName == "PT")
                                 {
+                                    row.Add(""); noteRow.Add("");
+                                    row.Add(""); noteRow.Add("");
                                     row.Add(""); noteRow.Add("");
                                     row.Add(""); noteRow.Add("");
                                 }
@@ -3584,27 +3450,6 @@ namespace PrintTrackerApp
                     }
                 }
             }
-
-            // Also integrate configured schedules from manager if they exist for this teacher
-            if (schedulesByTeacher != null && schedulesByTeacher.TryGetValue(teacherName, out var schedKeys))
-            {
-                foreach (var sKey in schedKeys)
-                {
-                    if (sKey.Length > teacherName.Length + 1)
-                    {
-                        string levelPart = sKey.Substring(teacherName.Length + 1);
-                        CleanLevelAndSession(levelPart, out string lvl, out string ses);
-                        if (!string.IsNullOrWhiteSpace(lvl))
-                        {
-                            if (!teacherScheduledClasses.Any(sc => sc.Level.Equals(lvl, StringComparison.OrdinalIgnoreCase) && sc.Session.Equals(ses, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                teacherScheduledClasses.Add((lvl, ses));
-                            }
-                        }
-                    }
-                }
-            }
-
             return teacherScheduledClasses;
         }
 
@@ -3664,6 +3509,43 @@ namespace PrintTrackerApp
                 }
                 
                 finalGroups.Add(gd);
+            }
+
+            if (tabType == "PT")
+            {
+                var bsGroups = finalGroups.Where(g => string.Equals(g.Session, "BS", StringComparison.OrdinalIgnoreCase)).ToList();
+                foreach (var bsGd in bsGroups)
+                {
+                    finalGroups.Remove(bsGd);
+                    foreach (var targetSes in new[] { "S1", "S2" })
+                    {
+                        var targetGroup = finalGroups.FirstOrDefault(g =>
+                            g.Level.Equals(bsGd.Level, StringComparison.OrdinalIgnoreCase) &&
+                            g.Session.Equals(targetSes, StringComparison.OrdinalIgnoreCase));
+
+                        if (targetGroup == null)
+                        {
+                            targetGroup = new PrintGroupData
+                            {
+                                Level = bsGd.Level,
+                                Session = targetSes,
+                                IsScheduled = true
+                            };
+                            finalGroups.Add(targetGroup);
+                        }
+
+                        foreach (var stat in bsGd.Stats) targetGroup.Stats.Add(stat);
+                        foreach (var day in bsGd.PrintDays) targetGroup.PrintDays.Add(day);
+                        foreach (var day in bsGd.ExemptedDates) targetGroup.ExemptedDates.Add(day);
+                        foreach (var line in bsGd.TooltipLines)
+                        {
+                            if (!targetGroup.TooltipLines.Contains(line))
+                            {
+                                targetGroup.TooltipLines.Add(line);
+                            }
+                        }
+                    }
+                }
             }
 
             var groupsToProcess = finalGroups.ToList();

@@ -155,8 +155,8 @@ namespace PrintTrackerApp.Services
             };
 
             int tables = 4;
-            int colsPerTable = (sheetName == "PT") ? 2 : 3;
-            int totalCols = (colsPerTable + 1) * tables - 1; // 11 for PT, 15 for FT/KH
+            int colsPerTable = (sheetName == "PT") ? 4 : 3;
+            int totalCols = (colsPerTable + 1) * tables - 1; // 19 for PT, 15 for FT/KH
 
             // Format Header Row (Row 0)
             for (int t = 0; t < tables; t++)
@@ -225,7 +225,7 @@ namespace PrintTrackerApp.Services
                         }
                     });
 
-                    if (colsPerTable >= 3) // Level column (FT/KH have colsPerTable == 3)
+                    if (colsPerTable > 2) // Middle columns (Level, Session)
                     {
                         requests.Add(new Request
                         {
@@ -236,7 +236,7 @@ namespace PrintTrackerApp.Services
                                     StartRowIndex = rowOffset + 1, 
                                     EndRowIndex = rowOffset + data.Count, 
                                     StartColumnIndex = colOffset + startCol + 1, 
-                                    EndColumnIndex = colOffset + startCol + 2 
+                                    EndColumnIndex = colOffset + startCol + colsPerTable - 1 
                                 },
                                 Cell = new CellData
                                 {
@@ -341,7 +341,7 @@ namespace PrintTrackerApp.Services
             });
 
             // Set spacer column widths
-            int[] spacers = (sheetName == "PT") ? new[] { 2, 5, 8 } : new[] { 3, 7, 11 };
+            int[] spacers = new[] { colsPerTable, 2 * colsPerTable + 1, 3 * colsPerTable + 2 };
             foreach (int sp in spacers)
             {
                 requests.Add(new Request

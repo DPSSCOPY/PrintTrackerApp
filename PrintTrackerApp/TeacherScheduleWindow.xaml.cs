@@ -450,7 +450,56 @@ namespace PrintTrackerApp
             string searchText = txtSearch.Text?.ToLower()?.Trim() ?? "";
 
             // 1. Schedules Grid
-            foreach (var teacher in _teachers.OrderBy(t => t.RawName).ThenBy(t => t.Level))
+            var deduplicatedTeachers = new List<TeacherIdentifier>();
+            var teacherGroups = _teachers.GroupBy(t => new { t.Name, t.Category });
+            foreach (var group in teacherGroups)
+            {
+                var list = new List<TeacherIdentifier>();
+                foreach (var item in group)
+                {
+                    string lvl = item.Level ?? "";
+                    if (lvl.EndsWith("-BS", StringComparison.OrdinalIgnoreCase) || string.Equals(lvl, "BS", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string prefix = lvl.EndsWith("-BS", StringComparison.OrdinalIgnoreCase) ? lvl.Substring(0, lvl.Length - 3) : "";
+                        string s1Lvl = string.IsNullOrEmpty(prefix) ? "S1" : $"{prefix}-S1";
+                        string s2Lvl = string.IsNullOrEmpty(prefix) ? "S2" : $"{prefix}-S2";
+
+                        list.Add(new TeacherIdentifier { Name = item.Name, RawName = item.RawName, Category = item.Category, Level = s1Lvl });
+                        list.Add(new TeacherIdentifier { Name = item.Name, RawName = item.RawName, Category = item.Category, Level = s2Lvl });
+                    }
+                    else
+                    {
+                        list.Add(item);
+                    }
+                }
+
+                var toRemove = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in list)
+                {
+                    if (!string.IsNullOrEmpty(item.Level))
+                    {
+                        if (list.Any(other => !string.Equals(other.Level, item.Level, StringComparison.OrdinalIgnoreCase) &&
+                                              (other.Level ?? "").StartsWith(item.Level, StringComparison.OrdinalIgnoreCase) &&
+                                              (other.Level ?? "").Length > item.Level.Length &&
+                                              !char.IsDigit((other.Level ?? "")[item.Level.Length])))
+                        {
+                            toRemove.Add(item.Level);
+                        }
+                    }
+                }
+                foreach (var item in list)
+                {
+                    if (!toRemove.Contains(item.Level ?? ""))
+                    {
+                        if (!deduplicatedTeachers.Any(x => x.Name == item.Name && x.Level == item.Level && x.Category == item.Category))
+                        {
+                            deduplicatedTeachers.Add(item);
+                        }
+                    }
+                }
+            }
+
+            foreach (var teacher in deduplicatedTeachers.OrderBy(t => t.RawName).ThenBy(t => t.Level))
             {
                 if (!string.IsNullOrEmpty(searchText))
                 {
@@ -755,6 +804,7 @@ namespace PrintTrackerApp
                     }
                     else
                     {
+                        _manager.HiddenTeachers.Add(levelKey);
                         _manager.HiddenTeachers.Add(dateKey);
                     }
                 }
