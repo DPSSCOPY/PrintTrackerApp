@@ -314,8 +314,12 @@ def register_handlers(bot_instance):
                     status = match['status'].strip()
                     status_lower = status.lower()
                     
-                    if "completed" in status_lower or "success" in status_lower or "printed" in status_lower:
+                    if "print complete" in status_lower or "completed" in status_lower or "success" in status_lower or "printed" in status_lower:
                         status_emoji = "✅"
+                    elif "sent to printer" in status_lower:
+                        status_emoji = "📤"
+                    elif "storing complete" in status_lower:
+                        status_emoji = "📥"
                     elif "printing" in status_lower:
                         status_emoji = "🖨️"
                     elif "spool" in status_lower or "process" in status_lower:
@@ -330,6 +334,7 @@ def register_handlers(bot_instance):
                         status_emoji = "❌"
                     else:
                         status_emoji = "📄"
+
 
                         
                     response_text += (
