@@ -12,6 +12,14 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # Load configurations
+def escape_markdown(text):
+    if not text:
+        return ""
+    text = str(text)
+    for char in ['_', '*', '`', '[']:
+        text = text.replace(char, f'\\{char}')
+    return text
+
 def load_local_spreadsheet_id():
     """Attempts to load Spreadsheet ID from local C# appsettings.json if running on Windows."""
     try:
@@ -337,10 +345,12 @@ def register_handlers(bot_instance):
 
 
                         
+                    doc_name_esc = escape_markdown(match['doc_name'])
+                    user_esc = escape_markdown(match['user'])
                     response_text += (
-                        f"{idx+1}. 📄 *ឈ្មោះ៖* {match['doc_name']}\n"
+                        f"{idx+1}. 📄 *ឈ្មោះ៖* {doc_name_esc}\n"
                         f"   • *ម៉ោង៖* {match['time']}\n"
-                        f"   • *អ្នកព្រីន៖* {match['user']} ({match['user_id']})\n"
+                        f"   • *អ្នកព្រីន៖* {user_esc} ({match['user_id']})\n"
                         f"   • *ទំព័រ៖* {match['pages']} (ច្បាប់៖ {match['copies']})\n"
                         f"   • *Status៖* {status_emoji} `{status}`\n\n"
                     )
@@ -370,13 +380,15 @@ def register_handlers(bot_instance):
                 message = str(err)
                 
             if "quota" in message.lower() or "rate limit" in message.lower():
+                msg_esc = escape_markdown(message)
                 bot_instance.edit_message_text(
                     chat_id=chat_id,
                     message_id=loading_msg.message_id,
                     text=f"⚠️ *ដែនកំណត់ស្កេនរបស់ Google API ត្រូវបានប្រើប្រាស់អស់ហើយ។* សូមរង់ចាំ ១ នាទី រួចសាកល្បងម្ដងទៀត។\n"
-                         f"Google API Quota exceeded. (Details: {message})",
+                         f"Google API Quota exceeded. (Details: {msg_esc})",
                     parse_mode='Markdown'
                 )
+
             elif "requested entity was not found" in message.lower() or "bad request" in message.lower() or "not found" in message.lower() or "unable to parse range" in message.lower():
                 bot_instance.edit_message_text(
                     chat_id=chat_id,
