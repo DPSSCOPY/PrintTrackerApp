@@ -350,19 +350,19 @@ def register_handlers(bot_instance):
             except Exception:
                 message = str(err)
                 
-            if "quota" in message.lower() or "limit" in message.lower() or "rate limit" in message.lower():
+            if "quota" in message.lower() or "rate limit" in message.lower():
                 bot_instance.edit_message_text(
                     chat_id=chat_id,
                     message_id=loading_msg.message_id,
-                    text="⚠️ *ដែនកំណត់ស្កេនរបស់ Google API ត្រូវបានប្រើប្រាស់អស់ហើយ។* សូមរង់ចាំ ១ នាទី រួចសាកល្បងម្ដងទៀត។\n"
-                         "Google API Quota exceeded. Please wait 1 minute and try again.",
+                    text=f"⚠️ *ដែនកំណត់ស្កេនរបស់ Google API ត្រូវបានប្រើប្រាស់អស់ហើយ។* សូមរង់ចាំ ១ នាទី រួចសាកល្បងម្ដងទៀត។\n"
+                         f"Google API Quota exceeded. (Details: {message})",
                     parse_mode='Markdown'
                 )
             elif "requested entity was not found" in message.lower() or "bad request" in message.lower() or "not found" in message.lower() or "unable to parse range" in message.lower():
                 bot_instance.edit_message_text(
                     chat_id=chat_id,
                     message_id=loading_msg.message_id,
-                    text=f"❌ មិនមានទិន្នន័យ Print Log សម្រាប់ថ្ងៃទី `{date_str}` ឡើយ。\n(សូមប្រាកដថា PC បានបើក និង Sync ទិន្នន័យរួចហើយ)"
+                    text=f"❌ មិនមានទិន្នន័យ Print Log សម្រាប់ថ្ងៃទី `{date_str}` ឡើយ。\n(សូមប្រាកដថា PC បានបើក និង Sync ទិន្នន័យរួចហើយ)\n\n*(Details: {message})*"
                 )
             else:
                 bot_instance.edit_message_text(
@@ -378,6 +378,7 @@ def register_handlers(bot_instance):
             )
             
         user_states[chat_id] = {'state': 'WAITING_FOR_DATE', 'date': None}
+
         bot_instance.send_message(chat_id, "តើអ្នកចង់ឆែកថ្ងៃខែផ្សេងទៀតទេ?", reply_markup=get_main_keyboard())
 
 def bot_polling_target(bot_instance):
