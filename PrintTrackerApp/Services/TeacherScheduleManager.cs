@@ -8,7 +8,9 @@ namespace PrintTrackerApp.Services
 {
     public class TeacherScheduleManager
     {
-        private static readonly string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "teacher_schedules.json");
+        private static readonly string AppDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
+        private static readonly string ConfigPath = Path.Combine(AppDataFolder, "teacher_schedules.json");
+        private static readonly string LegacyConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "teacher_schedules.json");
 
         // Dictionary structure: Key = TeacherName_Level, Value = Dictionary<DateString (yyyy-MM-dd), Status (Teach/No Teach/Exam)>
         public Dictionary<string, Dictionary<string, string>> Schedules { get; set; } = new Dictionary<string, Dictionary<string, string>>();
@@ -35,9 +37,25 @@ namespace PrintTrackerApp.Services
         {
             try
             {
-                if (File.Exists(ConfigPath))
+                // Migrate legacy teacher schedules if AppData settings don't exist yet
+                if (!File.Exists(ConfigPath) && File.Exists(LegacyConfigPath))
                 {
-                    string json = File.ReadAllText(ConfigPath);
+                    try
+                    {
+                        if (!Directory.Exists(AppDataFolder))
+                        {
+                            Directory.CreateDirectory(AppDataFolder);
+                        }
+                        File.Copy(LegacyConfigPath, ConfigPath);
+                    }
+                    catch { }
+                }
+
+                string fileToLoad = File.Exists(ConfigPath) ? ConfigPath : (File.Exists(LegacyConfigPath) ? LegacyConfigPath : null);
+
+                if (fileToLoad != null && File.Exists(fileToLoad))
+                {
+                    string json = File.ReadAllText(fileToLoad);
 
                     // Try new format first (wrapper object with HiddenTeachers)
                     try
@@ -76,6 +94,11 @@ namespace PrintTrackerApp.Services
         {
             try
             {
+                if (!Directory.Exists(AppDataFolder))
+                {
+                    Directory.CreateDirectory(AppDataFolder);
+                }
+
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 var data = new SaveData
                 {

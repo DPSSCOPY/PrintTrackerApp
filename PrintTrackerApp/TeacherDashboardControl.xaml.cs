@@ -122,7 +122,7 @@ namespace PrintTrackerApp
             _excelCheckTimer.Tick += ExcelCheckTimer_Tick;
 
             _googleSheetsCheckTimer = new System.Windows.Threading.DispatcherTimer();
-            _googleSheetsCheckTimer.Interval = TimeSpan.FromSeconds(30);
+            _googleSheetsCheckTimer.Interval = TimeSpan.FromMinutes(2);
             _googleSheetsCheckTimer.Tick += GoogleSheetsCheckTimer_Tick;
 
             _searchDebounceTimer = new System.Windows.Threading.DispatcherTimer();
@@ -293,7 +293,25 @@ namespace PrintTrackerApp
 
         private string GetConfigFilePath()
         {
-            return System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "last_excel_path.txt");
+            string appDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
+            string newPath = System.IO.Path.Combine(appDataFolder, "last_excel_path.txt");
+            string legacyPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "last_excel_path.txt");
+
+            try
+            {
+                if (!System.IO.Directory.Exists(appDataFolder))
+                {
+                    System.IO.Directory.CreateDirectory(appDataFolder);
+                }
+
+                if (!System.IO.File.Exists(newPath) && System.IO.File.Exists(legacyPath))
+                {
+                    System.IO.File.Copy(legacyPath, newPath);
+                }
+            }
+            catch { }
+
+            return System.IO.File.Exists(newPath) ? newPath : (System.IO.File.Exists(legacyPath) ? legacyPath : newPath);
         }
 
         private void LoadCustomDateFilters()

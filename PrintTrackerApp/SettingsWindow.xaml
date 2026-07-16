@@ -208,6 +208,10 @@
                             <TextBox x:Name="txtTeacherDataSpreadsheetId" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"/>
                         </StackPanel>
                         <StackPanel Margin="0,0,0,8">
+                            <TextBlock Text="Print Log Spreadsheet ID (Bot Database):" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
+                            <TextBox x:Name="txtPrintLogSpreadsheetId" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,0,8">
                             <TextBlock Text="Start Cell / Row (e.g., A4 or 4):" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
                             <TextBox x:Name="txtGoogleSheetStartCell" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. A4 or 4 (leaves top rows for headers)"/>
                         </StackPanel>
@@ -229,8 +233,13 @@
                         </StackPanel>
                         
                         <StackPanel Margin="0,0,0,8">
-                            <TextBlock Text="Bot Token:" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
+                            <TextBlock Text="Bot Token (Reports):" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
                             <TextBox x:Name="txtTelegramToken" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"/>
+                        </StackPanel>
+                        
+                        <StackPanel Margin="0,0,0,8">
+                            <TextBlock Text="Tracking Bot Token (Google Sheets Search):" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
+                            <TextBox x:Name="txtTelegramTrackingToken" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"/>
                         </StackPanel>
                         
                         <StackPanel Margin="0,0,0,8">

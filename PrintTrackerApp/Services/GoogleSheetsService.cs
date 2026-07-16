@@ -499,5 +499,51 @@ namespace PrintTrackerApp.Services
                 return null;
             }
         }
+
+        public async Task CleanupOldPrintLogsAsync(int retentionDays)
+        {
+            try
+            {
+                var spreadsheet = await _service.Spreadsheets.Get(_spreadsheetId).ExecuteAsync();
+                var requests = new List<Request>();
+                
+                foreach (var sheet in spreadsheet.Sheets)
+                {
+                    string title = sheet.Properties.Title;
+                    if (title.StartsWith("PrintLog_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string datePart = title.Substring("PrintLog_".Length);
+                        if (DateTime.TryParseExact(datePart, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime sheetDate))
+                        {
+                            if ((DateTime.Today - sheetDate).TotalDays > retentionDays)
+                            {
+                                requests.Add(new Request
+                                {
+                                    DeleteSheet = new DeleteSheetRequest
+                                    {
+                                        SheetId = sheet.Properties.SheetId
+                                    }
+                                });
+                                System.Diagnostics.Debug.WriteLine($"Google Sheets: Adding old sheet tab '{title}' to deletion queue.");
+                            }
+                        }
+                    }
+                }
+
+                if (requests.Count > 0)
+                {
+                    var batchUpdate = new BatchUpdateSpreadsheetRequest
+                    {
+                        Requests = requests
+                    };
+                    await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
+                    System.Diagnostics.Debug.WriteLine($"Google Sheets: Successfully cleaned up {requests.Count} old print log sheet tabs.");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Google Sheets error during old logs cleanup: " + ex.Message);
+            }
+        }
     }
 }

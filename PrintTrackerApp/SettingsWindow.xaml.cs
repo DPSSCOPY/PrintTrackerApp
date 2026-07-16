@@ -27,9 +27,11 @@ namespace PrintTrackerApp
                 Priority3Prefixes = settings.Priority3Prefixes,
                 GoogleSpreadsheetId = settings.GoogleSpreadsheetId,
                 TeacherDataSpreadsheetId = settings.TeacherDataSpreadsheetId,
+                PrintLogSpreadsheetId = settings.PrintLogSpreadsheetId,
                 GoogleSheetStartCell = settings.GoogleSheetStartCell,
                 TelegramBotUrl = settings.TelegramBotUrl,
                 TelegramBotToken = settings.TelegramBotToken,
+                TelegramTrackingBotToken = settings.TelegramTrackingBotToken,
                 TelegramChatId = settings.TelegramChatId,
                 DailyReportTime = settings.DailyReportTime,
                 NotifySentToPrinter = settings.NotifySentToPrinter,
@@ -62,9 +64,11 @@ namespace PrintTrackerApp
 
             txtGoogleSpreadsheetId.Text = CurrentSettings.GoogleSpreadsheetId;
             txtTeacherDataSpreadsheetId.Text = CurrentSettings.TeacherDataSpreadsheetId;
+            txtPrintLogSpreadsheetId.Text = CurrentSettings.PrintLogSpreadsheetId;
             txtGoogleSheetStartCell.Text = CurrentSettings.GoogleSheetStartCell;
             txtTelegramBotUrl.Text = CurrentSettings.TelegramBotUrl;
             txtTelegramToken.Text = CurrentSettings.TelegramBotToken;
+            txtTelegramTrackingToken.Text = CurrentSettings.TelegramTrackingBotToken;
             txtTelegramChatId.Text = CurrentSettings.TelegramChatId;
             txtDailyReportTime.Text = CurrentSettings.DailyReportTime;
             chkNotifySentToPrinter.IsChecked = CurrentSettings.NotifySentToPrinter;
@@ -151,9 +155,11 @@ namespace PrintTrackerApp
             
             CurrentSettings.GoogleSpreadsheetId = txtGoogleSpreadsheetId.Text.Trim();
             CurrentSettings.TeacherDataSpreadsheetId = txtTeacherDataSpreadsheetId.Text.Trim();
+            CurrentSettings.PrintLogSpreadsheetId = txtPrintLogSpreadsheetId.Text.Trim();
             CurrentSettings.GoogleSheetStartCell = txtGoogleSheetStartCell.Text.Trim();
             CurrentSettings.TelegramBotUrl = txtTelegramBotUrl.Text.Trim();
             CurrentSettings.TelegramBotToken = txtTelegramToken.Text.Trim();
+            CurrentSettings.TelegramTrackingBotToken = txtTelegramTrackingToken.Text.Trim();
             CurrentSettings.TelegramChatId = txtTelegramChatId.Text.Trim();
             CurrentSettings.DailyReportTime = txtDailyReportTime.Text.Trim();
             CurrentSettings.NotifySentToPrinter = chkNotifySentToPrinter.IsChecked ?? true;

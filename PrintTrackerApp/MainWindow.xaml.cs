@@ -219,6 +219,14 @@ namespace PrintTrackerApp
             try
             {
                 CsvLogger.ExportJobsToCsv(jobs, path);
+
+                // Sync to Google Sheets asynchronously in the background
+                string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
+                var jobsCopy = jobs.ToList();
+                System.Threading.Tasks.Task.Run(async () =>
+                {
+                    await GoogleSheetsSyncHelper.SyncPrintJobsToGoogleSheetsAsync(jobsCopy, dateStr);
+                });
             }
             finally
             {
@@ -239,6 +247,12 @@ namespace PrintTrackerApp
                 {
                     // Fallback to today's default print log
                     CsvLogger.ExportJobsToCsv(jobsList, _appSettings.CsvExportPath);
+
+                    string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
+                    System.Threading.Tasks.Task.Run(async () =>
+                    {
+                        await GoogleSheetsSyncHelper.SyncPrintJobsToGoogleSheetsAsync(jobsList, dateStr);
+                    });
                     return;
                 }
 
@@ -257,6 +271,19 @@ namespace PrintTrackerApp
                     }
 
                     CsvLogger.ExportJobsToSpecificCsvFile(group, targetPath);
+
+                    // Extract date string from filename (e.g. PrintLog_2026-07-16.csv -> 2026-07-16)
+                    string fileName = System.IO.Path.GetFileNameWithoutExtension(targetPath);
+                    string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
+                    if (fileName.StartsWith("PrintLog_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        dateStr = fileName.Substring("PrintLog_".Length);
+                    }
+                    var groupList = group.ToList();
+                    System.Threading.Tasks.Task.Run(async () =>
+                    {
+                        await GoogleSheetsSyncHelper.SyncPrintJobsToGoogleSheetsAsync(groupList, dateStr);
+                    });
                 }
             }
             finally
@@ -280,6 +307,10 @@ namespace PrintTrackerApp
             
             InitializeComponent();
             _appSettings = SettingsManager.LoadSettings();
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                await GoogleSheetsSyncHelper.SyncBotConfigToGoogleSheetsAsync();
+            });
 
             _runTimer = new DispatcherTimer();
             _runTimer.Interval = TimeSpan.FromSeconds(1);
@@ -446,6 +477,14 @@ namespace PrintTrackerApp
                 job.CleanDownlevelNames();
                 _printJobs.Add(job);
             }
+
+            // Sync loaded jobs (today's print log) to Google Sheets on startup
+            string todayStr = DateTime.Now.ToString("yyyy-MM-dd");
+            var startupJobsCopy = loadedJobs.ToList();
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                await GoogleSheetsSyncHelper.SyncPrintJobsToGoogleSheetsAsync(startupJobsCopy, todayStr);
+            });
 
             teacherDashboard.InitializeData(_printJobs, _appSettings.CsvExportPath);
             teacherDashboard.OnResetDataClicked += (s, ev) => BtnResetLiveLog_Click(null, null);
@@ -1528,9 +1567,11 @@ namespace PrintTrackerApp
                 latestSettings.Priority3Prefixes = sw.CurrentSettings.Priority3Prefixes;
                 latestSettings.GoogleSpreadsheetId = sw.CurrentSettings.GoogleSpreadsheetId;
                 latestSettings.TeacherDataSpreadsheetId = sw.CurrentSettings.TeacherDataSpreadsheetId;
+                latestSettings.PrintLogSpreadsheetId = sw.CurrentSettings.PrintLogSpreadsheetId;
                 latestSettings.GoogleSheetStartCell = sw.CurrentSettings.GoogleSheetStartCell;
                 latestSettings.TelegramBotUrl = sw.CurrentSettings.TelegramBotUrl;
                 latestSettings.TelegramBotToken = sw.CurrentSettings.TelegramBotToken;
+                latestSettings.TelegramTrackingBotToken = sw.CurrentSettings.TelegramTrackingBotToken;
                 latestSettings.TelegramChatId = sw.CurrentSettings.TelegramChatId;
                 latestSettings.DailyReportTime = sw.CurrentSettings.DailyReportTime;
                 latestSettings.NotifySentToPrinter = sw.CurrentSettings.NotifySentToPrinter;
@@ -1549,6 +1590,10 @@ namespace PrintTrackerApp
                 
                 _appSettings = latestSettings;
                 SettingsManager.SaveSettings(_appSettings);
+                System.Threading.Tasks.Task.Run(async () =>
+                {
+                    await GoogleSheetsSyncHelper.SyncBotConfigToGoogleSheetsAsync();
+                });
                 teacherDashboard.UpdateLevelsFromSettings();
 
                 if (!_appSettings.EnableAutoShutdown)
