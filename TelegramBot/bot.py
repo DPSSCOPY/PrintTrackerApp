@@ -260,6 +260,16 @@ def register_handlers(bot_instance):
             range_name = f"{sheet_name}!A:J"
             rows = get_sheet_data_cached(SPREADSHEET_ID, range_name, date_str)
             
+            # Load user mappings from BotConfig if available
+            user_mappings = {}
+            try:
+                config_rows = get_sheet_data_cached(SPREADSHEET_ID, "BotConfig!A:B", "BotConfig")
+                for row in config_rows:
+                    if len(row) >= 2:
+                        user_mappings[row[0].strip()] = row[1].strip()
+            except Exception as config_err:
+                print(f"Could not load user mappings from BotConfig: {config_err}")
+
             if not rows:
                 bot_instance.edit_message_text(
                     chat_id=chat_id,
@@ -346,14 +356,26 @@ def register_handlers(bot_instance):
 
                         
                     doc_name_esc = escape_markdown(match['doc_name'])
-                    user_esc = escape_markdown(match['user'])
+                    
+                    user_id = match['user_id']
+                    user_name = match['user']
+                    # Look up user mapping in BotConfig
+                    mapped_name = user_mappings.get(user_id) or user_mappings.get(user_name)
+                    if mapped_name:
+                        user_display = f"{mapped_name} ({user_id})"
+                    else:
+                        user_display = f"{user_name} ({user_id})" if user_name != user_id else user_id
+                        
+                    user_esc = escape_markdown(user_display)
+                    
                     response_text += (
                         f"{idx+1}. 📄 *ឈ្មោះ៖* {doc_name_esc}\n"
                         f"   • *ម៉ោង៖* {match['time']}\n"
-                        f"   • *អ្នកព្រីន៖* {user_esc} ({match['user_id']})\n"
+                        f"   • *អ្នកព្រីន៖* {user_esc}\n"
                         f"   • *ទំព័រ៖* {match['pages']} (ច្បាប់៖ {match['copies']})\n"
                         f"   • *Status៖* {status_emoji} `{status}`\n\n"
                     )
+
                     
                 if len(matches) > show_limit:
                     response_text += f"⚠️ _បង្ហាញតែ ១៥ ឯកសារចុងក្រោយគេប៉ុណ្ណោះ (សរុប {len(matches)})_"
