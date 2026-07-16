@@ -44,8 +44,7 @@ namespace PrintTrackerApp.Services
                 if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                     Directory.CreateDirectory(directory);
 
-                // Overwrite the file to ensure updates (like Copies and Status) are reflected
-                using (var writer = new StreamWriter(filePath, append: false, Encoding.UTF8))
+                SafeFileHelper.WriteSafe(filePath, writer =>
                 {
                     var jobsList = jobs.Reverse().ToList();
                     
@@ -93,7 +92,7 @@ namespace PrintTrackerApp.Services
 
                         writer.WriteLine(line);
                     }
-                }
+                });
             }
             catch (Exception ex)
             {
@@ -124,8 +123,7 @@ namespace PrintTrackerApp.Services
                 string dateStr = DateTime.Now.ToString("yyyy-MM-dd");
                 string filePath = Path.Combine(folderPath, $"WebMonitorHistory_{dateStr}.csv");
 
-                // Overwrite mode for dynamic update
-                using (var writer = new StreamWriter(filePath, append: false, Encoding.UTF8))
+                SafeFileHelper.WriteSafe(filePath, writer =>
                 {
                     writer.WriteLine("Log Time,Job ID,File Name,Status,User ID,Pages,Created At");
 
@@ -143,7 +141,7 @@ namespace PrintTrackerApp.Services
 
                         writer.WriteLine($"{logTime},{jobId},{fileName},{status},{userId},{pages},{createdAt}");
                     }
-                }
+                });
             }
             catch (Exception ex)
             {

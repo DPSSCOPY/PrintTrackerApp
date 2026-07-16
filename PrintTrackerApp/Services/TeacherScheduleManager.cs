@@ -86,7 +86,7 @@ namespace PrintTrackerApp.Services
                     LastCustomEndDate = LastCustomEndDate
                 };
                 string json = JsonSerializer.Serialize(data, options);
-                File.WriteAllText(ConfigPath, json);
+                SafeFileHelper.WriteAllText(ConfigPath, json);
             }
             catch (Exception ex)
             {

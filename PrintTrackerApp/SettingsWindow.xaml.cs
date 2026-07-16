@@ -38,6 +38,10 @@ namespace PrintTrackerApp
                 FtLevels = settings.FtLevels,
                 PtLevels = settings.PtLevels,
                 KhLevels = settings.KhLevels,
+                EnableAutoShutdown = settings.EnableAutoShutdown,
+                AutoShutdownMode = settings.AutoShutdownMode,
+                AutoShutdownDelayMinutes = settings.AutoShutdownDelayMinutes,
+                AutoShutdownTime = settings.AutoShutdownTime,
                 CustomDateFilters = settings.CustomDateFilters != null ? new System.Collections.Generic.List<Services.CustomDateFilter>(settings.CustomDateFilters) : new System.Collections.Generic.List<Services.CustomDateFilter>()
             };
 

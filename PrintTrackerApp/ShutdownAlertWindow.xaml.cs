@@ -74,12 +74,25 @@ namespace PrintTrackerApp
             this.Close();
         }
 
+        private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == System.Windows.Input.MouseButton.Left)
+            {
+                this.DragMove();
+            }
+        }
+
+        private void BtnMinimize_Click(object sender, RoutedEventArgs e)
+        {
+            this.WindowState = WindowState.Minimized;
+        }
+
         private void ExecuteShutdown()
         {
             if (_isCancelled) return;
             try
             {
-                Process.Start(new ProcessStartInfo("shutdown", "-s -t 0") { CreateNoWindow = true, UseShellExecute = false });
+                Process.Start(new ProcessStartInfo("shutdown", "-s -f -t 0") { CreateNoWindow = true, UseShellExecute = false });
             }
             catch (Exception ex)
             {

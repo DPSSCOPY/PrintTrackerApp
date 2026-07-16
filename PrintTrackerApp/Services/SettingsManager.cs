@@ -172,7 +172,7 @@ namespace PrintTrackerApp.Services
                 }
                 
                 string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(SettingsFile, json);
+                SafeFileHelper.WriteAllText(SettingsFile, json);
             }
             catch { }
         }

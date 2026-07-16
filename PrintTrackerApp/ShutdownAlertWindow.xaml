@@ -29,11 +29,15 @@
             </Grid.RowDefinitions>
 
             <!-- Header -->
-            <Border x:Name="borderHeader" Background="#EF4444" CornerRadius="12,12,0,0" Padding="15,10">
+            <Border x:Name="borderHeader" Background="#EF4444" CornerRadius="12,12,0,0" Padding="15,10" MouseLeftButtonDown="Window_MouseLeftButtonDown">
                 <Grid>
                     <TextBlock Text="Auto Shutdown Notice" Foreground="White" FontWeight="Bold" FontSize="16" VerticalAlignment="Center"/>
-                    <Button Content="✕" Foreground="White" Background="Transparent" BorderThickness="0" FontSize="16" FontWeight="Bold" 
-                            HorizontalAlignment="Right" VerticalAlignment="Center" Cursor="Hand" Click="BtnCancel_Click"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button Content="—" Foreground="White" Background="Transparent" BorderThickness="0" FontSize="16" FontWeight="Bold" 
+                                Margin="0,0,15,0" Cursor="Hand" Click="BtnMinimize_Click"/>
+                        <Button Content="✕" Foreground="White" Background="Transparent" BorderThickness="0" FontSize="16" FontWeight="Bold" 
+                                Cursor="Hand" Click="BtnCancel_Click"/>
+                    </StackPanel>
                 </Grid>
             </Border>
 

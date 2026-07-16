@@ -26,6 +26,7 @@ namespace PrintTrackerApp
         private DataTable _ftTable;
         private DataTable _ptTable;
         private DataTable _khTable;
+        private DataTable _rawKhTable;
         private string _currentExcelPath;
         private DateTime _lastExcelWriteTime;
         private System.Windows.Threading.DispatcherTimer _excelCheckTimer;
@@ -1114,11 +1115,12 @@ namespace PrintTrackerApp
                     continue;
                 }
 
-                // If this teacher has printed in another category/tab during this period,
-                // and has NOT printed in the current tab, exclude them from this tab to avoid false "E" grades.
+                // Disabled to show all levels of the teacher from the teacher data
+                /*
                 if (statsDict != null)
                 {
                     bool printedInCurrentTab = tabStats.Any(stat => 
+                        !IsVannetCollisionForbidden(teacherName, stat.Level) &&
                         GetIsNameMatch(teacherName, stat.TeacherName, false, nameCache) && 
                         stat.PrintDays.Count > 0);
                         
@@ -1126,6 +1128,7 @@ namespace PrintTrackerApp
                     {
                         bool printedInOtherTab = statsDict.Values.Any(stat => 
                             GetCategoryOfStat(stat) != tabType &&
+                            !IsVannetCollisionForbidden(teacherName, stat.Level) &&
                             GetIsNameMatch(teacherName, stat.TeacherName, false, nameCache) && 
                             stat.PrintDays.Count > 0);
                             
@@ -1135,6 +1138,7 @@ namespace PrintTrackerApp
                         }
                     }
                 }
+                */
 
                 // Get teacher's allowed levels
                 var teacherLevels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1379,32 +1383,35 @@ namespace PrintTrackerApp
                         }
                     }
 
-                    var toRemove = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var toRemove = new HashSet<TeacherExcelRecord>();
                     foreach (var item in uniqueLvlSes)
                     {
                         string l = item.Level ?? "";
                         if (!string.IsNullOrEmpty(l))
                         {
+                            // Rule 1: remove bare level if a more-specific sub-level exists (e.g. "SMC" vs "SMC3")
                             if (uniqueLvlSes.Any(other => other != item && 
                                                           (other.Level ?? "").StartsWith(l, StringComparison.OrdinalIgnoreCase) &&
                                                           (other.Level ?? "").Length > l.Length &&
                                                           !char.IsDigit((other.Level ?? "")[l.Length])))
                             {
-                                toRemove.Add(l);
+                                toRemove.Add(item);
                             }
-                            else if (uniqueLvlSes.Any(other => other != item && 
-                                                               string.Equals(other.Level, l, StringComparison.OrdinalIgnoreCase) &&
-                                                               !string.IsNullOrEmpty(other.Session) &&
-                                                               string.IsNullOrEmpty(item.Session)))
+                            // Rule 2: remove bare-session record when a record with the same level
+                            //         but a specific session exists (e.g. SMC3/"" when SMC3/S1 exists)
+                            else if (string.IsNullOrEmpty(item.Session) &&
+                                     uniqueLvlSes.Any(other => other != item && 
+                                                                string.Equals(other.Level, l, StringComparison.OrdinalIgnoreCase) &&
+                                                                !string.IsNullOrEmpty(other.Session)))
                             {
-                                toRemove.Add(l);
+                                toRemove.Add(item);
                             }
                         }
                     }
 
                     foreach (var item in uniqueLvlSes)
                     {
-                        if (!toRemove.Contains(item.Level ?? ""))
+                        if (!toRemove.Contains(item))
                         {
                             filteredRecords.Add(item);
                         }
@@ -1660,6 +1667,17 @@ namespace PrintTrackerApp
                 {
                     teacher = parts[0].Trim();
                 }
+
+                // Validate session - only allow S1, S2, BS, S1&S2
+                string normSes1 = session.Trim().ToUpper();
+                if (normSes1 == "S1" || normSes1 == "S2" || normSes1 == "BS" || normSes1 == "S1&S2")
+                {
+                    session = (normSes1 == "BS") ? "S1&S2" : normSes1;
+                }
+                else
+                {
+                    session = "";
+                }
                 return;
             }
 
@@ -1683,9 +1701,15 @@ namespace PrintTrackerApp
                 teacher = parts[0].Trim();
             }
 
-            if (session.Equals("BS", StringComparison.OrdinalIgnoreCase))
+            // Validate session - only allow S1, S2, BS, S1&S2
+            string normSes2 = session.Trim().ToUpper();
+            if (normSes2 == "S1" || normSes2 == "S2" || normSes2 == "BS" || normSes2 == "S1&S2")
             {
-                session = "S1&S2";
+                session = (normSes2 == "BS") ? "S1&S2" : normSes2;
+            }
+            else
+            {
+                session = "";
             }
         }
 
@@ -1918,14 +1942,15 @@ namespace PrintTrackerApp
 
                         _ftTable = result.Tables.Contains("FT") ? result.Tables["FT"] : (result.Tables.Count > 0 ? result.Tables[0] : null);
                         _ptTable = result.Tables.Contains("PT") ? result.Tables["PT"] : (result.Tables.Count > 1 ? result.Tables[1] : null);
-                        _khTable = result.Tables.Contains("KH") ? result.Tables["KH"] : (result.Tables.Count > 2 ? result.Tables[2] : null);
+                        _rawKhTable = result.Tables.Contains("KH") ? result.Tables["KH"] : (result.Tables.Count > 2 ? result.Tables[2] : null);
+                        _khTable = CleanKhmerTable(_rawKhTable);
 
                         RefreshExcelTabs();
                         
                         _currentExcelPath = path;
                         _lastExcelWriteTime = File.GetLastWriteTime(path);
                         
-                        try { File.WriteAllText(GetConfigFilePath(), path); } catch { }
+                        try { PrintTrackerApp.Services.SafeFileHelper.WriteAllText(GetConfigFilePath(), path); } catch { }
                         
                         btnRefreshExcel.Visibility = Visibility.Visible;
                         btnRefreshExcel.Foreground = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#0078D4"));
@@ -2045,6 +2070,13 @@ namespace PrintTrackerApp
             ExtractTeachersFromTable(_khTable, "KH", excelTeachers);
 
             var manager = PrintTrackerApp.Services.TeacherScheduleManager.Load();
+            var appSettings = Services.SettingsManager.LoadSettings();
+            var khPrefixes = (appSettings.KhLevels ?? "")
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Trim())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .OrderByDescending(p => p.Length)
+                .ToList();
 
             var uniqueExcelTeachers = excelTeachers
                 .GroupBy(et => new { Name = et.Name.ToLower(), Category = et.Category })
@@ -2055,54 +2087,105 @@ namespace PrintTrackerApp
             {
                 var levels = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                // 1. Get levels from print statistics (non-filtered raw stats)
-                if (_statsDict != null)
+                if (t.Category == "KH")
                 {
-                    foreach (var stat in _statsDict.Values)
+                    // 1. Get levels from print statistics (non-filtered raw stats)
+                    if (_statsDict != null)
                     {
-                        if (GetCategoryOfStat(stat) == t.Category && IsNameMatch(t.Name, stat.TeacherName, false))
+                        foreach (var stat in _statsDict.Values)
                         {
-                            string lvlKey = string.IsNullOrEmpty(stat.Session) ? stat.Level : $"{stat.Level}-{stat.Session}";
-                            if (!string.IsNullOrEmpty(lvlKey))
+                            if (GetCategoryOfStat(stat) == t.Category && IsNameMatch(t.Name, stat.TeacherName, false))
                             {
-                                levels.Add(lvlKey);
+                                string lvlKey = string.IsNullOrEmpty(stat.Session) ? stat.Level : $"{stat.Level}-{stat.Session}";
+                                var cleaned = CleanKhmerLevels(lvlKey, khPrefixes);
+                                foreach (var cl in cleaned)
+                                {
+                                    levels.Add(cl);
+                                }
                             }
                         }
                     }
-                }
 
-                // 2. Get levels from existing schedule configurations (filter by category of the level)
-                if (manager?.Schedules != null)
-                {
-                    InitializeCategorySets();
-                    string prefix = $"{t.Name}_";
-                    foreach (var sKey in manager.Schedules.Keys)
+                    // 2. Get levels from existing schedule configurations (filter by category of the level)
+                    if (manager?.Schedules != null)
                     {
-                        if (sKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        InitializeCategorySets();
+                        string prefix = $"{t.Name}_";
+                        foreach (var sKey in manager.Schedules.Keys)
                         {
-                            string rawLvl = sKey.Substring(prefix.Length);
-                            if (!string.IsNullOrEmpty(rawLvl))
+                            if (sKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                             {
-                                CleanLevelAndSession(rawLvl, out string cleanLvl, out string cleanSes);
-                                if (string.Equals(GetCategoryOfLevel(cleanLvl, cleanSes), t.Category, StringComparison.OrdinalIgnoreCase))
+                                string rawLvl = sKey.Substring(prefix.Length);
+                                var cleaned = CleanKhmerLevels(rawLvl, khPrefixes);
+                                foreach (var cl in cleaned)
                                 {
-                                    string levelKey = string.IsNullOrEmpty(cleanSes) ? cleanLvl : $"{cleanLvl}-{cleanSes}";
-                                    if (!string.IsNullOrEmpty(levelKey))
+                                    levels.Add(cl);
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Add Levels from Excel table for this teacher
+                    foreach (var et in excelTeachers.Where(x => string.Equals(x.Name, t.Name, StringComparison.OrdinalIgnoreCase) && x.Category == t.Category))
+                    {
+                        var cleaned = CleanKhmerLevels(et.Level, khPrefixes);
+                        foreach (var cl in cleaned)
+                        {
+                            levels.Add(cl);
+                        }
+                    }
+                }
+                else
+                {
+                    // 1. Get levels from print statistics (non-filtered raw stats)
+                    if (_statsDict != null)
+                    {
+                        foreach (var stat in _statsDict.Values)
+                        {
+                            if (GetCategoryOfStat(stat) == t.Category && IsNameMatch(t.Name, stat.TeacherName, false))
+                            {
+                                string lvlKey = string.IsNullOrEmpty(stat.Session) ? stat.Level : $"{stat.Level}-{stat.Session}";
+                                if (!string.IsNullOrEmpty(lvlKey))
+                                {
+                                    levels.Add(lvlKey);
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Get levels from existing schedule configurations (filter by category of the level)
+                    if (manager?.Schedules != null)
+                    {
+                        InitializeCategorySets();
+                        string prefix = $"{t.Name}_";
+                        foreach (var sKey in manager.Schedules.Keys)
+                        {
+                            if (sKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                            {
+                                string rawLvl = sKey.Substring(prefix.Length);
+                                if (!string.IsNullOrEmpty(rawLvl))
+                                {
+                                    CleanLevelAndSession(rawLvl, out string cleanLvl, out string cleanSes);
+                                    if (string.Equals(GetCategoryOfLevel(cleanLvl, cleanSes), t.Category, StringComparison.OrdinalIgnoreCase))
                                     {
-                                        levels.Add(levelKey);
+                                        string levelKey = string.IsNullOrEmpty(cleanSes) ? cleanLvl : $"{cleanLvl}-{cleanSes}";
+                                        if (!string.IsNullOrEmpty(levelKey))
+                                        {
+                                            levels.Add(levelKey);
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                // 3. Add Levels from Excel table for this teacher
-                foreach (var et in excelTeachers.Where(x => string.Equals(x.Name, t.Name, StringComparison.OrdinalIgnoreCase) && x.Category == t.Category))
-                {
-                    if (!string.IsNullOrEmpty(et.Level))
+                    // 3. Add Levels from Excel table for this teacher
+                    foreach (var et in excelTeachers.Where(x => string.Equals(x.Name, t.Name, StringComparison.OrdinalIgnoreCase) && x.Category == t.Category))
                     {
-                        levels.Add(et.Level);
+                        if (!string.IsNullOrEmpty(et.Level))
+                        {
+                            levels.Add(et.Level);
+                        }
                     }
                 }
 
@@ -2223,6 +2306,123 @@ namespace PrintTrackerApp
                 }
             }
             ReloadFilteredData(start, end);
+        }
+
+        private static System.Collections.Generic.List<string> CleanKhmerLevels(string rawLevel, System.Collections.Generic.List<string> khPrefixes)
+        {
+            var cleanLevels = new System.Collections.Generic.List<string>();
+            if (string.IsNullOrWhiteSpace(rawLevel)) return cleanLevels;
+
+            var rawTokens = rawLevel.Split(new[] { ' ', ',', ';', '/', '+', '&', '-', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            
+            foreach (var token in rawTokens)
+            {
+                string trimmedToken = token.Trim();
+                
+                // 1. Try matching with settings prefixes
+                string matchedPrefix = khPrefixes.FirstOrDefault(p => trimmedToken.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+                if (matchedPrefix != null)
+                {
+                    string afterPrefix = trimmedToken.Substring(matchedPrefix.Length);
+                    string suffix = "";
+                    foreach (char c in afterPrefix)
+                    {
+                        if (char.IsLetterOrDigit(c))
+                        {
+                            suffix += c;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                    string cleanLvl = matchedPrefix + suffix;
+                    if (!cleanLevels.Contains(cleanLvl, StringComparer.OrdinalIgnoreCase))
+                    {
+                        cleanLevels.Add(cleanLvl);
+                    }
+                }
+                else
+                {
+                    // 2. Fallback to standard Khmer level regex patterns (G1-12, KG, SMC)
+                    var match = System.Text.RegularExpressions.Regex.Match(trimmedToken, @"^(G\d+[A-Z]?|KG[HML][A-Z]?|SMC\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (match.Success)
+                    {
+                        string cleanLvl = match.Value;
+                        if (!cleanLevels.Contains(cleanLvl, StringComparer.OrdinalIgnoreCase))
+                        {
+                            cleanLevels.Add(cleanLvl);
+                        }
+                    }
+                }
+            }
+            return cleanLevels;
+        }
+
+        private DataTable? CleanKhmerTable(DataTable? rawTable)
+        {
+            if (rawTable == null) return null;
+
+            var appSettings = Services.SettingsManager.LoadSettings();
+            var khPrefixes = (appSettings.KhLevels ?? "")
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Trim())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .OrderByDescending(p => p.Length)
+                .ToList();
+
+            DataTable cleanedTable = rawTable.Clone();
+
+            for (int r = 0; r < rawTable.Rows.Count; r++)
+            {
+                DataRow row = rawTable.Rows[r];
+                var noStr = row[0]?.ToString()?.Trim();
+
+                if (string.IsNullOrEmpty(noStr) || !int.TryParse(noStr, out _))
+                {
+                    cleanedTable.Rows.Add(row.ItemArray);
+                    continue;
+                }
+
+                string rawLevel = rawTable.Columns.Count > 2 ? (row[2]?.ToString() ?? "") : "";
+
+                var cleanLevels = CleanKhmerLevels(rawLevel, khPrefixes);
+
+                if (cleanLevels.Count > 0)
+                {
+                    foreach (var cleanLvl in cleanLevels)
+                    {
+                        DataRow newRow = cleanedTable.NewRow();
+                        newRow.ItemArray = row.ItemArray;
+                        if (cleanedTable.Columns.Count > 2)
+                        {
+                            newRow[2] = cleanLvl;
+                        }
+                        cleanedTable.Rows.Add(newRow);
+                    }
+                }
+                else
+                {
+                    DataRow newRow = cleanedTable.NewRow();
+                    newRow.ItemArray = row.ItemArray;
+                    if (cleanedTable.Columns.Count > 2)
+                    {
+                        newRow[2] = rawLevel.Trim();
+                    }
+                    cleanedTable.Rows.Add(newRow);
+                }
+            }
+            return cleanedTable;
+        }
+
+        public void UpdateLevelsFromSettings()
+        {
+            _categorySetsLoaded = false;
+            if (_rawKhTable != null)
+            {
+                _khTable = CleanKhmerTable(_rawKhTable);
+                RefreshExcelTabs();
+            }
         }
 
         private void ExtractTeachersFromTable(DataTable table, string tabType, System.Collections.Generic.List<TeacherScheduleWindow.TeacherIdentifier> teachers)
@@ -2454,9 +2654,19 @@ namespace PrintTrackerApp
 
             // Fallback based on Level prefixes
             string lvl = level?.Trim().ToLower() ?? "";
-            if (lvl.StartsWith("fa") || lvl.StartsWith("fb") || lvl.StartsWith("pre5") || lvl.StartsWith("pre8") || lvl.StartsWith("prea") || (lvl.StartsWith("l") && lvl.Length >= 2 && char.IsDigit(lvl[1])))
+            // PT: FA/FB sessions, Pre5/Pre8/PreA, L-digit levels, SMC levels
+            if (lvl.StartsWith("fa") || lvl.StartsWith("fb") ||
+                lvl.StartsWith("pre5") || lvl.StartsWith("pre8") || lvl.StartsWith("prea") ||
+                (lvl.StartsWith("l") && lvl.Length >= 2 && char.IsDigit(lvl[1])) ||
+                lvl.StartsWith("smc"))
             {
                 return "PT";
+            }
+            // KH: G-grade levels (G2A, G7A, G12C, KGH, KGL, KGM, BS)
+            if ((lvl.StartsWith("g") && lvl.Length >= 2 && char.IsDigit(lvl[1])) ||
+                lvl.StartsWith("kg") || lvl.StartsWith("bs"))
+            {
+                return "KH";
             }
 
             return "FT";
@@ -2560,6 +2770,13 @@ namespace PrintTrackerApp
                 if (lLower.Contains("smc")) return true; // Forbidden for SMC levels
             }
             return false;
+        }
+
+        /// <summary>Returns true when the given level name is an SMC level (e.g. SMC3, SMC7).</summary>
+        private static bool IsSmcLevel(string level)
+        {
+            if (string.IsNullOrWhiteSpace(level)) return false;
+            return level.Trim().StartsWith("SMC", StringComparison.OrdinalIgnoreCase);
         }
 
         private int ComputeLCS(string s, string t)
@@ -2851,11 +3068,12 @@ namespace PrintTrackerApp
                     }
                 }
 
-                // If this teacher has printed in another category/tab during this period,
-                // and has NOT printed in the current tab, exclude them from this tab to avoid false "E" grades.
+                // Disabled to show all levels of the teacher from the teacher data
+                /*
                 if (!includeHidden)
                 {
-                    bool printedInCurrentTab = tabStats.Any(stat => 
+                    bool printedInCurrentTab = tabStats.Any(stat =>
+                        !IsVannetCollisionForbidden(teacherName, stat.Level) &&
                         GetIsNameMatch(teacherName, stat.TeacherName, false, nameCache) && 
                         stat.PrintDays.Count > 0);
                         
@@ -2863,6 +3081,7 @@ namespace PrintTrackerApp
                     {
                         bool printedInOtherTab = _statsDict.Values.Any(stat => 
                             GetCategoryOfStat(stat) != tabType &&
+                            !IsVannetCollisionForbidden(teacherName, stat.Level) &&
                             GetIsNameMatch(teacherName, stat.TeacherName, false, nameCache) && 
                             stat.PrintDays.Count > 0);
                             
@@ -2872,6 +3091,7 @@ namespace PrintTrackerApp
                         }
                     }
                 }
+                */
 
                 // Get teacher's allowed levels
                 var teacherLevels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -3124,32 +3344,35 @@ namespace PrintTrackerApp
                         }
                     }
 
-                    var toRemove = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var toRemove = new HashSet<TeacherExcelRecord>();
                     foreach (var item in uniqueLvlSes)
                     {
                         string l = item.Level ?? "";
                         if (!string.IsNullOrEmpty(l))
                         {
+                            // Rule 1: remove bare level if a more-specific sub-level exists (e.g. "SMC" vs "SMC3")
                             if (uniqueLvlSes.Any(other => other != item && 
                                                           (other.Level ?? "").StartsWith(l, StringComparison.OrdinalIgnoreCase) &&
                                                           (other.Level ?? "").Length > l.Length &&
                                                           !char.IsDigit((other.Level ?? "")[l.Length])))
                             {
-                                toRemove.Add(l);
+                                toRemove.Add(item);
                             }
-                            else if (uniqueLvlSes.Any(other => other != item && 
-                                                               string.Equals(other.Level, l, StringComparison.OrdinalIgnoreCase) &&
-                                                               !string.IsNullOrEmpty(other.Session) &&
-                                                               string.IsNullOrEmpty(item.Session)))
+                            // Rule 2: remove bare-session record when a record with the same level
+                            //         but a specific session exists (e.g. SMC3/"" when SMC3/S1 exists)
+                            else if (string.IsNullOrEmpty(item.Session) &&
+                                     uniqueLvlSes.Any(other => other != item && 
+                                                                string.Equals(other.Level, l, StringComparison.OrdinalIgnoreCase) &&
+                                                                !string.IsNullOrEmpty(other.Session)))
                             {
-                                toRemove.Add(l);
+                                toRemove.Add(item);
                             }
                         }
                     }
 
                     foreach (var item in uniqueLvlSes)
                     {
-                        if (!toRemove.Contains(item.Level ?? ""))
+                        if (!toRemove.Contains(item))
                         {
                             filteredRecords.Add(item);
                         }
@@ -3330,12 +3553,16 @@ namespace PrintTrackerApp
 
                 if (ftName != null) _ftTable = await service.ReadSheetAsDataTableAsync(ftName);
                 if (ptName != null) _ptTable = await service.ReadSheetAsDataTableAsync(ptName);
-                if (khName != null) _khTable = await service.ReadSheetAsDataTableAsync(khName);
+                if (khName != null) 
+                {
+                    _rawKhTable = await service.ReadSheetAsDataTableAsync(khName);
+                    _khTable = CleanKhmerTable(_rawKhTable);
+                }
 
                 RefreshExcelTabs();
                 
                 _currentExcelPath = null;
-                try { File.WriteAllText(GetConfigFilePath(), "GoogleSheets"); } catch { }
+                try { PrintTrackerApp.Services.SafeFileHelper.WriteAllText(GetConfigFilePath(), "GoogleSheets"); } catch { }
                 if (_excelCheckTimer.IsEnabled) _excelCheckTimer.Stop();
                 
                 _lastGoogleSheetsWriteTime = await service.GetSpreadsheetModifiedTimeAsync();
@@ -3432,9 +3659,17 @@ namespace PrintTrackerApp
                     }
                 }
 
-                if (GetIsNameMatch(teacherName, tName, false, nameCache))
+                if (GetIsNameMatch(teacherName, tName, false, nameCache) && !IsVannetCollisionForbidden(teacherName, rLvl))
                 {
-                    if (string.Equals(rSes, "BS", StringComparison.OrdinalIgnoreCase))
+                    // SMC levels: store with blank session, and also Excel session if present
+                    if (IsSmcLevel(rLvl))
+                    {
+                        if (!teacherScheduledClasses.Any(sc => sc.Level.Equals(rLvl, StringComparison.OrdinalIgnoreCase) && sc.Session == string.Empty))
+                            teacherScheduledClasses.Add((rLvl, string.Empty));
+                        if (!string.IsNullOrEmpty(rSes) && !teacherScheduledClasses.Any(sc => sc.Level.Equals(rLvl, StringComparison.OrdinalIgnoreCase) && sc.Session.Equals(rSes, StringComparison.OrdinalIgnoreCase)))
+                            teacherScheduledClasses.Add((rLvl, rSes));
+                    }
+                    else if (string.Equals(rSes, "BS", StringComparison.OrdinalIgnoreCase))
                     {
                         if (!teacherScheduledClasses.Any(sc => sc.Level.Equals(rLvl, StringComparison.OrdinalIgnoreCase) && sc.Session.Equals("S1", StringComparison.OrdinalIgnoreCase)))
                             teacherScheduledClasses.Add((rLvl, "S1"));
@@ -3461,6 +3696,7 @@ namespace PrintTrackerApp
         {
             var groupedMatches = matches.GroupBy(stat => {
                 string lvl = stat.Level;
+                // SMC levels can use sessions if present in the print job filename
                 string ses = (tabType == "PT") ? stat.Session : string.Empty;
                 return (Level: lvl.ToLower(), Session: ses.ToLower());
             });

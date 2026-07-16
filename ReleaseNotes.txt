@@ -1,3 +1,10 @@
+Update Version 1.0.30 Features:
+- Enabled "Auto Shutdown PC" feature in settings.
+- Added 30-second warning countdown dialog prior to system shutdown, allowing the user to cancel.
+- Implemented shutdown execution supporting both "after all prints complete" and "at a scheduled time".
+- Fixed settings save/load behavior to retain auto shutdown preferences on application restart.
+- Fixed sudden power cutoff log clear bug: Replaced standard file writers for logs, settings, and schedules with atomic safe-writers to prevent file truncation/corruption on sudden PC shutdown.
+
 Update Version 1.0.29 Features:
 - Added Level and Session columns to the PT tab in Google Sheets export to match the dashboard layout exactly.
 - Made Google Sheets export sorting respect the active sorting selected on the dashboard.

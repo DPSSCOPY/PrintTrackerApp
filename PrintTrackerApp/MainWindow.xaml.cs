@@ -334,11 +334,11 @@ namespace PrintTrackerApp
             _webMonitorWindow.ShowInTaskbar = false;
             _webMonitorWindow.Show(); // Show it immediately so it renders off-screen
 
-            // Auto Shutdown timer disabled (Coming Soon)
-            // _timeCheckTimer = new DispatcherTimer();
-            // _timeCheckTimer.Interval = TimeSpan.FromSeconds(30);
-            // _timeCheckTimer.Tick += TimeCheckTimer_Tick;
-            // _timeCheckTimer.Start();
+            // Auto Shutdown timer enabled
+            _timeCheckTimer = new DispatcherTimer();
+            _timeCheckTimer.Interval = TimeSpan.FromSeconds(30);
+            _timeCheckTimer.Tick += TimeCheckTimer_Tick;
+            _timeCheckTimer.Start();
             InitializeAppLogic();
         }
 
@@ -1549,9 +1549,16 @@ namespace PrintTrackerApp
                 
                 _appSettings = latestSettings;
                 SettingsManager.SaveSettings(_appSettings);
+                teacherDashboard.UpdateLevelsFromSettings();
+
+                if (!_appSettings.EnableAutoShutdown)
+                {
+                    AbortShutdown();
+                }
                 
-                // Reset daily report tracking so it can trigger immediately if the new time matches current time
+                // Reset daily report and shutdown tracking so they can trigger immediately if settings match current time
                 _lastReportDate = "";
+                _lastShutdownDate = "";
 
                 txtFolderPath.Text = string.IsNullOrWhiteSpace(_appSettings.SourceFolderPath) ? "Not configured" : _appSettings.SourceFolderPath;
                 UpdateVerificationPanel();
@@ -1748,7 +1755,7 @@ namespace PrintTrackerApp
                     _alertedPrintCompleted = false;
                     _hasStartedPrinting = true; // Priming status
                     
-                    if (_appSettings.EnableAutoShutdown)
+                    if (_appSettings.EnableAutoShutdown && _appSettings.AutoShutdownMode == 0)
                     {
                         AbortShutdown();
                     }
@@ -1801,32 +1808,32 @@ namespace PrintTrackerApp
                         _ = SendTelegramNotificationToPersonalOnlyAsync("✅ *ឯកសារត្រូវបានព្រីនរួចរាល់ពីម៉ាស៊ីន!* (All Print Completed)");
                     }
 
-                    // Auto Shutdown after print complete (Specific Time mode) is disabled for now (Coming Soon)
-                    // if (_appSettings.EnableAutoShutdown && _appSettings.AutoShutdownMode == 0)
-                    // {
-                    //     int delayMs = _appSettings.AutoShutdownDelayMinutes * 60000;
-                    //     _shutdownDelayCts?.Cancel();
-                    //     _shutdownDelayCts = new System.Threading.CancellationTokenSource();
-                    //     var token = _shutdownDelayCts.Token;
-                    //
-                    //     Task.Run(async () =>
-                    //     {
-                    //         try
-                    //         {
-                    //             if (delayMs > 0)
-                    //             {
-                    //                 ShowNotification("Auto Shutdown Scheduled", $"PC will shut down in {_appSettings.AutoShutdownDelayMinutes} minutes.");
-                    //                 await Task.Delay(delayMs, token);
-                    //             }
-                    //
-                    //             if (!token.IsCancellationRequested)
-                    //             {
-                    //                 ShowShutdownAlert("Print Complete Auto Shutdown", "All print jobs have been completed.");
-                    //             }
-                    //         }
-                    //         catch { }
-                    //     });
-                    // }
+                    // Auto Shutdown after print complete
+                    if (_appSettings.EnableAutoShutdown && _appSettings.AutoShutdownMode == 0)
+                    {
+                        int delayMs = _appSettings.AutoShutdownDelayMinutes * 60000;
+                        _shutdownDelayCts?.Cancel();
+                        _shutdownDelayCts = new System.Threading.CancellationTokenSource();
+                        var token = _shutdownDelayCts.Token;
+
+                        Task.Run(async () =>
+                        {
+                            try
+                            {
+                                if (delayMs > 0)
+                                {
+                                    ShowNotification("Auto Shutdown Scheduled", $"PC will shut down in {_appSettings.AutoShutdownDelayMinutes} minutes.");
+                                    await Task.Delay(delayMs, token);
+                                }
+
+                                if (!token.IsCancellationRequested)
+                                {
+                                    ShowShutdownAlert("Print Complete Auto Shutdown", "All print jobs have been completed.");
+                                }
+                            }
+                            catch { }
+                        });
+                    }
                     
                     _alertedSentToPrinter = false;
                     _alertedStoringCompleted = false;

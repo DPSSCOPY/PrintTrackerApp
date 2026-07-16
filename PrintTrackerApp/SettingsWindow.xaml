@@ -264,45 +264,32 @@
                     </StackPanel>
                 </GroupBox>
 
-                <Grid Margin="0,0,0,15">
-                    <GroupBox Header="System Settings" BorderBrush="#D1D5DB" Padding="10" IsEnabled="False">
-                        <GroupBox.Effect>
-                            <BlurEffect Radius="5"/>
-                        </GroupBox.Effect>
-                        <StackPanel>
-                            <CheckBox x:Name="chkAutoShutdown" Content="Enable Auto Shut down PC" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,0,10" Checked="chkAutoShutdown_CheckedChanged" Unchecked="chkAutoShutdown_CheckedChanged"/>
-                            <StackPanel x:Name="pnlAutoShutdownOptions" Margin="20,0,0,0" IsEnabled="False">
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <RadioButton x:Name="rbShutdownAfterPrint" Content="Delay after Print Complete:" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                        <TextBox x:Name="txtShutdownDelay" Width="50" Padding="4" BorderBrush="#D1D5DB" ToolTip="Minutes before shutdown"/>
-                                        <TextBlock Text=" Min" VerticalAlignment="Center" Margin="5,0,0,0"/>
-                                    </StackPanel>
-                                </Grid>
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <RadioButton x:Name="rbShutdownAtTime" Content="At Specific Time (24H):" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                    <TextBox x:Name="txtShutdownTime" Grid.Column="1" Width="80" Padding="4" BorderBrush="#D1D5DB" ToolTip="Format: HH:mm (e.g. 18:00)"/>
-                                </Grid>
-                            </StackPanel>
+                <GroupBox Header="System Settings" BorderBrush="#D1D5DB" Padding="10" Margin="0,0,0,15">
+                    <StackPanel>
+                        <CheckBox x:Name="chkAutoShutdown" Content="Enable Auto Shut down PC" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,0,10" Checked="chkAutoShutdown_CheckedChanged" Unchecked="chkAutoShutdown_CheckedChanged"/>
+                        <StackPanel x:Name="pnlAutoShutdownOptions" Margin="20,0,0,0" IsEnabled="False">
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <RadioButton x:Name="rbShutdownAfterPrint" GroupName="ShutdownMode" Content="Delay after Print Complete:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <TextBox x:Name="txtShutdownDelay" Width="50" Padding="4" BorderBrush="#D1D5DB" ToolTip="Minutes before shutdown"/>
+                                    <TextBlock Text=" Min" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                                </StackPanel>
+                            </Grid>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <RadioButton x:Name="rbShutdownAtTime" GroupName="ShutdownMode" Content="At Specific Time (24H):" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBox x:Name="txtShutdownTime" Grid.Column="1" Width="80" Padding="4" BorderBrush="#D1D5DB" ToolTip="Format: HH:mm (e.g. 18:00)"/>
+                            </Grid>
                         </StackPanel>
-                    </GroupBox>
-                    
-                    <Border Background="#33FFFFFF" CornerRadius="4">
-                        <TextBlock Text="Coming Soon" FontSize="20" FontWeight="Bold" Foreground="#4B5563" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <TextBlock.Effect>
-                                <DropShadowEffect Color="White" BlurRadius="5" ShadowDepth="0"/>
-                            </TextBlock.Effect>
-                        </TextBlock>
-                    </Border>
-                </Grid>
+                    </StackPanel>
+                </GroupBox>
             </StackPanel>
         </Grid>
         </ScrollViewer>
