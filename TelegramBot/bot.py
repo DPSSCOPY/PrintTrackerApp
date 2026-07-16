@@ -311,12 +311,26 @@ def register_handlers(bot_instance):
                 
                 show_limit = min(len(matches), 15)
                 for idx, match in enumerate(matches[:show_limit]):
-                    status = match['status']
-                    status_emoji = "✅"
-                    if "error" in status.lower() or "fail" in status.lower():
-                        status_emoji = "❌"
-                    elif "spool" in status.lower() or "wait" in status.lower() or "process" in status.lower():
+                    status = match['status'].strip()
+                    status_lower = status.lower()
+                    
+                    if "completed" in status_lower or "success" in status_lower or "printed" in status_lower:
+                        status_emoji = "✅"
+                    elif "printing" in status_lower:
+                        status_emoji = "🖨️"
+                    elif "spool" in status_lower or "process" in status_lower:
+                        status_emoji = "🔄"
+                    elif "wait" in status_lower or "pending" in status_lower:
                         status_emoji = "⏳"
+                    elif "hold" in status_lower or "held" in status_lower:
+                        status_emoji = "⏸️"
+                    elif "cancel" in status_lower or "delete" in status_lower or "abort" in status_lower:
+                        status_emoji = "🚫"
+                    elif "error" in status_lower or "fail" in status_lower:
+                        status_emoji = "❌"
+                    else:
+                        status_emoji = "📄"
+
                         
                     response_text += (
                         f"{idx+1}. 📄 *ឈ្មោះ៖* {match['doc_name']}\n"
