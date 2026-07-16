@@ -96,7 +96,9 @@ namespace PrintTrackerApp.Services
         public string TelegramBotToken { get; set; } = "";
         public string TelegramTrackingBotToken { get; set; } = "";
         public string TelegramChatId { get; set; } = "";
+        public string TeacherName { get; set; } = "";
         public string DailyReportTime { get; set; } = "17:00";
+
         public bool NotifySentToPrinter { get; set; } = true;
         public bool NotifyStoringCompleted { get; set; } = true;
         public bool NotifyPrintCompleted { get; set; } = true;

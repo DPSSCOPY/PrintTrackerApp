@@ -136,8 +136,10 @@ namespace PrintTrackerApp.Services
                     new List<object> { "TelegramBotToken", settings.TelegramBotToken ?? "" },
                     new List<object> { "TelegramTrackingBotToken", settings.TelegramTrackingBotToken ?? "" },
                     new List<object> { "TelegramChatId", settings.TelegramChatId ?? "" },
+                    new List<object> { "TeacherName", settings.TeacherName ?? "" },
                     new List<object> { "LastUpdated", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") }
                 };
+
 
                 await service.WriteDataAsync(sheetName, data);
                 System.Diagnostics.Debug.WriteLine("Google Sheets Sync: Successfully synced BotConfig.");

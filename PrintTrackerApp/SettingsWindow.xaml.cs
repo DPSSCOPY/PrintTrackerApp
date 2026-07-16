@@ -70,7 +70,9 @@ namespace PrintTrackerApp
             txtTelegramToken.Text = CurrentSettings.TelegramBotToken;
             txtTelegramTrackingToken.Text = CurrentSettings.TelegramTrackingBotToken;
             txtTelegramChatId.Text = CurrentSettings.TelegramChatId;
+            txtTeacherName.Text = CurrentSettings.TeacherName;
             txtDailyReportTime.Text = CurrentSettings.DailyReportTime;
+
             chkNotifySentToPrinter.IsChecked = CurrentSettings.NotifySentToPrinter;
             chkNotifyStoringCompleted.IsChecked = CurrentSettings.NotifyStoringCompleted;
             chkNotifyPrintCompleted.IsChecked = CurrentSettings.NotifyPrintCompleted;
@@ -161,7 +163,9 @@ namespace PrintTrackerApp
             CurrentSettings.TelegramBotToken = txtTelegramToken.Text.Trim();
             CurrentSettings.TelegramTrackingBotToken = txtTelegramTrackingToken.Text.Trim();
             CurrentSettings.TelegramChatId = txtTelegramChatId.Text.Trim();
+            CurrentSettings.TeacherName = txtTeacherName.Text.Trim();
             CurrentSettings.DailyReportTime = txtDailyReportTime.Text.Trim();
+
             CurrentSettings.NotifySentToPrinter = chkNotifySentToPrinter.IsChecked ?? true;
             CurrentSettings.NotifyStoringCompleted = chkNotifyStoringCompleted.IsChecked ?? true;
             CurrentSettings.NotifyPrintCompleted = chkNotifyPrintCompleted.IsChecked ?? true;

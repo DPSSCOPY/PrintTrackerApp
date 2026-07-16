@@ -357,16 +357,22 @@ def register_handlers(bot_instance):
                         
                     doc_name_esc = escape_markdown(match['doc_name'])
                     
-                    user_id = match['user_id']
-                    user_name = match['user']
-                    # Look up user mapping in BotConfig
-                    mapped_name = user_mappings.get(user_id) or user_mappings.get(user_name)
-                    if mapped_name:
-                        user_display = f"{mapped_name} ({user_id})"
+                    # Prioritize TeacherName from Application Settings for every file
+                    teacher_name = user_mappings.get("TeacherName")
+                    if teacher_name:
+                        user_display = teacher_name
                     else:
-                        user_display = f"{user_name} ({user_id})" if user_name != user_id else user_id
+                        user_id = match['user_id']
+                        user_name = match['user']
+                        # Look up user mapping in BotConfig
+                        mapped_name = user_mappings.get(user_id) or user_mappings.get(user_name)
+                        if mapped_name:
+                            user_display = f"{mapped_name} ({user_id})"
+                        else:
+                            user_display = f"{user_name} ({user_id})" if user_name != user_id else user_id
                         
                     user_esc = escape_markdown(user_display)
+
                     
                     response_text += (
                         f"{idx+1}. 📄 *ឈ្មោះ៖* {doc_name_esc}\n"

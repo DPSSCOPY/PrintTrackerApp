@@ -228,6 +228,10 @@
                         <TextBlock Text="Get token from @BotFather. Get Chat ID from @userinfobot." Margin="0,0,0,10" Foreground="#6B7280" FontStyle="Italic"/>
                         
                         <StackPanel Margin="0,0,0,8">
+                            <TextBlock Text="Teacher Name / Display Name:" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
+                            <TextBox x:Name="txtTeacherName" Padding="6" BorderBrush="#D1D5DB" ToolTip="Name displayed in Telegram notifications/queries, e.g. Soklim"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,0,0,8">
                             <TextBlock Text="Bot API URL:" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
                             <TextBox x:Name="txtTelegramBotUrl" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. https://api.telegram.org/bot"/>
                         </StackPanel>
