@@ -1573,7 +1573,6 @@ namespace PrintTrackerApp
                 latestSettings.TelegramBotToken = sw.CurrentSettings.TelegramBotToken;
                 latestSettings.TelegramTrackingBotToken = sw.CurrentSettings.TelegramTrackingBotToken;
                 latestSettings.TelegramChatId = sw.CurrentSettings.TelegramChatId;
-                latestSettings.TeacherName = sw.CurrentSettings.TeacherName;
                 latestSettings.DailyReportTime = sw.CurrentSettings.DailyReportTime;
 
                 latestSettings.NotifySentToPrinter = sw.CurrentSettings.NotifySentToPrinter;

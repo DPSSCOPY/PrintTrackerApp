@@ -133,10 +133,7 @@ namespace PrintTrackerApp.Services
                 var data = new List<IList<object>>
                 {
                     new List<object> { "Key", "Value" },
-                    new List<object> { "TelegramBotToken", settings.TelegramBotToken ?? "" },
                     new List<object> { "TelegramTrackingBotToken", settings.TelegramTrackingBotToken ?? "" },
-                    new List<object> { "TelegramChatId", settings.TelegramChatId ?? "" },
-                    new List<object> { "TeacherName", settings.TeacherName ?? "" },
                     new List<object> { "LastUpdated", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") }
                 };
 
