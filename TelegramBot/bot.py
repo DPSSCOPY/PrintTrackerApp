@@ -184,19 +184,33 @@ def get_main_keyboard():
     btn_today = types.KeyboardButton("📅 ថ្ងៃនេះ (Today)")
     btn_yesterday = types.KeyboardButton("📅 ម្សិលមិញ (Yesterday)")
     btn_custom = types.KeyboardButton("📅 បញ្ចូលថ្ងៃផ្សេង (Other Date)")
+    btn_restart = types.KeyboardButton("🔄 ចាប់ផ្ដើមឡើងវិញ (Restart Bot)")
     markup.row(btn_today, btn_yesterday)
     markup.row(btn_custom)
+    markup.row(btn_restart)
     return markup
 
 def get_cancel_keyboard():
-    """Generates a keyboard with a cancel button."""
+    """Generates a keyboard with cancel and restart buttons."""
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    markup.add(types.KeyboardButton("❌ បោះបង់ (Cancel)"))
+    markup.row(types.KeyboardButton("❌ បោះបង់ (Cancel)"), types.KeyboardButton("🔄 ចាប់ផ្ដើមឡើងវិញ (Restart Bot)"))
     return markup
 
 def register_handlers(bot_instance):
     """Registers all conversation handlers to the given telebot instance."""
     
+    @bot_instance.message_handler(func=lambda msg: msg.text in ["🔄 ចាប់ផ្ដើមឡើងវិញ (Restart Bot)", "/restart"])
+    def handle_restart(message):
+        chat_id = message.chat.id
+        user_states[chat_id] = {'state': 'WAITING_FOR_DATE', 'date': None}
+        welcome_text = (
+            "🔄 បានសម្អាត State និងចាប់ផ្ដើមឡើងវិញរួចរាល់ហើយ!\n"
+            "Bot state has been reset successfully!\n\n"
+            "សូមជ្រើសរើសថ្ងៃខែដែលលោកអ្នកចង់ពិនិត្យ៖\n"
+            "Please select the date to check:"
+        )
+        bot_instance.send_message(chat_id, welcome_text, reply_markup=get_main_keyboard())
+
     @bot_instance.message_handler(commands=['start', 'help'])
     def send_welcome(message):
         chat_id = message.chat.id
