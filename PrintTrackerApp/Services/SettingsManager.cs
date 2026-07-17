@@ -96,6 +96,8 @@ namespace PrintTrackerApp.Services
         public string TelegramBotToken { get; set; } = "";
         public string TelegramTrackingBotToken { get; set; } = "";
         public string TelegramChatId { get; set; } = "";
+        [Obsolete("TeacherName is no longer used in Settings UI or sync, kept for backwards compatibility in JSON serialization.")]
+        public string TeacherName { get; set; } = "";
         public string DailyReportTime { get; set; } = "17:00";
 
         public bool NotifySentToPrinter { get; set; } = true;
