@@ -1,8 +1,10 @@
 import os
+import sys
 import json
 import re
 import time
 import threading
+import signal
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import telebot
@@ -517,6 +519,25 @@ if __name__ == '__main__':
         web_thread = threading.Thread(target=start_health_check_server)
         web_thread.daemon = True
         web_thread.start()
+
+    def handle_shutdown(signum, frame):
+        print(f"Received shutdown signal ({signum}). Stopping bot...")
+        global is_running
+        is_running = False
+        if current_bot:
+            try:
+                current_bot.stop_all_polling()
+            except Exception:
+                pass
+        sys.exit(0)
+
+    # Register shutdown signals for clean termination on Render/Docker redeploys
+    try:
+        signal.signal(signal.SIGTERM, handle_shutdown)
+        signal.signal(signal.SIGINT, handle_shutdown)
+    except ValueError:
+        # signal only works in main thread (which is true here, but safeguard just in case)
+        pass
 
     try:
         monitor_and_run_bot()
