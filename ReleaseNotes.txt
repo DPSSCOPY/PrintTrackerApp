@@ -1,3 +1,9 @@
+Update Version 1.0.31 Features:
+- Fixed memory leak on Telegram Bot server by caching the Google Sheets service client and implementing active cache eviction.
+- Added SIGTERM/SIGINT signal handling to the bot for graceful termination and zero-downtime redeployments.
+- Removed the "Teacher Name / Display Name" setting from the UI and Google Sheets sync since it is no longer displayed.
+- Added a "Restart Bot" option to the Telegram custom keyboards to allow users to reset their conversation state easily.
+
 Update Version 1.0.30 Features:
 - Enabled "Auto Shutdown PC" feature in settings.
 - Added 30-second warning countdown dialog prior to system shutdown, allowing the user to cancel.
