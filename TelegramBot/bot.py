@@ -58,9 +58,19 @@ user_states = {}
 sheet_cache = {}
 CACHE_DURATION_SECONDS = 60  # Cache duration in seconds
 
+# Global Sheets service client and lock for thread safety
+_sheets_service = None
+sheets_service_lock = threading.Lock()
+
 def get_sheet_data_cached(spreadsheet_id, range_name, date_str):
     """Fetches sheet data, caching it in memory to handle concurrent queries without hitting quotas."""
     now = time.time()
+    
+    # Active cache eviction: Remove expired cache entries to prevent memory accumulation
+    expired_keys = [k for k, v in sheet_cache.items() if now - v[0] >= CACHE_DURATION_SECONDS]
+    for k in expired_keys:
+        del sheet_cache[k]
+        
     if date_str in sheet_cache:
         cached_time, cached_data = sheet_cache[date_str]
         if now - cached_time < CACHE_DURATION_SECONDS:
@@ -69,10 +79,11 @@ def get_sheet_data_cached(spreadsheet_id, range_name, date_str):
             
     # Fetch from Google Sheets API
     service = get_sheets_service()
-    result = service.spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id, 
-        range=range_name
-    ).execute()
+    with sheets_service_lock:
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id, 
+            range=range_name
+        ).execute()
     rows = result.get('values', [])
     
     # Store in cache
@@ -82,31 +93,40 @@ def get_sheet_data_cached(spreadsheet_id, range_name, date_str):
 
 def get_sheets_service():
     """Initializes Google Sheets Service using environment credentials or local files."""
+    global _sheets_service
+    if _sheets_service is not None:
+        return _sheets_service
+        
     scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
     
+    creds = None
     if creds_json:
         try:
             creds_dict = json.loads(creds_json)
             creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=scopes)
-            return build("sheets", "v4", credentials=creds)
         except Exception as e:
             print(f"Error parsing GOOGLE_CREDENTIALS_JSON environment variable: {e}")
-    
-    # Fallback to local file in current directory
-    if os.path.exists("google_credentials.json"):
-        creds = service_account.Credentials.from_service_account_file("google_credentials.json", scopes=scopes)
-        return build("sheets", "v4", credentials=creds)
-        
-    # Fallback to local C# app credentials folder
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        local_creds = os.path.join(appdata, "PrintTrackerApp", "google_credentials.json")
-        if os.path.exists(local_creds):
-            creds = service_account.Credentials.from_service_account_file(local_creds, scopes=scopes)
-            return build("sheets", "v4", credentials=creds)
             
-    raise FileNotFoundError("Google Credentials could not be loaded. Please set GOOGLE_CREDENTIALS_JSON env variable or place 'google_credentials.json' in the directory.")
+    if not creds:
+        # Fallback to local file in current directory
+        if os.path.exists("google_credentials.json"):
+            creds = service_account.Credentials.from_service_account_file("google_credentials.json", scopes=scopes)
+            
+    if not creds:
+        # Fallback to local C# app credentials folder
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            local_creds = os.path.join(appdata, "PrintTrackerApp", "google_credentials.json")
+            if os.path.exists(local_creds):
+                creds = service_account.Credentials.from_service_account_file(local_creds, scopes=scopes)
+                
+    if not creds:
+        raise FileNotFoundError("Google Credentials could not be loaded. Please set GOOGLE_CREDENTIALS_JSON env variable or place 'google_credentials.json' in the directory.")
+        
+    # Build the service once and disable discovery caching (cleaner and faster on cloud platforms like Render)
+    _sheets_service = build("sheets", "v4", credentials=creds, cache_discovery=False)
+    return _sheets_service
 
 def get_bot_token_from_sheet():
     """Fetches the Telegram Bot Token directly from the Google Sheets BotConfig tab."""
@@ -114,10 +134,11 @@ def get_bot_token_from_sheet():
         return None
     try:
         service = get_sheets_service()
-        result = service.spreadsheets().values().get(
-            spreadsheetId=SPREADSHEET_ID, 
-            range="BotConfig!A:B"
-        ).execute()
+        with sheets_service_lock:
+            result = service.spreadsheets().values().get(
+                spreadsheetId=SPREADSHEET_ID, 
+                range="BotConfig!A:B"
+            ).execute()
         rows = result.get('values', [])
         
         token_map = {}
@@ -260,15 +281,6 @@ def register_handlers(bot_instance):
             range_name = f"{sheet_name}!A:J"
             rows = get_sheet_data_cached(SPREADSHEET_ID, range_name, date_str)
             
-            # Load user mappings from BotConfig if available
-            user_mappings = {}
-            try:
-                config_rows = get_sheet_data_cached(SPREADSHEET_ID, "BotConfig!A:B", "BotConfig")
-                for row in config_rows:
-                    if len(row) >= 2:
-                        user_mappings[row[0].strip()] = row[1].strip()
-            except Exception as config_err:
-                print(f"Could not load user mappings from BotConfig: {config_err}")
 
             if not rows:
                 bot_instance.edit_message_text(
@@ -357,27 +369,9 @@ def register_handlers(bot_instance):
                         
                     doc_name_esc = escape_markdown(match['doc_name'])
                     
-                    # Prioritize TeacherName from Application Settings for every file
-                    teacher_name = user_mappings.get("TeacherName")
-                    if teacher_name:
-                        user_display = teacher_name
-                    else:
-                        user_id = match['user_id']
-                        user_name = match['user']
-                        # Look up user mapping in BotConfig
-                        mapped_name = user_mappings.get(user_id) or user_mappings.get(user_name)
-                        if mapped_name:
-                            user_display = f"{mapped_name} ({user_id})"
-                        else:
-                            user_display = f"{user_name} ({user_id})" if user_name != user_id else user_id
-                        
-                    user_esc = escape_markdown(user_display)
-
-                    
                     response_text += (
                         f"{idx+1}. 📄 *ឈ្មោះ៖* {doc_name_esc}\n"
                         f"   • *ម៉ោង៖* {match['time']}\n"
-                        f"   • *អ្នកព្រីន៖* {user_esc}\n"
                         f"   • *ទំព័រ៖* {match['pages']} (ច្បាប់៖ {match['copies']})\n"
                         f"   • *Status៖* {status_emoji} `{status}`\n\n"
                     )
