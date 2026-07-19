@@ -1,3 +1,7 @@
+Update Version 1.0.33 Features:
+- Optimized Telegram Bot's response time (both Python and Google Apps Script) by merging multiple API messages to eliminate roundtrip network delay (from 3 down to 1 call).
+- Implemented 30-second data caching and columns A-J range limit in Google Apps Script searchPrintLog to minimize Google Sheets API execution times.
+
 Update Version 1.0.32 Features:
 - Fixed legacy appsettings.json deserialization compatibility issues by retaining the TeacherName property in the data model.
 - Fixed memory leak on Telegram Bot server by caching the Google Sheets service client and implementing active cache eviction.

@@ -290,8 +290,7 @@ def register_handlers(bot_instance):
             bot_instance.send_message(chat_id, "❌ Error: Google Spreadsheet ID is not configured on the server. Please contact administrator.")
             return
             
-        loading_msg = bot_instance.send_message(chat_id, "🔍 កំពុងស្វែងរកក្នុង Google Sheets... សូមរង់ចាំមួយភ្លែត។\nSearching in Google Sheets... please wait.")
-        
+        # Query data directly to avoid slow loading message Telegram API roundtrips
         try:
             sheet_name = f"PrintLog_{date_str}"
             range_name = f"{sheet_name}!A:J"
@@ -299,116 +298,95 @@ def register_handlers(bot_instance):
             
 
             if not rows:
-                bot_instance.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=loading_msg.message_id,
-                    text=f"❌ មិនមានទិន្នន័យនៅក្នុង Tab `{sheet_name}` ឡើយ។"
-                )
-                user_states[chat_id] = {'state': 'WAITING_FOR_DATE', 'date': None}
-                bot_instance.send_message(chat_id, "តើអ្នកចង់ឆែកថ្ងៃខែផ្សេងទៀតទេ?", reply_markup=get_main_keyboard())
-                return
-                
-            header = rows[0]
-            def find_index(col_name, default):
-                try:
-                    return next(i for i, h in enumerate(header) if col_name.lower() in h.lower())
-                except StopIteration:
-                    return default
-                    
-            doc_idx = find_index("Document Name", 1)
-            web_idx = find_index("Hold Print Name", 2)
-            time_idx = find_index("Time", 0)
-            user_idx = find_index("User", 6)
-            userid_idx = find_index("User ID", 3)
-            pages_idx = find_index("Pages", 4)
-            copies_idx = find_index("Copies", 5)
-            status_idx = find_index("Status", 8)
-            
-            matches = []
-            search_term_lower = search_term.lower()
-            
-            for row in rows[1:]:
-                padded_row = row + [""] * (max(doc_idx, web_idx, time_idx, user_idx, userid_idx, pages_idx, copies_idx, status_idx) + 1 - len(row))
-                
-                doc_name = padded_row[doc_idx]
-                web_name = padded_row[web_idx]
-                
-                if search_term_lower in doc_name.lower() or search_term_lower in web_name.lower():
-                    matches.append({
-                        'time': padded_row[time_idx],
-                        'doc_name': doc_name if doc_name else web_name,
-                        'user': padded_row[user_idx],
-                        'user_id': padded_row[userid_idx],
-                        'pages': padded_row[pages_idx],
-                        'copies': padded_row[copies_idx],
-                        'status': padded_row[status_idx]
-                    })
-                    
-            if len(matches) > 0:
-                try:
-                    matches.sort(key=lambda m: m['time'], reverse=True)
-                except Exception:
-                    pass
-                    
-                response_text = (
-                    f"🔍 *លទ្ធផលស្វែងរកសម្រាប់ថ្ងៃទី {date_str}៖*\n"
-                    f"រកឃើញឯកសារទាក់ទងចំនួន៖ *{len(matches)}*\n\n"
-                )
-                
-                show_limit = min(len(matches), 15)
-                for idx, match in enumerate(matches[:show_limit]):
-                    status = match['status'].strip()
-                    status_lower = status.lower()
-                    
-                    if "print complete" in status_lower or "completed" in status_lower or "success" in status_lower or "printed" in status_lower:
-                        status_emoji = "✅"
-                    elif "sent to printer" in status_lower:
-                        status_emoji = "📤"
-                    elif "storing complete" in status_lower:
-                        status_emoji = "📥"
-                    elif "printing" in status_lower:
-                        status_emoji = "🖨️"
-                    elif "spool" in status_lower or "process" in status_lower:
-                        status_emoji = "🔄"
-                    elif "wait" in status_lower or "pending" in status_lower:
-                        status_emoji = "⏳"
-                    elif "hold" in status_lower or "held" in status_lower:
-                        status_emoji = "⏸️"
-                    elif "cancel" in status_lower or "delete" in status_lower or "abort" in status_lower:
-                        status_emoji = "🚫"
-                    elif "error" in status_lower or "fail" in status_lower:
-                        status_emoji = "❌"
-                    else:
-                        status_emoji = "📄"
-
-
-                        
-                    doc_name_esc = escape_markdown(match['doc_name'])
-                    
-                    response_text += (
-                        f"{idx+1}. 📄 *ឈ្មោះ៖* {doc_name_esc}\n"
-                        f"   • *ម៉ោង៖* {match['time']}\n"
-                        f"   • *ទំព័រ៖* {match['pages']} (ច្បាប់៖ {match['copies']})\n"
-                        f"   • *Status៖* {status_emoji} `{status}`\n\n"
-                    )
-
-                    
-                if len(matches) > show_limit:
-                    response_text += f"⚠️ _បង្ហាញតែ ១៥ ឯកសារចុងក្រោយគេប៉ុណ្ណោះ (សរុប {len(matches)})_"
-                    
-                bot_instance.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=loading_msg.message_id,
-                    text=response_text,
-                    parse_mode='Markdown'
-                )
+                response_text = f"❌ មិនមានទិន្នន័យនៅក្នុង Tab `{sheet_name}` ឡើយ。"
             else:
-                bot_instance.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=loading_msg.message_id,
-                    text=f"🔍 មិនមានឯកសារណាដែលមានឈ្មោះ `{search_term}` ក្នុងថ្ងៃទី `{date_str}` ឡើយ।"
-                )
+                header = rows[0]
+                def find_index(col_name, default):
+                    try:
+                        return next(i for i, h in enumerate(header) if col_name.lower() in h.lower())
+                    except StopIteration:
+                        return default
+                        
+                doc_idx = find_index("Document Name", 1)
+                web_idx = find_index("Hold Print Name", 2)
+                time_idx = find_index("Time", 0)
+                user_idx = find_index("User", 6)
+                userid_idx = find_index("User ID", 3)
+                pages_idx = find_index("Pages", 4)
+                copies_idx = find_index("Copies", 5)
+                status_idx = find_index("Status", 8)
                 
+                matches = []
+                search_term_lower = search_term.lower()
+                
+                for row in rows[1:]:
+                    padded_row = row + [""] * (max(doc_idx, web_idx, time_idx, user_idx, userid_idx, pages_idx, copies_idx, status_idx) + 1 - len(row))
+                    
+                    doc_name = padded_row[doc_idx]
+                    web_name = padded_row[web_idx]
+                    
+                    if search_term_lower in doc_name.lower() or search_term_lower in web_name.lower():
+                        matches.append({
+                            'time': padded_row[time_idx],
+                            'doc_name': doc_name if doc_name else web_name,
+                            'user': padded_row[user_idx],
+                            'user_id': padded_row[userid_idx],
+                            'pages': padded_row[pages_idx],
+                            'copies': padded_row[copies_idx],
+                            'status': padded_row[status_idx]
+                        })
+                        
+                if len(matches) > 0:
+                    try:
+                        matches.sort(key=lambda m: m['time'], reverse=True)
+                    except Exception:
+                        pass
+                        
+                    response_text = (
+                        f"🔍 *លទ្ធផលស្វែងរកសម្រាប់ថ្ងៃទី {date_str}៖*\n"
+                        f"រកឃើញឯកសារទាក់ទងចំនួន៖ *{len(matches)}*\n\n"
+                    )
+                    
+                    show_limit = min(len(matches), 15)
+                    for idx, match in enumerate(matches[:show_limit]):
+                        status = match['status'].strip()
+                        status_lower = status.lower()
+                        
+                        if "print complete" in status_lower or "completed" in status_lower or "success" in status_lower or "printed" in status_lower:
+                            status_emoji = "✅"
+                        elif "sent to printer" in status_lower:
+                            status_emoji = "📤"
+                        elif "storing complete" in status_lower:
+                            status_emoji = "📥"
+                        elif "printing" in status_lower:
+                            status_emoji = "🖨️"
+                        elif "spool" in status_lower or "process" in status_lower:
+                            status_emoji = "🔄"
+                        elif "wait" in status_lower or "pending" in status_lower:
+                            status_emoji = "⏳"
+                        elif "hold" in status_lower or "held" in status_lower:
+                            status_emoji = "⏸️"
+                        elif "cancel" in status_lower or "delete" in status_lower or "abort" in status_lower:
+                            status_emoji = "🚫"
+                        elif "error" in status_lower or "fail" in status_lower:
+                            status_emoji = "❌"
+                        else:
+                            status_emoji = "📄"
+                            
+                        doc_name_esc = escape_markdown(match['doc_name'])
+                        
+                        response_text += (
+                            f"{idx+1}. 📄 *ឈ្មោះ៖* {doc_name_esc}\n"
+                            f"   • *ម៉ោង៖* {match['time']}\n"
+                            f"   • *ទំព័រ៖* {match['pages']} (ច្បាប់៖ {match['copies']})\n"
+                            f"   • *Status៖* {status_emoji} `{status}`\n\n"
+                        )
+                        
+                    if len(matches) > show_limit:
+                        response_text += f"⚠️ _បង្ហាញតែ ១៥ ឯកសារចុងក្រោយគេប៉ុណ្ណោះ (សរុប {len(matches)})_"
+                else:
+                    response_text = f"🔍 មិនមានឯកសារណាដែលមានឈ្មោះ `{search_term}` ក្នុងថ្ងៃទី `{date_str}` ឡើយ。"
+                    
         except HttpError as err:
             error_details = ""
             try:
@@ -419,36 +397,26 @@ def register_handlers(bot_instance):
                 
             if "quota" in message.lower() or "rate limit" in message.lower():
                 msg_esc = escape_markdown(message)
-                bot_instance.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=loading_msg.message_id,
-                    text=f"⚠️ *ដែនកំណត់ស្កេនរបស់ Google API ត្រូវបានប្រើប្រាស់អស់ហើយ។* សូមរង់ចាំ ១ នាទី រួចសាកល្បងម្ដងទៀត។\n"
-                         f"Google API Quota exceeded. (Details: {msg_esc})",
-                    parse_mode='Markdown'
+                response_text = (
+                    f"⚠️ *ដែនកំណត់ស្កេនរបស់ Google API ត្រូវបានប្រើប្រាស់អស់ហើយ។* សូមរង់ចាំ ១ នាទី រួចសាកល្បងម្ដងទៀត។\n"
+                    f"Google API Quota exceeded. (Details: {msg_esc})"
                 )
-
             elif "requested entity was not found" in message.lower() or "bad request" in message.lower() or "not found" in message.lower() or "unable to parse range" in message.lower():
-                bot_instance.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=loading_msg.message_id,
-                    text=f"❌ មិនមានទិន្នន័យ Print Log សម្រាប់ថ្ងៃទី `{date_str}` ឡើយ。\n(សូមប្រាកដថា PC បានបើក និង Sync ទិន្នន័យរួចហើយ)\n\n*(Details: {message})*"
-                )
+                response_text = f"❌ មិនមានទិន្នន័យ Print Log សម្រាប់ថ្ងៃទី `{date_str}` ឡើយ。\n(សូមប្រាកដថា PC បានបើក និង Sync ទិន្នន័យរួចហើយ)\n\n*(Details: {message})*"
             else:
-                bot_instance.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=loading_msg.message_id,
-                    text=f"⚠️ Error accessing Google Sheets API: {message}"
-                )
+                response_text = f"⚠️ Error accessing Google Sheets API: {message}"
         except Exception as e:
-            bot_instance.edit_message_text(
-                chat_id=chat_id,
-                message_id=loading_msg.message_id,
-                text=f"⚠️ Error: {str(e)}"
-            )
+            response_text = f"⚠️ Error: {str(e)}"
             
         user_states[chat_id] = {'state': 'WAITING_FOR_DATE', 'date': None}
 
-        bot_instance.send_message(chat_id, "តើអ្នកចង់ឆែកថ្ងៃខែផ្សេងទៀតទេ?", reply_markup=get_main_keyboard())
+        # Send a single response containing the search results and the restart keyboard prompt
+        bot_instance.send_message(
+            chat_id, 
+            response_text + "\n\n👉 *តើអ្នកចង់ឆែកថ្ងៃខែផ្សេងទៀតទេ?* (Would you like to check another date?)", 
+            parse_mode='Markdown', 
+            reply_markup=get_main_keyboard()
+        )
 
 def bot_polling_target(bot_instance):
     print("Bot polling thread started.")

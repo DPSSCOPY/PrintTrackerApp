@@ -41,6 +41,7 @@ namespace PrintTrackerApp.Services
         public string TeacherDataSpreadsheetId { get; set; } = "";
         public string PrintLogSpreadsheetId { get; set; } = "";
         public string GoogleSheetStartCell { get; set; } = "A1";
+        public string GoogleSheetDropdownCell { get; set; } = "A2";
 
         // Dashboard Level Categorization
         public string FtLevels { get; set; } = "1A, 1B, 2A, 2B, 3A, 3B, 4A, 4B, 5A, 5B, Pre2AI, Pre2AII, KGMA, KGMB, KGHA, KGHB, KGHC";

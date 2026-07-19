@@ -109,6 +109,14 @@ namespace PrintTrackerApp.Services
             await updateRequest.ExecuteAsync();
         }
 
+        public async Task WriteCellValueAsync(string sheetName, string cellA1, object value)
+        {
+            var valueRange = new ValueRange { Values = new List<IList<object>> { new List<object> { value } } };
+            var updateRequest = _service.Spreadsheets.Values.Update(valueRange, _spreadsheetId, $"{sheetName}!{cellA1}");
+            updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+            await updateRequest.ExecuteAsync();
+        }
+
         public async Task WriteAndFormatDashboardDataAsync(string sheetName, IList<IList<object>> data, IList<IList<string>> notes = null, string startCell = "A1")
         {
             if (data == null || data.Count == 0) return;
@@ -135,7 +143,7 @@ namespace PrintTrackerApp.Services
             {
                 RepeatCell = new RepeatCellRequest
                 {
-                    Range = new GridRange { SheetId = sheetId, StartRowIndex = rowOffset, StartColumnIndex = colOffset },
+                    Range = new GridRange { SheetId = sheetId, StartRowIndex = 0, StartColumnIndex = 0 },
                     Cell = new CellData { UserEnteredFormat = new CellFormat(), Note = "" },
                     Fields = "userEnteredFormat,note"
                 }
@@ -155,7 +163,7 @@ namespace PrintTrackerApp.Services
             };
 
             int tables = 4;
-            int colsPerTable = (sheetName == "PT") ? 4 : 3;
+            int colsPerTable = (sheetName.Equals("PT", StringComparison.OrdinalIgnoreCase) || sheetName.Contains("_PT_")) ? 4 : 3;
             int totalCols = (colsPerTable + 1) * tables - 1; // 19 for PT, 15 for FT/KH
 
             // Format Header Row (Row 0)
@@ -544,6 +552,138 @@ namespace PrintTrackerApp.Services
             {
                 System.Diagnostics.Debug.WriteLine("Google Sheets error during old logs cleanup: " + ex.Message);
             }
+        }
+
+        public async Task HideSheetAsync(string sheetName)
+        {
+            int sheetId = await EnsureSheetExistsAsync(sheetName);
+            var request = new Request
+            {
+                UpdateSheetProperties = new UpdateSheetPropertiesRequest
+                {
+                    Properties = new SheetProperties
+                    {
+                        SheetId = sheetId,
+                        Hidden = true
+                    },
+                    Fields = "hidden"
+                }
+            };
+            var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = new List<Request> { request } } ;
+            await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
+        }
+
+        public async Task SetDropdownValidationAsync(string sheetName, string cellA1, List<string> options)
+        {
+            int sheetId = await EnsureSheetExistsAsync(sheetName);
+            string normalized = NormalizeStartCell(cellA1);
+            var colMatch = System.Text.RegularExpressions.Regex.Match(normalized, @"[A-Z]+");
+            int colIndex = colMatch.Success ? ColumnLetterToColumnIndex(colMatch.Value) : 0;
+            int rowIndex = ParseStartRow(normalized) - 1;
+
+            var conditionValues = new List<ConditionValue>();
+            foreach (var opt in options)
+            {
+                conditionValues.Add(new ConditionValue { UserEnteredValue = opt });
+            }
+
+            var rule = new DataValidationRule
+            {
+                Condition = new BooleanCondition
+                {
+                    Type = "ONE_OF_LIST",
+                    Values = conditionValues
+                },
+                ShowCustomUi = true,
+                InputMessage = "Choose a period"
+            };
+
+            var request = new Request
+            {
+                SetDataValidation = new SetDataValidationRequest
+                {
+                    Range = new GridRange
+                    {
+                        SheetId = sheetId,
+                        StartRowIndex = rowIndex,
+                        EndRowIndex = rowIndex + 1,
+                        StartColumnIndex = colIndex,
+                        EndColumnIndex = colIndex + 1
+                    },
+                    Rule = rule
+                }
+            };
+
+            var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = new List<Request> { request } };
+            await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
+        }
+
+        public async Task CopyRangeAsync(string sourceSheetName, string destSheetName, string startCellA1)
+        {
+            var spreadsheet = await _service.Spreadsheets.Get(_spreadsheetId).ExecuteAsync();
+
+            var sourceSheet = spreadsheet.Sheets.FirstOrDefault(s => string.Equals(s.Properties.Title, sourceSheetName, StringComparison.OrdinalIgnoreCase));
+            if (sourceSheet == null)
+            {
+                throw new Exception($"Source sheet '{sourceSheetName}' not found in the spreadsheet.");
+            }
+
+            var destSheet = spreadsheet.Sheets.FirstOrDefault(s => string.Equals(s.Properties.Title, destSheetName, StringComparison.OrdinalIgnoreCase));
+            if (destSheet == null)
+            {
+                throw new Exception($"Destination sheet '{destSheetName}' not found in the spreadsheet.");
+            }
+
+            int sourceSheetId = sourceSheet.Properties.SheetId.Value;
+            int destSheetId = destSheet.Properties.SheetId.Value;
+
+            string normalized = NormalizeStartCell(startCellA1);
+            int startRow = ParseStartRow(normalized) - 1;
+            var colMatch = System.Text.RegularExpressions.Regex.Match(normalized, @"[A-Z]+");
+            int startCol = colMatch.Success ? ColumnLetterToColumnIndex(colMatch.Value) : 0;
+
+            int srcRows = sourceSheet.Properties.GridProperties.RowCount ?? 1000;
+            int srcCols = sourceSheet.Properties.GridProperties.ColumnCount ?? 26;
+
+            int destRows = destSheet.Properties.GridProperties.RowCount ?? 1000;
+            int destCols = destSheet.Properties.GridProperties.ColumnCount ?? 26;
+
+            // Clamp rows/cols to avoid out-of-bounds exceptions on sheets with different sizes
+            int endRow = Math.Min(srcRows, destRows);
+            int endCol = Math.Min(srcCols, destCols);
+
+            if (endRow <= startRow || endCol <= startCol)
+            {
+                return; // Nothing to copy
+            }
+
+            var copyPasteRequest = new Request
+            {
+                CopyPaste = new CopyPasteRequest
+                {
+                    Source = new GridRange
+                    {
+                        SheetId = sourceSheetId,
+                        StartRowIndex = startRow,
+                        EndRowIndex = endRow,
+                        StartColumnIndex = startCol,
+                        EndColumnIndex = endCol
+                    },
+                    Destination = new GridRange
+                    {
+                        SheetId = destSheetId,
+                        StartRowIndex = startRow,
+                        EndRowIndex = endRow,
+                        StartColumnIndex = startCol,
+                        EndColumnIndex = endCol
+                    },
+                    PasteType = "PASTE_NORMAL",
+                    PasteOrientation = "NORMAL"
+                }
+            };
+
+            var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = new List<Request> { copyPasteRequest } };
+            await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
         }
     }
 }

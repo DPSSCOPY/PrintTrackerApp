@@ -134,6 +134,8 @@ namespace PrintTrackerApp.Services
                 {
                     new List<object> { "Key", "Value" },
                     new List<object> { "TelegramTrackingBotToken", settings.TelegramTrackingBotToken ?? "" },
+                    new List<object> { "GoogleSheetStartCell", settings.GoogleSheetStartCell ?? "A4" },
+                    new List<object> { "GoogleSheetDropdownCell", settings.GoogleSheetDropdownCell ?? "A2" },
                     new List<object> { "LastUpdated", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") }
                 };
 

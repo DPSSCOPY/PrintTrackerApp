@@ -72,3 +72,36 @@ Setup and deployment guide for the 24/7 Telegram Bot querying Print Logs from Go
    * **Interval / Schedule**: កំណត់ឱ្យរត់រៀងរាល់ **១០ នាទី** ម្តង (`Every 10 minutes`)
 4. រក្សាទុក (Save)។ សេវាកម្មនេះនឹងធ្វើការផ្ញើសំណើទៅកាន់ Bot របស់លោកអ្នករៀងរាល់ ១០ នាទីម្តង ដើម្បីកុំឱ្យវា Sleep ធានាថា Bot ដំណើរការបាន ២៤ម៉ោងលើ២៤ម៉ោងជានិច្ច!
 
+---
+
+## ជំហានទី ៥៖ ដំឡើងតាម Google Apps Script (Stable ជាង និងហ្វ្រី ១០០%)
+
+ប្រសិនបើលោកអ្នកជួបបញ្ហាគាំង ឬយឺតពេលប្រើ Render លោកអ្នកអាចប្រើប្រាស់ **Google Apps Script** ជំនួសវិញ។ វាដំណើរការនៅលើ Cloud របស់ Google ផ្ទាល់ ឆ្លើយតបលឿន និងមិនចេះគេង (Sleep) ឡើយ៖
+
+### ១. ការបញ្ចូលកូដទៅក្នុង Google Sheet
+1. បើក Google Sheet របស់លោកអ្នក។
+2. ចូលទៅកាន់ **Extensions** (ផ្នែកបន្ថែម) -> ជ្រើសរើស **Apps Script**។
+3. លុបកូដលំនាំដើមទាំងអស់ចោល រួចចម្លងកូដនៅក្នុងឯកសារ [google_apps_script.js](file:///e:/Code/Tracking_Print/TelegramBot/google_apps_script.js) មក Paste ចូល។
+4. ចុចប៊ូតុង **Save** (រូបថាសម៉ាញ៉េទិច)។
+
+### ២. ដាក់ឱ្យដំណើរការជា Web App (Deploy)
+1. នៅជ្រុងខាងស្តាំផ្នែកខាងលើ ចុចលើប៊ូតុង **Deploy** -> ជ្រើសរើស **New deployment**។
+2. ចុចលើរូបកង់ធ្មេញ (Select type) -> ជ្រើសរើសយក **Web app**។
+3. កំណត់ការកំណត់ដូចខាងក្រោម៖
+   * **Description**: `Print Tracker Bot Webhook`
+   * **Execute as**: `Me` (គណនី Google របស់អ្នក)
+   * **Who has access**: `Anyone` (អ្នកណាក៏ដោយ - ⚠️ **សំខាន់ណាស់៖** ត្រូវតែជ្រើសរើស Anyone ដើម្បីឱ្យ Telegram Webhook ផ្ញើសារចូលបាន)
+4. ចុចប៊ូតុង **Deploy**។
+5. ប្រព័ន្ធនឹងសួរការអនុញ្ញាត (Authorize Access) សូមចុច **Authorize Access** រួចជ្រើសរើសគណនី Google របស់អ្នក ចុច **Advanced** -> ចុច **Go to Untitled project (unsafe)** -> រួចចុច **Allow**។
+6. បន្ទាប់ពី Deploy រួចរាល់ លោកអ្នកនឹងទទួលបាន **Web app URL** (ឧទាហរណ៍៖ `https://script.google.com/macros/s/.../exec`)។ សូមចម្លង (Copy) URL នោះទុក។
+
+### ៣. ភ្ជាប់ Telegram Bot ទៅកាន់ Web App (Webhook Setup)
+1. ត្រលប់មកផ្ទាំង Apps Script editor វិញ។
+2. ស្វែងរកមុខងារ (Function) ឈ្មោះ `setupWebhook` (នៅផ្នែកខាងក្រោមបង្អស់នៃកូដ)។
+3. ជំនួសពាក្យ `"YOUR_WEB_APP_URL_HERE"` ទៅជា **Web app URL** ដែលបានចម្លងទុកពីចំណុចមុន។
+4. នៅរបារឧបករណ៍ខាងលើ ជ្រើសរើសយក `setupWebhook` រួចចុចប៊ូតុង **Run**។
+5. ពិនិត្យមើលផ្ទាំង Execution log នៅខាងក្រោម៖
+   * ប្រសិនបើឃើញពាក្យ `"description": "Webhook was set"` មានន័យថា Bot របស់លោកអ្នកត្រូវបានភ្ជាប់ជោគជ័យ និងដំណើរការជាផ្លូវការហើយ!
+
+*(បញ្ជាក់៖ Apps Script នេះនឹងទាញយក Telegram Bot Token ពី Tab `BotConfig` ដោយស្វ័យប្រវត្ត។ ដូចនេះ លោកអ្នកមិនបាច់បារម្ភពីការលេចធ្លាយ Token ឡើយ)*
+

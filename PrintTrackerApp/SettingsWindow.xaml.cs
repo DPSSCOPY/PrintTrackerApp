@@ -29,6 +29,7 @@ namespace PrintTrackerApp
                 TeacherDataSpreadsheetId = settings.TeacherDataSpreadsheetId,
                 PrintLogSpreadsheetId = settings.PrintLogSpreadsheetId,
                 GoogleSheetStartCell = settings.GoogleSheetStartCell,
+                GoogleSheetDropdownCell = settings.GoogleSheetDropdownCell,
                 TelegramBotUrl = settings.TelegramBotUrl,
                 TelegramBotToken = settings.TelegramBotToken,
                 TelegramTrackingBotToken = settings.TelegramTrackingBotToken,
@@ -66,6 +67,7 @@ namespace PrintTrackerApp
             txtTeacherDataSpreadsheetId.Text = CurrentSettings.TeacherDataSpreadsheetId;
             txtPrintLogSpreadsheetId.Text = CurrentSettings.PrintLogSpreadsheetId;
             txtGoogleSheetStartCell.Text = CurrentSettings.GoogleSheetStartCell;
+            txtGoogleSheetDropdownCell.Text = CurrentSettings.GoogleSheetDropdownCell;
             txtTelegramBotUrl.Text = CurrentSettings.TelegramBotUrl;
             txtTelegramToken.Text = CurrentSettings.TelegramBotToken;
             txtTelegramTrackingToken.Text = CurrentSettings.TelegramTrackingBotToken;
@@ -158,6 +160,7 @@ namespace PrintTrackerApp
             CurrentSettings.TeacherDataSpreadsheetId = txtTeacherDataSpreadsheetId.Text.Trim();
             CurrentSettings.PrintLogSpreadsheetId = txtPrintLogSpreadsheetId.Text.Trim();
             CurrentSettings.GoogleSheetStartCell = txtGoogleSheetStartCell.Text.Trim();
+            CurrentSettings.GoogleSheetDropdownCell = txtGoogleSheetDropdownCell.Text.Trim();
             CurrentSettings.TelegramBotUrl = txtTelegramBotUrl.Text.Trim();
             CurrentSettings.TelegramBotToken = txtTelegramToken.Text.Trim();
             CurrentSettings.TelegramTrackingBotToken = txtTelegramTrackingToken.Text.Trim();
