@@ -3595,7 +3595,9 @@ namespace PrintTrackerApp
                         await service.ClearSheetAsync(hiddenSheetName, "A1");
                         await service.WriteAndFormatDashboardDataAsync(hiddenSheetName, sheetData, sheetNotes, startCell);
                         await service.HideSheetAsync(hiddenSheetName);
+                        await Task.Delay(150);
                     }
+                    await Task.Delay(200);
                 }
 
                 // Setup viewports: dropdowns, default selection, and copy-paste initialization
@@ -3619,6 +3621,7 @@ namespace PrintTrackerApp
                     // Copy the values, notes, and formats from hidden sheet to viewport
                     string hiddenSource = $"_Data_{tabName}_{firstPeriod}";
                     await service.CopyRangeAsync(hiddenSource, tabName, startCellViewport);
+                    await Task.Delay(150);
                 }
 
                 System.Windows.MessageBox.Show("Successfully exported to Google Sheets!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);

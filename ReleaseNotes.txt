@@ -1,3 +1,7 @@
+Update Version 1.0.36 Features:
+- Resolved Google Sheets Export TooManyRequests (HTTP 429) quota exceeded error by implementing sheet metadata caching and exponential backoff retry.
+- Added rate pacing delays between batch export loops to guarantee 100% export success on large datasets.
+
 Update Version 1.0.35 Features:
 - Fixed settings data loss issue on app update: implemented robust multi-location persistence (%APPDATA%, %PROGRAMDATA%, base directory & backups).
 - Implemented automatic fallback hydration and merge protection in SettingsManager to prevent overwriting valid configurations with empty default values.

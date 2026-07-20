@@ -7,6 +7,7 @@ using SheetColor = Google.Apis.Sheets.v4.Data.Color;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace PrintTrackerApp.Services
@@ -18,6 +19,9 @@ namespace PrintTrackerApp.Services
         private readonly SheetsService _service;
         private readonly DriveService _driveService;
         private readonly string _spreadsheetId;
+
+        private Dictionary<string, SheetProperties> _sheetCache = new Dictionary<string, SheetProperties>(StringComparer.OrdinalIgnoreCase);
+        private bool _isCacheLoaded = false;
 
         public GoogleSheetsService(string spreadsheetId, string credentialsPath)
         {
@@ -42,13 +46,97 @@ namespace PrintTrackerApp.Services
             });
         }
 
+        private static async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> apiCall, int maxRetries = 6, int initialDelayMs = 2000)
+        {
+            int delay = initialDelayMs;
+            for (int i = 0; i < maxRetries; i++)
+            {
+                try
+                {
+                    return await apiCall();
+                }
+                catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.TooManyRequests ||
+                                                          (int)ex.HttpStatusCode == 429 ||
+                                                          ex.HttpStatusCode == System.Net.HttpStatusCode.ServiceUnavailable ||
+                                                          ex.HttpStatusCode == System.Net.HttpStatusCode.InternalServerError ||
+                                                          ex.HttpStatusCode == System.Net.HttpStatusCode.BadGateway)
+                {
+                    if (i == maxRetries - 1) throw;
+                    System.Diagnostics.Debug.WriteLine($"Google Sheets API Transient Error ({ex.HttpStatusCode}). Retrying in {delay}ms... Attempt {i + 1}/{maxRetries}");
+                    await Task.Delay(delay);
+                    delay *= 2;
+                }
+                catch (System.Net.Http.HttpRequestException ex)
+                {
+                    if (i == maxRetries - 1) throw;
+                    System.Diagnostics.Debug.WriteLine($"Google Sheets Network Exception ({ex.Message}). Retrying in {delay}ms... Attempt {i + 1}/{maxRetries}");
+                    await Task.Delay(delay);
+                    delay *= 2;
+                }
+            }
+            return await apiCall();
+        }
+
+        private static async Task ExecuteWithRetryAsync(Func<Task> apiCall, int maxRetries = 6, int initialDelayMs = 2000)
+        {
+            int delay = initialDelayMs;
+            for (int i = 0; i < maxRetries; i++)
+            {
+                try
+                {
+                    await apiCall();
+                    return;
+                }
+                catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.TooManyRequests ||
+                                                          (int)ex.HttpStatusCode == 429 ||
+                                                          ex.HttpStatusCode == System.Net.HttpStatusCode.ServiceUnavailable ||
+                                                          ex.HttpStatusCode == System.Net.HttpStatusCode.InternalServerError ||
+                                                          ex.HttpStatusCode == System.Net.HttpStatusCode.BadGateway)
+                {
+                    if (i == maxRetries - 1) throw;
+                    System.Diagnostics.Debug.WriteLine($"Google Sheets API Transient Error ({ex.HttpStatusCode}). Retrying in {delay}ms... Attempt {i + 1}/{maxRetries}");
+                    await Task.Delay(delay);
+                    delay *= 2;
+                }
+                catch (System.Net.Http.HttpRequestException ex)
+                {
+                    if (i == maxRetries - 1) throw;
+                    System.Diagnostics.Debug.WriteLine($"Google Sheets Network Exception ({ex.Message}). Retrying in {delay}ms... Attempt {i + 1}/{maxRetries}");
+                    await Task.Delay(delay);
+                    delay *= 2;
+                }
+            }
+            await apiCall();
+        }
+
+        public async Task EnsureSheetCacheAsync(bool forceRefresh = false)
+        {
+            if (!_isCacheLoaded || forceRefresh)
+            {
+                var spreadsheet = await ExecuteWithRetryAsync(() => _service.Spreadsheets.Get(_spreadsheetId).ExecuteAsync());
+                var newCache = new Dictionary<string, SheetProperties>(StringComparer.OrdinalIgnoreCase);
+                if (spreadsheet?.Sheets != null)
+                {
+                    foreach (var sheet in spreadsheet.Sheets)
+                    {
+                        if (sheet.Properties?.Title != null)
+                        {
+                            newCache[sheet.Properties.Title] = sheet.Properties;
+                        }
+                    }
+                }
+                _sheetCache = newCache;
+                _isCacheLoaded = true;
+            }
+        }
+
         public async Task<DateTime?> GetSpreadsheetModifiedTimeAsync()
         {
             try
             {
                 var request = _driveService.Files.Get(_spreadsheetId);
                 request.Fields = "modifiedTime";
-                var file = await request.ExecuteAsync();
+                var file = await ExecuteWithRetryAsync(() => request.ExecuteAsync());
                 return file.ModifiedTimeDateTimeOffset?.DateTime;
             }
             catch
@@ -59,13 +147,16 @@ namespace PrintTrackerApp.Services
 
         public async Task<int> EnsureSheetExistsAsync(string sheetName)
         {
-            var spreadsheet = await _service.Spreadsheets.Get(_spreadsheetId).ExecuteAsync();
-            foreach (var sheet in spreadsheet.Sheets)
+            await EnsureSheetCacheAsync();
+            if (_sheetCache.TryGetValue(sheetName, out var props) && props.SheetId.HasValue)
             {
-                if (string.Equals(sheet.Properties.Title, sheetName, StringComparison.OrdinalIgnoreCase))
-                {
-                    return sheet.Properties.SheetId.Value;
-                }
+                return props.SheetId.Value;
+            }
+
+            await EnsureSheetCacheAsync(forceRefresh: true);
+            if (_sheetCache.TryGetValue(sheetName, out props) && props.SheetId.HasValue)
+            {
+                return props.SheetId.Value;
             }
 
             var addSheetRequest = new Request
@@ -84,8 +175,10 @@ namespace PrintTrackerApp.Services
                 Requests = new List<Request> { addSheetRequest }
             };
 
-            var response = await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
-            return response.Replies[0].AddSheet.Properties.SheetId.Value;
+            var response = await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync());
+            var createdProps = response.Replies[0].AddSheet.Properties;
+            _sheetCache[sheetName] = createdProps;
+            return createdProps.SheetId.Value;
         }
 
         public async Task ClearSheetAsync(string sheetName, string startCell = "A1")
@@ -97,7 +190,7 @@ namespace PrintTrackerApp.Services
             int startRow = ParseStartRow(normalized);
             string range = (startRow > 1 || colLetter != "A") ? $"{sheetName}!{colLetter}{startRow}:Z" : $"{sheetName}";
             var deleteRequest = _service.Spreadsheets.Values.Clear(requestBody, _spreadsheetId, range);
-            await deleteRequest.ExecuteAsync();
+            await ExecuteWithRetryAsync(() => deleteRequest.ExecuteAsync());
         }
 
         public async Task WriteDataAsync(string sheetName, IList<IList<object>> data)
@@ -106,7 +199,7 @@ namespace PrintTrackerApp.Services
             var updateRequest = _service.Spreadsheets.Values.Update(valueRange, _spreadsheetId, $"{sheetName}!A1");
             updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
             
-            await updateRequest.ExecuteAsync();
+            await ExecuteWithRetryAsync(() => updateRequest.ExecuteAsync());
         }
 
         public async Task WriteCellValueAsync(string sheetName, string cellA1, object value)
@@ -114,7 +207,7 @@ namespace PrintTrackerApp.Services
             var valueRange = new ValueRange { Values = new List<IList<object>> { new List<object> { value } } };
             var updateRequest = _service.Spreadsheets.Values.Update(valueRange, _spreadsheetId, $"{sheetName}!{cellA1}");
             updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
-            await updateRequest.ExecuteAsync();
+            await ExecuteWithRetryAsync(() => updateRequest.ExecuteAsync());
         }
 
         public async Task WriteAndFormatDashboardDataAsync(string sheetName, IList<IList<object>> data, IList<IList<string>> notes = null, string startCell = "A1")
@@ -133,7 +226,7 @@ namespace PrintTrackerApp.Services
             var valueRange = new ValueRange { Values = data };
             var updateRequest = _service.Spreadsheets.Values.Update(valueRange, _spreadsheetId, $"{sheetName}!{normalizedStart}");
             updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
-            await updateRequest.ExecuteAsync();
+            await ExecuteWithRetryAsync(() => updateRequest.ExecuteAsync());
 
             // 2. Build formatting requests
             var requests = new List<Request>();
@@ -397,7 +490,7 @@ namespace PrintTrackerApp.Services
             }
 
             var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = requests };
-            await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
+            await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync());
         }
 
         private string NormalizeStartCell(string startCell)
@@ -457,13 +550,8 @@ namespace PrintTrackerApp.Services
 
         public async Task<List<string>> GetSheetNamesAsync()
         {
-            var spreadsheet = await _service.Spreadsheets.Get(_spreadsheetId).ExecuteAsync();
-            var names = new List<string>();
-            foreach (var sheet in spreadsheet.Sheets)
-            {
-                names.Add(sheet.Properties.Title);
-            }
-            return names;
+            await EnsureSheetCacheAsync();
+            return _sheetCache.Keys.ToList();
         }
 
         public async Task<System.Data.DataTable> ReadSheetAsDataTableAsync(string sheetName)
@@ -471,7 +559,7 @@ namespace PrintTrackerApp.Services
             try
             {
                 var request = _service.Spreadsheets.Values.Get(_spreadsheetId, sheetName);
-                var response = await request.ExecuteAsync();
+                var response = await ExecuteWithRetryAsync(() => request.ExecuteAsync());
                 var values = response.Values;
 
                 if (values == null || values.Count == 0)
@@ -512,26 +600,29 @@ namespace PrintTrackerApp.Services
         {
             try
             {
-                var spreadsheet = await _service.Spreadsheets.Get(_spreadsheetId).ExecuteAsync();
+                await EnsureSheetCacheAsync();
                 var requests = new List<Request>();
-                
-                foreach (var sheet in spreadsheet.Sheets)
+                var sheetsToDelete = new List<string>();
+
+                foreach (var kvp in _sheetCache)
                 {
-                    string title = sheet.Properties.Title;
+                    string title = kvp.Key;
+                    var props = kvp.Value;
                     if (title.StartsWith("PrintLog_", StringComparison.OrdinalIgnoreCase))
                     {
                         string datePart = title.Substring("PrintLog_".Length);
                         if (DateTime.TryParseExact(datePart, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime sheetDate))
                         {
-                            if ((DateTime.Today - sheetDate).TotalDays > retentionDays)
+                            if ((DateTime.Today - sheetDate).TotalDays > retentionDays && props.SheetId.HasValue)
                             {
                                 requests.Add(new Request
                                 {
                                     DeleteSheet = new DeleteSheetRequest
                                     {
-                                        SheetId = sheet.Properties.SheetId
+                                        SheetId = props.SheetId.Value
                                     }
                                 });
+                                sheetsToDelete.Add(title);
                                 System.Diagnostics.Debug.WriteLine($"Google Sheets: Adding old sheet tab '{title}' to deletion queue.");
                             }
                         }
@@ -544,7 +635,11 @@ namespace PrintTrackerApp.Services
                     {
                         Requests = requests
                     };
-                    await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
+                    await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync());
+                    foreach (var title in sheetsToDelete)
+                    {
+                        _sheetCache.Remove(title);
+                    }
                     System.Diagnostics.Debug.WriteLine($"Google Sheets: Successfully cleaned up {requests.Count} old print log sheet tabs.");
                 }
             }
@@ -570,7 +665,7 @@ namespace PrintTrackerApp.Services
                 }
             };
             var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = new List<Request> { request } } ;
-            await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
+            await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync());
         }
 
         public async Task SetDropdownValidationAsync(string sheetName, string cellA1, List<string> options)
@@ -615,38 +710,36 @@ namespace PrintTrackerApp.Services
             };
 
             var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = new List<Request> { request } };
-            await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
+            await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync());
         }
 
         public async Task CopyRangeAsync(string sourceSheetName, string destSheetName, string startCellA1)
         {
-            var spreadsheet = await _service.Spreadsheets.Get(_spreadsheetId).ExecuteAsync();
+            await EnsureSheetCacheAsync();
 
-            var sourceSheet = spreadsheet.Sheets.FirstOrDefault(s => string.Equals(s.Properties.Title, sourceSheetName, StringComparison.OrdinalIgnoreCase));
-            if (sourceSheet == null)
+            if (!_sheetCache.TryGetValue(sourceSheetName, out var sourceSheet) || sourceSheet == null || !sourceSheet.SheetId.HasValue)
             {
                 throw new Exception($"Source sheet '{sourceSheetName}' not found in the spreadsheet.");
             }
 
-            var destSheet = spreadsheet.Sheets.FirstOrDefault(s => string.Equals(s.Properties.Title, destSheetName, StringComparison.OrdinalIgnoreCase));
-            if (destSheet == null)
+            if (!_sheetCache.TryGetValue(destSheetName, out var destSheet) || destSheet == null || !destSheet.SheetId.HasValue)
             {
                 throw new Exception($"Destination sheet '{destSheetName}' not found in the spreadsheet.");
             }
 
-            int sourceSheetId = sourceSheet.Properties.SheetId.Value;
-            int destSheetId = destSheet.Properties.SheetId.Value;
+            int sourceSheetId = sourceSheet.SheetId.Value;
+            int destSheetId = destSheet.SheetId.Value;
 
             string normalized = NormalizeStartCell(startCellA1);
             int startRow = ParseStartRow(normalized) - 1;
             var colMatch = System.Text.RegularExpressions.Regex.Match(normalized, @"[A-Z]+");
             int startCol = colMatch.Success ? ColumnLetterToColumnIndex(colMatch.Value) : 0;
 
-            int srcRows = sourceSheet.Properties.GridProperties.RowCount ?? 1000;
-            int srcCols = sourceSheet.Properties.GridProperties.ColumnCount ?? 26;
+            int srcRows = sourceSheet.GridProperties?.RowCount ?? 1000;
+            int srcCols = sourceSheet.GridProperties?.ColumnCount ?? 26;
 
-            int destRows = destSheet.Properties.GridProperties.RowCount ?? 1000;
-            int destCols = destSheet.Properties.GridProperties.ColumnCount ?? 26;
+            int destRows = destSheet.GridProperties?.RowCount ?? 1000;
+            int destCols = destSheet.GridProperties?.ColumnCount ?? 26;
 
             // Clamp rows/cols to avoid out-of-bounds exceptions on sheets with different sizes
             int endRow = Math.Min(srcRows, destRows);
@@ -683,7 +776,7 @@ namespace PrintTrackerApp.Services
             };
 
             var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = new List<Request> { copyPasteRequest } };
-            await _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync();
+            await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync());
         }
     }
 }
