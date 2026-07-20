@@ -66,6 +66,10 @@ namespace PrintTrackerApp
         private int _fillStartRowIdx = -1;
         private int _fillStartColIdx = -1;
 
+        private System.Windows.Threading.DispatcherTimer _quoteTimer;
+        private System.Collections.Generic.List<QuoteItem> _quotes = new System.Collections.Generic.List<QuoteItem>();
+        private System.Random _random = new System.Random();
+
         private static T FindVisualChild<T>(System.Windows.DependencyObject parent) where T : System.Windows.DependencyObject
         {
             if (parent == null) return null;
@@ -527,6 +531,9 @@ namespace PrintTrackerApp
 
             // Start SNMP Polling
             _statusTimer.Start();
+
+            // Start Quote Rotation
+            InitializeQuoteRotation();
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -3253,6 +3260,80 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                 }
             }
         }
+
+        private void DgPrintJobs_SelectedCellsChanged(object sender, System.Windows.Controls.SelectedCellsChangedEventArgs e)
+        {
+            UpdateSelectionStatusBar();
+        }
+
+        private void UpdateSelectionStatusBar()
+        {
+            if (dgPrintJobs == null || txtStatusAverage == null || txtStatusCount == null || txtStatusSum == null)
+                return;
+
+            var selectedCells = dgPrintJobs.SelectedCells;
+            if (selectedCells == null || selectedCells.Count <= 1)
+            {
+                txtStatusAverage.Visibility = System.Windows.Visibility.Collapsed;
+                txtStatusCount.Visibility = System.Windows.Visibility.Collapsed;
+                txtStatusSum.Visibility = System.Windows.Visibility.Collapsed;
+                return;
+            }
+
+            int count = 0;
+            double sum = 0;
+            int numericCount = 0;
+
+            foreach (var cellInfo in selectedCells)
+            {
+                if (!cellInfo.IsValid) continue;
+                var rowView = cellInfo.Item as PrintJobInfo;
+                if (rowView == null) continue;
+
+                string bindingPath = (cellInfo.Column.ClipboardContentBinding as System.Windows.Data.Binding)?.Path?.Path 
+                                     ?? ((cellInfo.Column as System.Windows.Controls.DataGridTextColumn)?.Binding as System.Windows.Data.Binding)?.Path?.Path;
+                if (string.IsNullOrEmpty(bindingPath)) continue;
+
+                object val = GetPrintJobValue(rowView, bindingPath);
+                if (val == null) continue;
+
+                string valStr = val.ToString()?.Trim();
+                if (string.IsNullOrEmpty(valStr)) continue;
+
+                count++;
+
+                if (double.TryParse(valStr, out double num))
+                {
+                    sum += num;
+                    numericCount++;
+                }
+            }
+
+            if (count > 1)
+            {
+                txtStatusCount.Text = $"Count: {count}";
+                txtStatusCount.Visibility = System.Windows.Visibility.Visible;
+            }
+            else
+            {
+                txtStatusCount.Visibility = System.Windows.Visibility.Collapsed;
+            }
+
+            if (numericCount >= 2)
+            {
+                double avg = sum / numericCount;
+                txtStatusAverage.Text = avg % 1 == 0 ? $"Average: {avg:F0}" : $"Average: {avg:N2}";
+                txtStatusSum.Text = $"Sum: {sum}";
+                
+                txtStatusAverage.Visibility = System.Windows.Visibility.Visible;
+                txtStatusSum.Visibility = System.Windows.Visibility.Visible;
+            }
+            else
+            {
+                txtStatusAverage.Visibility = System.Windows.Visibility.Collapsed;
+                txtStatusSum.Visibility = System.Windows.Visibility.Collapsed;
+            }
+        }
         
         private void DgPrintJobs_CellEditEnding(object sender, System.Windows.Controls.DataGridCellEditEndingEventArgs e)
         {
@@ -3556,5 +3637,132 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
                 }
             }
         }
+
+        private void InitializeQuoteRotation()
+        {
+            _quotes = new System.Collections.Generic.List<QuoteItem>
+            {
+                new QuoteItem { Text = "The only way to do great work is to love what you do.", Author = "Steve Jobs" },
+                new QuoteItem { Text = "Believe you can and you're halfway there.", Author = "Theodore Roosevelt" },
+                new QuoteItem { Text = "Success is not final, failure is not fatal: it is the courage to continue that counts.", Author = "Winston Churchill" },
+                new QuoteItem { Text = "It always seems impossible until it's done.", Author = "Nelson Mandela" },
+                new QuoteItem { Text = "Don't watch the clock; do what it does. Keep going.", Author = "Sam Levenson" },
+                new QuoteItem { Text = "The future belongs to those who believe in the beauty of their dreams.", Author = "Eleanor Roosevelt" },
+                new QuoteItem { Text = "You miss 100% of the shots you don't take.", Author = "Wayne Gretzky" },
+                new QuoteItem { Text = "Hardships often prepare ordinary people for an extraordinary destiny.", Author = "C.S. Lewis" },
+                new QuoteItem { Text = "Your talent determines what you can do. Your motivation determines how much you are willing to do.", Author = "Lou Holtz" },
+                new QuoteItem { Text = "Success is stumbling from failure to failure with no loss of enthusiasm.", Author = "Winston Churchill" },
+                new QuoteItem { Text = "Act as if what you do makes a difference. It does.", Author = "William James" },
+                new QuoteItem { Text = "Dream big and dare to fail.", Author = "Norman Vaughan" },
+                new QuoteItem { Text = "Keep your face always toward the sunshine - and shadows will fall behind you.", Author = "Walt Whitman" },
+                new QuoteItem { Text = "What you get by achieving your goals is not as important as what you become by achieving your goals.", Author = "Zig Ziglar" },
+                new QuoteItem { Text = "You are never too old to set another goal or to dream a new dream.", Author = "C.S. Lewis" },
+                new QuoteItem { Text = "Happiness is not something ready made. It comes from your own actions.", Author = "Dalai Lama" },
+                new QuoteItem { Text = "The only limit to our realization of tomorrow will be our doubts of today.", Author = "Franklin D. Roosevelt" },
+                new QuoteItem { Text = "Do what you can, with what you have, where you are.", Author = "Theodore Roosevelt" },
+                new QuoteItem { Text = "Everything you've ever wanted is on the other side of fear.", Author = "George Addair" },
+                new QuoteItem { Text = "Start where you are. Use what you have. Do what you can.", Author = "Arthur Ashe" },
+                new QuoteItem { Text = "With the new day comes new strength and new thoughts.", Author = "Eleanor Roosevelt" },
+                new QuoteItem { Text = "It does not matter how slowly you go as long as you do not stop.", Author = "Confucius" },
+                new QuoteItem { Text = "Failure will never overtake me if my determination to succeed is strong enough.", Author = "Og Mandino" },
+                new QuoteItem { Text = "Quality is not an act, it is a habit.", Author = "Aristotle" },
+                new QuoteItem { Text = "Go confidently in the direction of your dreams. Live the life you've imagined.", Author = "Henry David Thoreau" }
+            };
+
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    using (var client = new System.Net.Http.HttpClient())
+                    {
+                        client.Timeout = System.TimeSpan.FromSeconds(10);
+                        client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+                        
+                        string json = await client.GetStringAsync("https://zenquotes.io/api/quotes");
+                        if (!string.IsNullOrEmpty(json))
+                        {
+                            var fetchedQuotes = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<QuoteItem>>(json);
+                            if (fetchedQuotes != null && fetchedQuotes.Count > 0)
+                            {
+                                lock (_quotes)
+                                {
+                                    _quotes.Clear();
+                                    foreach (var q in fetchedQuotes)
+                                    {
+                                        if (!string.IsNullOrWhiteSpace(q.Text))
+                                        {
+                                            _quotes.Add(q);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("Failed to fetch online quotes: " + ex.Message);
+                }
+
+                Dispatcher.Invoke(() => ShowRandomQuote());
+            });
+
+            ShowRandomQuote();
+
+            _quoteTimer = new System.Windows.Threading.DispatcherTimer();
+            _quoteTimer.Interval = System.TimeSpan.FromSeconds(30);
+            _quoteTimer.Tick += (s, e) => ShowRandomQuote();
+            _quoteTimer.Start();
+        }
+
+        private static readonly string[] BeautifulColors = new string[]
+        {
+            "#4F46E5", // Indigo
+            "#1D4ED8", // Blue
+            "#0F766E", // Teal
+            "#047857", // Emerald
+            "#7C3AED", // Violet
+            "#BE123C", // Rose
+            "#C2410C", // Orange-Red
+            "#475569", // Slate
+            "#0369A1", // Sky Blue
+            "#86198F", // Purple-Magenta
+            "#B91C1C"  // Red
+        };
+
+        private void ShowRandomQuote()
+        {
+            if (_quotes == null || _quotes.Count == 0 || txtQuoteStatus == null) return;
+
+            QuoteItem selectedQuote;
+            lock (_quotes)
+            {
+                int index = _random.Next(_quotes.Count);
+                selectedQuote = _quotes[index];
+            }
+
+            string formattedQuote = string.IsNullOrWhiteSpace(selectedQuote.Author)
+                ? $"✨ \"{selectedQuote.Text}\""
+                : $"✨ \"{selectedQuote.Text}\" — {selectedQuote.Author}";
+
+            txtQuoteStatus.Text = formattedQuote;
+
+            // Apply a random beautiful color
+            string randomColorHex = BeautifulColors[_random.Next(BeautifulColors.Length)];
+            try
+            {
+                txtQuoteStatus.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(randomColorHex);
+            }
+            catch { }
+        }
+    }
+
+    public class QuoteItem
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("q")]
+        public string Text { get; set; } = string.Empty;
+
+        [System.Text.Json.Serialization.JsonPropertyName("a")]
+        public string Author { get; set; } = string.Empty;
     }
 }

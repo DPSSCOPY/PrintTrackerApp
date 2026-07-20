@@ -1,10 +1,10 @@
 [Setup]
 AppName=Print Tracker App
-AppVersion=1.0.33
+AppVersion=1.0.34
 DefaultDirName={autopf}\PrintTrackerApp
 DefaultGroupName=Print Tracker App
 UninstallDisplayIcon={app}\PrintTrackerApp.exe
-OutputBaseFilename=PrintTrackerApp_Setup_v1.0.33
+OutputBaseFilename=PrintTrackerApp_Setup_v1.0.34
 Compression=lzma
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
@@ -26,7 +26,7 @@ Filename: "icacls"; Parameters: """C:\Windows\System32\spool\PRINTERS"" /grant *
 Filename: "{app}\PrintTrackerApp.exe"; Description: "{cm:LaunchProgram,Print Tracker App}"; Flags: nowait postinstall skipifsilent shellexec
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "PrintTrackerApp"; ValueData: """{app}\PrintTrackerApp.exe"" -background"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "PrintTrackerApp"; ValueData: """{app}\PrintTrackerApp.exe"""; Flags: uninsdeletevalue
 
 [Code]
 var

@@ -1,3 +1,8 @@
+Update Version 1.0.34 Features:
+- Added inspirational quote banner to status bar with auto-refresh every 30 seconds and dynamic color styling.
+- Fixed startup shortcut configuration in setup.iss to launch app smoothly without arguments.
+- Formatted timestamp in Google Apps Script searchPrintLog to match local spreadsheet timezone formatting.
+
 Update Version 1.0.33 Features:
 - Optimized Telegram Bot's response time (both Python and Google Apps Script) by merging multiple API messages to eliminate roundtrip network delay (from 3 down to 1 call).
 - Implemented 30-second data caching and columns A-J range limit in Google Apps Script searchPrintLog to minimize Google Sheets API execution times.

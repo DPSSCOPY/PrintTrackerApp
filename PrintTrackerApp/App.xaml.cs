@@ -12,6 +12,12 @@ namespace PrintTrackerApp
 
         protected override async void OnStartup(StartupEventArgs e)
         {
+            // Always ensure Working Directory is set to application folder on startup
+            System.IO.Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
+
+            // Clean up legacy "-background" parameter in Windows Registry auto-start
+            EnsureAutoStartRegistryCleaned();
+
             base.OnStartup(e);
 
             _mutex = new System.Threading.Mutex(true, "PrintTrackerApp_SingleInstance_Mutex", out _isNewInstance);
@@ -93,5 +99,27 @@ namespace PrintTrackerApp
                 }
             });
         }
+
+        private void EnsureAutoStartRegistryCleaned()
+        {
+            try
+            {
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    if (key != null)
+                    {
+                        var existingValue = key.GetValue("PrintTrackerApp") as string;
+                        if (!string.IsNullOrEmpty(existingValue) && existingValue.Contains("-background"))
+                        {
+                            string exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName 
+                                             ?? System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PrintTrackerApp.exe");
+                            key.SetValue("PrintTrackerApp", $"\"{exePath}\"");
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
     }
 }
+

@@ -194,6 +194,42 @@ function escapeMarkdown(text) {
 }
 
 /**
+ * Formats a Date object or string into standard format in the spreadsheet timezone
+ */
+function formatLogTime(timeVal, timezone) {
+  if (!timeVal) return "";
+  let dateObj = timeVal;
+  
+  // If it's a string, check if it's already in the format yyyy-MM-dd HH:mm:ss
+  if (typeof dateObj === "string") {
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{3})?$/.test(dateObj)) {
+      return dateObj.replace("T", " ").split(".")[0];
+    }
+    // If it's a timestamp string
+    if (/^\d+$/.test(dateObj)) {
+      dateObj = parseInt(dateObj, 10);
+    } else {
+      dateObj = new Date(dateObj);
+    }
+  }
+  
+  if (typeof dateObj === "number") {
+    dateObj = new Date(dateObj);
+  }
+  
+  if (dateObj instanceof Date && !isNaN(dateObj.getTime())) {
+    try {
+      return Utilities.formatDate(dateObj, timezone, "yyyy-MM-dd HH:mm:ss");
+    } catch (e) {
+      Logger.log("Error formatting date: " + e);
+      return dateObj.toString();
+    }
+  }
+  
+  return timeVal.toString();
+}
+
+/**
  * Get Status Emoji
  */
 function getStatusEmoji(status) {
@@ -282,6 +318,7 @@ function searchPrintLog(dateStr, searchTerm) {
   
   let matches = [];
   const searchTermLower = searchTerm.toLowerCase();
+  const timezone = getSpreadsheetTimezone();
   
   for (let r = 1; r < data.length; r++) {
     const row = data[r];
@@ -290,7 +327,7 @@ function searchPrintLog(dateStr, searchTerm) {
     
     if (docName.toLowerCase().indexOf(searchTermLower) !== -1 || webName.toLowerCase().indexOf(searchTermLower) !== -1) {
       matches.push({
-        time: row[timeIdx] ? row[timeIdx].toString().split(" GMT")[0] : "",
+        time: formatLogTime(row[timeIdx], timezone),
         doc_name: docName || webName,
         user: row[userIdx] ? row[userIdx].toString() : "",
         user_id: row[useridIdx] ? row[useridIdx].toString() : "",
