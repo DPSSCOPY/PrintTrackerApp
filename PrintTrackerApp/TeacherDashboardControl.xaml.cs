@@ -3451,13 +3451,19 @@ namespace PrintTrackerApp
 
                 var currentJobsCopy = _currentJobs?.ToList() ?? new List<PrintJobInfo>();
 
-                // Sync latest settings config keys to the spreadsheet's BotConfig tab first
-                await PrintTrackerApp.Services.GoogleSheetsSyncHelper.SyncBotConfigToGoogleSheetsAsync();
-
-                var service = new PrintTrackerApp.Services.GoogleSheetsService(spreadsheetId, credentialsPath);
+                // Build BotConfig data to include in batch export
+                var botConfigData = new Dictionary<string, string>
+                {
+                    { "TelegramTrackingBotToken", settings.TelegramTrackingBotToken ?? "" },
+                    { "GoogleSheetStartCell", settings.GoogleSheetStartCell ?? "A4" },
+                    { "GoogleSheetDropdownCell", settings.GoogleSheetDropdownCell ?? "A2" },
+                    { "LastUpdated", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") }
+                };
 
                 var tabs = new[] { ("FT", _ftTable), ("PT", _ptTable), ("KH", _khTable) };
                 string sortKey = GetCurrentSortKey();
+
+                var exportDataList = new List<PrintTrackerApp.Services.DashboardExportTabData>();
 
                 foreach (var selectedPeriod in selectedPeriods)
                 {
@@ -3488,19 +3494,11 @@ namespace PrintTrackerApp
                     // Compute filtered print statistics for this period using the exact same calculation function
                     var result = CalculateDashboardData(start, end, currentJobsCopy, "");
 
-                    var tabDict = new Dictionary<string, System.Data.DataTable>
-                    {
-                        { "FT", _ftTable },
-                        { "PT", _ptTable },
-                        { "KH", _khTable }
-                    };
-
-                    // Build and format dashboard data for each tab
+                    // Build data for each tab
                     foreach (var (tabName, table) in tabs)
                     {
                         if (table == null) continue;
 
-                        string startCell = settings.GoogleSheetStartCell;
                         int columns = 4;
                         var records = tabName == "FT" ? result.FtRecords
                                     : tabName == "PT" ? result.PtRecords
@@ -3590,39 +3588,21 @@ namespace PrintTrackerApp
                             sheetNotes.Add(noteRow);
                         }
 
-                        // Write to hidden sheet
-                        string hiddenSheetName = $"_Data_{tabName}_{selectedPeriod}";
-                        await service.ClearSheetAsync(hiddenSheetName, "A1");
-                        await service.WriteAndFormatDashboardDataAsync(hiddenSheetName, sheetData, sheetNotes, startCell);
-                        await service.HideSheetAsync(hiddenSheetName);
-                        await Task.Delay(150);
+                        exportDataList.Add(new PrintTrackerApp.Services.DashboardExportTabData
+                        {
+                            PeriodName = selectedPeriod,
+                            TabName = tabName,
+                            Data = sheetData,
+                            Notes = sheetNotes
+                        });
                     }
-                    await Task.Delay(200);
                 }
 
-                // Setup viewports: dropdowns, default selection, and copy-paste initialization
-                string dropdownCell = settings.GoogleSheetDropdownCell;
-                string startCellViewport = settings.GoogleSheetStartCell;
-                string firstPeriod = selectedPeriods[0];
+                var service = new PrintTrackerApp.Services.GoogleSheetsService(spreadsheetId, credentialsPath);
+                string startCell = settings.GoogleSheetStartCell ?? "A4";
+                string dropdownCell = settings.GoogleSheetDropdownCell ?? "A2";
 
-                foreach (var (tabName, table) in tabs)
-                {
-                    if (table == null) continue;
-
-                    // Clear the viewport data area to avoid old leftover rows
-                    await service.ClearSheetAsync(tabName, "A1");
-
-                    // Add dropdown selection data validation to the configured dropdown cell
-                    await service.SetDropdownValidationAsync(tabName, dropdownCell, selectedPeriods);
-
-                    // Set cell value to the first selected period
-                    await service.WriteCellValueAsync(tabName, dropdownCell, firstPeriod);
-
-                    // Copy the values, notes, and formats from hidden sheet to viewport
-                    string hiddenSource = $"_Data_{tabName}_{firstPeriod}";
-                    await service.CopyRangeAsync(hiddenSource, tabName, startCellViewport);
-                    await Task.Delay(150);
-                }
+                await service.BatchExportDashboardAsync(exportDataList, selectedPeriods, startCell, dropdownCell, botConfigData);
 
                 System.Windows.MessageBox.Show("Successfully exported to Google Sheets!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
             }

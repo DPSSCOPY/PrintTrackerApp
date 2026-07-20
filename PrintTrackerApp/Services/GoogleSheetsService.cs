@@ -12,6 +12,14 @@ using System.Threading.Tasks;
 
 namespace PrintTrackerApp.Services
 {
+    public class DashboardExportTabData
+    {
+        public string PeriodName { get; set; }
+        public string TabName { get; set; }
+        public IList<IList<object>> Data { get; set; }
+        public IList<IList<string>> Notes { get; set; }
+    }
+
     public class GoogleSheetsService
     {
         private static readonly string[] Scopes = { SheetsService.Scope.Spreadsheets, DriveService.Scope.DriveReadonly };
@@ -46,7 +54,7 @@ namespace PrintTrackerApp.Services
             });
         }
 
-        private static async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> apiCall, int maxRetries = 6, int initialDelayMs = 2000)
+        private static async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> apiCall, int maxRetries = 6, int initialDelayMs = 1000)
         {
             int delay = initialDelayMs;
             for (int i = 0; i < maxRetries; i++)
@@ -77,7 +85,7 @@ namespace PrintTrackerApp.Services
             return await apiCall();
         }
 
-        private static async Task ExecuteWithRetryAsync(Func<Task> apiCall, int maxRetries = 6, int initialDelayMs = 2000)
+        private static async Task ExecuteWithRetryAsync(Func<Task> apiCall, int maxRetries = 6, int initialDelayMs = 1000)
         {
             int delay = initialDelayMs;
             for (int i = 0; i < maxRetries; i++)
@@ -217,10 +225,6 @@ namespace PrintTrackerApp.Services
             int sheetId = await EnsureSheetExistsAsync(sheetName);
 
             string normalizedStart = NormalizeStartCell(startCell);
-            int startRow = ParseStartRow(normalizedStart);
-            var colMatch = System.Text.RegularExpressions.Regex.Match(normalizedStart, @"[A-Z]+");
-            int colOffset = colMatch.Success ? ColumnLetterToColumnIndex(colMatch.Value) : 0;
-            int rowOffset = startRow - 1;
 
             // 1. Write text values
             var valueRange = new ValueRange { Values = data };
@@ -228,8 +232,22 @@ namespace PrintTrackerApp.Services
             updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
             await ExecuteWithRetryAsync(() => updateRequest.ExecuteAsync());
 
-            // 2. Build formatting requests
+            // 2. Build formatting requests & execute
+            var requests = BuildDashboardFormattingRequests(sheetId, sheetName, data, notes, startCell);
+            var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = requests };
+            await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync());
+        }
+
+        private List<Request> BuildDashboardFormattingRequests(int sheetId, string sheetName, IList<IList<object>> data, IList<IList<string>> notes = null, string startCell = "A1")
+        {
             var requests = new List<Request>();
+            if (data == null || data.Count == 0) return requests;
+
+            string normalizedStart = NormalizeStartCell(startCell);
+            int startRow = ParseStartRow(normalizedStart);
+            var colMatch = System.Text.RegularExpressions.Regex.Match(normalizedStart, @"[A-Z]+");
+            int colOffset = colMatch.Success ? ColumnLetterToColumnIndex(colMatch.Value) : 0;
+            int rowOffset = startRow - 1;
 
             // Clear old formatting and notes
             requests.Add(new Request
@@ -489,8 +507,212 @@ namespace PrintTrackerApp.Services
                 });
             }
 
-            var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = requests };
-            await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync());
+            return requests;
+        }
+
+        public async Task BatchExportDashboardAsync(List<DashboardExportTabData> tabDataList, List<string> selectedPeriods, string startCell, string dropdownCell, Dictionary<string, string> botConfigData = null)
+        {
+            if (tabDataList == null || tabDataList.Count == 0) return;
+
+            // Step 1: Ensure sheet cache is up to date and create all missing sheets in ONE batch update call
+            await EnsureSheetCacheAsync(forceRefresh: true);
+
+            var requiredSheetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "FT", "PT", "KH"
+            };
+            if (botConfigData != null && botConfigData.Count > 0)
+            {
+                requiredSheetNames.Add("BotConfig");
+            }
+
+            foreach (var item in tabDataList)
+            {
+                requiredSheetNames.Add($"_Data_{item.TabName}_{item.PeriodName}");
+            }
+
+            var addRequests = new List<Request>();
+            foreach (var sheetName in requiredSheetNames)
+            {
+                if (!_sheetCache.ContainsKey(sheetName))
+                {
+                    addRequests.Add(new Request
+                    {
+                        AddSheet = new AddSheetRequest
+                        {
+                            Properties = new SheetProperties { Title = sheetName }
+                        }
+                    });
+                }
+            }
+
+            if (addRequests.Count > 0)
+            {
+                var addBatch = new BatchUpdateSpreadsheetRequest { Requests = addRequests };
+                await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(addBatch, _spreadsheetId).ExecuteAsync());
+                await EnsureSheetCacheAsync(forceRefresh: true);
+            }
+
+            // Step 2: Batch write all values to all sheets in ONE Values.BatchUpdate call
+            var valueRanges = new List<ValueRange>();
+
+            if (botConfigData != null && botConfigData.Count > 0)
+            {
+                var botRows = new List<IList<object>> { new List<object> { "Key", "Value" } };
+                foreach (var kvp in botConfigData)
+                {
+                    botRows.Add(new List<object> { kvp.Key, kvp.Value });
+                }
+                valueRanges.Add(new ValueRange { Range = "'BotConfig'!A1", Values = botRows });
+            }
+
+            string normStart = NormalizeStartCell(startCell);
+            foreach (var item in tabDataList)
+            {
+                string hiddenSheetName = $"_Data_{item.TabName}_{item.PeriodName}";
+                if (item.Data != null && item.Data.Count > 0)
+                {
+                    valueRanges.Add(new ValueRange { Range = $"'{hiddenSheetName}'!{normStart}", Values = item.Data });
+                }
+            }
+
+            string firstPeriod = selectedPeriods.FirstOrDefault() ?? "";
+            string normDropdown = NormalizeStartCell(dropdownCell);
+            foreach (var mainTab in new[] { "FT", "PT", "KH" })
+            {
+                if (_sheetCache.ContainsKey(mainTab))
+                {
+                    valueRanges.Add(new ValueRange
+                    {
+                        Range = $"'{mainTab}'!{normDropdown}",
+                        Values = new List<IList<object>> { new List<object> { firstPeriod } }
+                    });
+                }
+            }
+
+            // Batch clear main tabs prior to copying to clear previous content
+            var clearRanges = new List<string>();
+            foreach (var mainTab in new[] { "FT", "PT", "KH" })
+            {
+                if (_sheetCache.ContainsKey(mainTab))
+                {
+                    clearRanges.Add($"'{mainTab}'!A1:Z1000");
+                }
+            }
+
+            if (clearRanges.Count > 0)
+            {
+                var batchClear = new BatchClearValuesRequest { Ranges = clearRanges };
+                await ExecuteWithRetryAsync(() => _service.Spreadsheets.Values.BatchClear(batchClear, _spreadsheetId).ExecuteAsync());
+            }
+
+            if (valueRanges.Count > 0)
+            {
+                var batchValuesReq = new BatchUpdateValuesRequest
+                {
+                    ValueInputOption = "USER_ENTERED",
+                    Data = valueRanges
+                };
+                await ExecuteWithRetryAsync(() => _service.Spreadsheets.Values.BatchUpdate(batchValuesReq, _spreadsheetId).ExecuteAsync());
+            }
+
+            // Step 3: Batch update formatting, notes, hiding, dropdown validation, and copying in ONE master BatchUpdate call
+            var masterRequests = new List<Request>();
+
+            foreach (var item in tabDataList)
+            {
+                string hiddenSheetName = $"_Data_{item.TabName}_{item.PeriodName}";
+                if (_sheetCache.TryGetValue(hiddenSheetName, out var props) && props.SheetId.HasValue)
+                {
+                    int sheetId = props.SheetId.Value;
+                    var fmtRequests = BuildDashboardFormattingRequests(sheetId, item.TabName, item.Data, item.Notes, startCell);
+                    masterRequests.AddRange(fmtRequests);
+
+                    masterRequests.Add(new Request
+                    {
+                        UpdateSheetProperties = new UpdateSheetPropertiesRequest
+                        {
+                            Properties = new SheetProperties { SheetId = sheetId, Hidden = true },
+                            Fields = "hidden"
+                        }
+                    });
+                }
+            }
+
+            foreach (var mainTab in new[] { "FT", "PT", "KH" })
+            {
+                if (_sheetCache.TryGetValue(mainTab, out var mainProps) && mainProps.SheetId.HasValue)
+                {
+                    int mainSheetId = mainProps.SheetId.Value;
+                    int dropCol = ColumnLetterToColumnIndex(normDropdown);
+                    int dropRow = ParseStartRow(normDropdown) - 1;
+
+                    var conditionValues = selectedPeriods.Select(p => new ConditionValue { UserEnteredValue = p }).ToList();
+                    masterRequests.Add(new Request
+                    {
+                        SetDataValidation = new SetDataValidationRequest
+                        {
+                            Range = new GridRange
+                            {
+                                SheetId = mainSheetId,
+                                StartRowIndex = dropRow,
+                                EndRowIndex = dropRow + 1,
+                                StartColumnIndex = dropCol,
+                                EndColumnIndex = dropCol + 1
+                            },
+                            Rule = new DataValidationRule
+                            {
+                                Condition = new BooleanCondition { Type = "ONE_OF_LIST", Values = conditionValues },
+                                ShowCustomUi = true,
+                                InputMessage = "Choose a period"
+                            }
+                        }
+                    });
+
+                    string hiddenSource = $"_Data_{mainTab}_{firstPeriod}";
+                    if (_sheetCache.TryGetValue(hiddenSource, out var sourceProps) && sourceProps.SheetId.HasValue)
+                    {
+                        int sourceSheetId = sourceProps.SheetId.Value;
+                        int startRow = ParseStartRow(normStart) - 1;
+                        var colMatch = System.Text.RegularExpressions.Regex.Match(normStart, @"[A-Z]+");
+                        int startCol = colMatch.Success ? ColumnLetterToColumnIndex(colMatch.Value) : 0;
+
+                        int endRow = sourceProps.GridProperties?.RowCount ?? 1000;
+                        int endCol = sourceProps.GridProperties?.ColumnCount ?? 26;
+
+                        masterRequests.Add(new Request
+                        {
+                            CopyPaste = new CopyPasteRequest
+                            {
+                                Source = new GridRange
+                                {
+                                    SheetId = sourceSheetId,
+                                    StartRowIndex = startRow,
+                                    EndRowIndex = endRow,
+                                    StartColumnIndex = startCol,
+                                    EndColumnIndex = endCol
+                                },
+                                Destination = new GridRange
+                                {
+                                    SheetId = mainSheetId,
+                                    StartRowIndex = startRow,
+                                    EndRowIndex = endRow,
+                                    StartColumnIndex = startCol,
+                                    EndColumnIndex = endCol
+                                },
+                                PasteType = "PASTE_NORMAL",
+                                PasteOrientation = "NORMAL"
+                            }
+                        });
+                    }
+                }
+            }
+
+            if (masterRequests.Count > 0)
+            {
+                var masterBatch = new BatchUpdateSpreadsheetRequest { Requests = masterRequests };
+                await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(masterBatch, _spreadsheetId).ExecuteAsync());
+            }
         }
 
         private string NormalizeStartCell(string startCell)

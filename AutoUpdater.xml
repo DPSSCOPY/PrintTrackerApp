@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <item>
-    <version>1.0.36.0</version>
-    <url>https://github.com/DPSSCOPY/PrintTrackerApp/releases/download/v1.0.36/PrintTrackerApp_v1.0.36.zip</url>
-    <changelog>https://github.com/DPSSCOPY/PrintTrackerApp/releases/tag/v1.0.36</changelog>
+    <version>1.0.37.0</version>
+    <url>https://github.com/DPSSCOPY/PrintTrackerApp/releases/download/v1.0.37/PrintTrackerApp_v1.0.37.zip</url>
+    <changelog>https://github.com/DPSSCOPY/PrintTrackerApp/releases/tag/v1.0.37</changelog>
     <mandatory>false</mandatory>
 </item>

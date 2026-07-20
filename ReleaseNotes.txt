@@ -1,3 +1,8 @@
+Update Version 1.0.37 Features:
+- Fixed Google Sheets Export rate limit (HTTP 429 TooManyRequests) by batching API write requests from ~75 calls down to 3 calls total.
+- Fixed BadRequest error caused by invalid string formatting in BatchUpdateValuesRequest ValueInputOption.
+- Dramatically improved export speed to ~1-2 seconds.
+
 Update Version 1.0.36 Features:
 - Resolved Google Sheets Export TooManyRequests (HTTP 429) quota exceeded error by implementing sheet metadata caching and exponential backoff retry.
 - Added rate pacing delays between batch export loops to guarantee 100% export success on large datasets.
