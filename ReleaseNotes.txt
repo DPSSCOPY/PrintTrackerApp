@@ -1,3 +1,8 @@
+Update Version 1.0.35 Features:
+- Fixed settings data loss issue on app update: implemented robust multi-location persistence (%APPDATA%, %PROGRAMDATA%, base directory & backups).
+- Implemented automatic fallback hydration and merge protection in SettingsManager to prevent overwriting valid configurations with empty default values.
+- Updated Telegram Bot script to search across all application data directories for local appsettings.json.
+
 Update Version 1.0.34 Features:
 - Added inspirational quote banner to status bar with auto-refresh every 30 seconds and dynamic color styling.
 - Fixed startup shortcut configuration in setup.iss to launch app smoothly without arguments.

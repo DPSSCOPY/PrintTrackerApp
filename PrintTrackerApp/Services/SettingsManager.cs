@@ -117,68 +117,200 @@ namespace PrintTrackerApp.Services
 
     public static class SettingsManager
     {
-        private static readonly string AppDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
-        private static readonly string SettingsFile = Path.Combine(AppDataFolder, "appsettings.json");
-        private static readonly string LegacySettingsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+        private static readonly string UserAppDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
+        private static readonly string CommonAppDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PrintTrackerApp");
+        private static readonly string BaseDirFolder = AppDomain.CurrentDomain.BaseDirectory;
+
+        private static readonly string UserSettingsFile = Path.Combine(UserAppDataFolder, "appsettings.json");
+        private static readonly string CommonSettingsFile = Path.Combine(CommonAppDataFolder, "appsettings.json");
+        private static readonly string LegacySettingsFile = Path.Combine(BaseDirFolder, "appsettings.json");
+
+        private static readonly string UserSettingsBak = Path.Combine(UserAppDataFolder, "appsettings.json.bak");
+        private static readonly string CommonSettingsBak = Path.Combine(CommonAppDataFolder, "appsettings.json.bak");
+        private static readonly string LegacySettingsBak = Path.Combine(BaseDirFolder, "appsettings.json.bak");
+
+        private static readonly JsonSerializerOptions JsonOpts = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            AllowTrailingCommas = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
+        private static readonly object SyncLock = new object();
 
         public static AppSettings LoadSettings()
         {
-            // Migrate legacy settings if AppData settings don't exist yet
-            if (!File.Exists(SettingsFile) && File.Exists(LegacySettingsFile))
+            lock (SyncLock)
             {
-                try
+                var candidateFiles = new[]
                 {
-                    Directory.CreateDirectory(AppDataFolder);
-                    File.Copy(LegacySettingsFile, SettingsFile);
-                }
-                catch { }
-            }
+                    UserSettingsFile,
+                    CommonSettingsFile,
+                    LegacySettingsFile,
+                    UserSettingsBak,
+                    CommonSettingsBak,
+                    LegacySettingsBak
+                };
 
-            string fileToLoad = File.Exists(SettingsFile) ? SettingsFile : (File.Exists(LegacySettingsFile) ? LegacySettingsFile : null);
+                AppSettings? bestSettings = null;
 
-            if (fileToLoad != null)
-            {
-                try
+                foreach (var filePath in candidateFiles)
                 {
-                    string json = File.ReadAllText(fileToLoad);
-                    AppSettings loadedSettings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
-                    
-                    // Migration: If no profiles exist, create a default one from legacy properties
-                    if (loadedSettings.PrinterProfiles == null || loadedSettings.PrinterProfiles.Count == 0)
+                    if (File.Exists(filePath))
                     {
-                        loadedSettings.PrinterProfiles = new List<PrinterProfile>();
-                        loadedSettings.PrinterProfiles.Add(new PrinterProfile
+                        try
+                        {
+                            string json = File.ReadAllText(filePath);
+                            if (!string.IsNullOrWhiteSpace(json))
+                            {
+                                AppSettings? candidate = JsonSerializer.Deserialize<AppSettings>(json, JsonOpts);
+                                if (candidate != null)
+                                {
+                                    if (bestSettings == null)
+                                    {
+                                        bestSettings = candidate;
+                                    }
+                                    else
+                                    {
+                                        // Hydrate any missing critical fields from older or secondary sources
+                                        MergeSettings(bestSettings, candidate);
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"SettingsManager Load Error ({filePath}): " + ex.Message);
+                        }
+                    }
+                }
+
+                if (bestSettings == null)
+                {
+                    bestSettings = new AppSettings();
+                }
+
+                // Ensure PrinterProfiles is initialized
+                if (bestSettings.PrinterProfiles == null || bestSettings.PrinterProfiles.Count == 0)
+                {
+                    bestSettings.PrinterProfiles = new List<PrinterProfile>
+                    {
+                        new PrinterProfile
                         {
                             ProfileName = "Default SAVIN",
                             FoxitPropertiesWindowName = "Properties",
                             FoxitJobDetailsWindowName = "Job Type Details",
-                            SavinDetailsBtnId = loadedSettings.SavinDetailsBtnId ?? "1018",
-                            SavinUserIdTextBoxId = loadedSettings.SavinUserIdTextBoxId ?? "1004",
-                            SavinFileNameTextBoxId = loadedSettings.SavinFileNameTextBoxId ?? "1007",
-                            SavinDetailsOkBtnId = loadedSettings.SavinDetailsOkBtnId ?? "1",
-                            SavinPropertiesOkBtnId = loadedSettings.SavinPropertiesOkBtnId ?? "1"
-                        });
-                        loadedSettings.ActivePrinterProfileName = "Default SAVIN";
-                    }
-
-                    return loadedSettings;
+                            SavinDetailsBtnId = bestSettings.SavinDetailsBtnId ?? "1018",
+                            SavinUserIdTextBoxId = bestSettings.SavinUserIdTextBoxId ?? "1004",
+                            SavinFileNameTextBoxId = bestSettings.SavinFileNameTextBoxId ?? "1007",
+                            SavinDetailsOkBtnId = bestSettings.SavinDetailsOkBtnId ?? "1",
+                            SavinPropertiesOkBtnId = bestSettings.SavinPropertiesOkBtnId ?? "1"
+                        }
+                    };
+                    bestSettings.ActivePrinterProfileName = "Default SAVIN";
                 }
-                catch { }
+
+                return bestSettings;
             }
-            return new AppSettings();
+        }
+
+        private static void MergeSettings(AppSettings target, AppSettings source)
+        {
+            if (target == null || source == null) return;
+
+            if (string.IsNullOrWhiteSpace(target.GoogleSpreadsheetId) && !string.IsNullOrWhiteSpace(source.GoogleSpreadsheetId))
+                target.GoogleSpreadsheetId = source.GoogleSpreadsheetId;
+
+            if (string.IsNullOrWhiteSpace(target.PrintLogSpreadsheetId) && !string.IsNullOrWhiteSpace(source.PrintLogSpreadsheetId))
+                target.PrintLogSpreadsheetId = source.PrintLogSpreadsheetId;
+
+            if (string.IsNullOrWhiteSpace(target.TeacherDataSpreadsheetId) && !string.IsNullOrWhiteSpace(source.TeacherDataSpreadsheetId))
+                target.TeacherDataSpreadsheetId = source.TeacherDataSpreadsheetId;
+
+            if (string.IsNullOrWhiteSpace(target.TelegramBotToken) && !string.IsNullOrWhiteSpace(source.TelegramBotToken))
+                target.TelegramBotToken = source.TelegramBotToken;
+
+            if (string.IsNullOrWhiteSpace(target.TelegramTrackingBotToken) && !string.IsNullOrWhiteSpace(source.TelegramTrackingBotToken))
+                target.TelegramTrackingBotToken = source.TelegramTrackingBotToken;
+
+            if (string.IsNullOrWhiteSpace(target.TelegramChatId) && !string.IsNullOrWhiteSpace(source.TelegramChatId))
+                target.TelegramChatId = source.TelegramChatId;
+
+            if (string.IsNullOrWhiteSpace(target.FoxitPath) && !string.IsNullOrWhiteSpace(source.FoxitPath))
+                target.FoxitPath = source.FoxitPath;
+
+            if (string.IsNullOrWhiteSpace(target.HoldPrintUserId) && !string.IsNullOrWhiteSpace(source.HoldPrintUserId))
+                target.HoldPrintUserId = source.HoldPrintUserId;
+
+            if (string.IsNullOrWhiteSpace(target.PrinterIp) && !string.IsNullOrWhiteSpace(source.PrinterIp))
+                target.PrinterIp = source.PrinterIp;
+
+            if (string.IsNullOrWhiteSpace(target.PrinterName) && !string.IsNullOrWhiteSpace(source.PrinterName))
+                target.PrinterName = source.PrinterName;
+
+            if ((target.PrinterProfiles == null || target.PrinterProfiles.Count == 0) && source.PrinterProfiles != null && source.PrinterProfiles.Count > 0)
+            {
+                target.PrinterProfiles = source.PrinterProfiles;
+                target.ActivePrinterProfileName = source.ActivePrinterProfileName;
+            }
         }
 
         public static void SaveSettings(AppSettings settings)
         {
+            if (settings == null) return;
+
+            lock (SyncLock)
+            {
+                try
+                {
+                    // Protection: Load existing disk settings and merge non-empty properties into incoming settings to prevent wiping credentials
+                    AppSettings existingDiskSettings = LoadSettings();
+                    if (existingDiskSettings != null)
+                    {
+                        MergeSettings(settings, existingDiskSettings);
+                    }
+
+                    string json = JsonSerializer.Serialize(settings, JsonOpts);
+
+                    // Save to User AppData
+                    SaveToLocation(UserSettingsFile, UserSettingsBak, json);
+
+                    // Save to Common ProgramData (accessible by all user contexts / admin)
+                    SaveToLocation(CommonSettingsFile, CommonSettingsBak, json);
+
+                    // Save to Legacy BaseDirectory if writable
+                    SaveToLocation(LegacySettingsFile, LegacySettingsBak, json);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine("SettingsManager Save Error: " + ex.Message);
+                }
+            }
+        }
+
+        private static void SaveToLocation(string filePath, string bakPath, string json)
+        {
             try
             {
-                if (!Directory.Exists(AppDataFolder))
+                string? dir = Path.GetDirectoryName(filePath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 {
-                    Directory.CreateDirectory(AppDataFolder);
+                    Directory.CreateDirectory(dir);
                 }
-                
-                string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-                SafeFileHelper.WriteAllText(SettingsFile, json);
+
+                // Create backup of existing file before writing
+                if (File.Exists(filePath))
+                {
+                    try
+                    {
+                        File.Copy(filePath, bakPath, overwrite: true);
+                    }
+                    catch { }
+                }
+
+                SafeFileHelper.WriteAllText(filePath, json);
             }
             catch { }
         }

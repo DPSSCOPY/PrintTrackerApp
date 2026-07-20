@@ -22,20 +22,35 @@ def escape_markdown(text):
         text = text.replace(char, f'\\{char}')
     return text
 
+def get_local_settings_paths():
+    paths = []
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        paths.append(os.path.join(appdata, "PrintTrackerApp", "appsettings.json"))
+        paths.append(os.path.join(appdata, "PrintTrackerApp", "appsettings.json.bak"))
+    programdata = os.environ.get("PROGRAMDATA", "C:\\ProgramData")
+    if programdata:
+        paths.append(os.path.join(programdata, "PrintTrackerApp", "appsettings.json"))
+        paths.append(os.path.join(programdata, "PrintTrackerApp", "appsettings.json.bak"))
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    paths.append(os.path.join(base_dir, "appsettings.json"))
+    paths.append(os.path.join(os.path.dirname(base_dir), "appsettings.json"))
+    return paths
+
 def load_local_spreadsheet_id():
     """Attempts to load Spreadsheet ID from local C# appsettings.json if running on Windows."""
     try:
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            settings_path = os.path.join(appdata, "PrintTrackerApp", "appsettings.json")
+        for settings_path in get_local_settings_paths():
             if os.path.exists(settings_path):
-                with open(settings_path, 'r', encoding='utf-8') as f:
-                    settings = json.load(f)
-                    # Check PrintLogSpreadsheetId first, then fallback to GoogleSpreadsheetId
-                    sheet_id = settings.get("PrintLogSpreadsheetId") or settings.get("GoogleSpreadsheetId")
-                    if sheet_id:
-                        print(f"Loaded Spreadsheet ID from local C# settings: {sheet_id}")
-                        return sheet_id
+                try:
+                    with open(settings_path, 'r', encoding='utf-8') as f:
+                        settings = json.load(f)
+                        sheet_id = settings.get("PrintLogSpreadsheetId") or settings.get("GoogleSpreadsheetId")
+                        if sheet_id:
+                            print(f"Loaded Spreadsheet ID from local C# settings ({settings_path}): {sheet_id}")
+                            return sheet_id
+                except Exception:
+                    pass
     except Exception as e:
         print(f"Could not load Spreadsheet ID from local C# settings: {e}")
     return None
@@ -164,16 +179,17 @@ def get_bot_token_from_sheet():
 def get_bot_token_from_local_settings():
     """Attempts to load Telegram Tracking Bot Token or general Bot Token from local appsettings.json."""
     try:
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            settings_path = os.path.join(appdata, "PrintTrackerApp", "appsettings.json")
+        for settings_path in get_local_settings_paths():
             if os.path.exists(settings_path):
-                with open(settings_path, 'r', encoding='utf-8') as f:
-                    settings = json.load(f)
-                    token = settings.get("TelegramTrackingBotToken") or settings.get("TelegramBotToken")
-                    if token:
-                        print(f"Loaded Telegram Bot Token from local C# settings: {token[:8]}...")
-                        return token
+                try:
+                    with open(settings_path, 'r', encoding='utf-8') as f:
+                        settings = json.load(f)
+                        token = settings.get("TelegramTrackingBotToken") or settings.get("TelegramBotToken")
+                        if token:
+                            print(f"Loaded Telegram Bot Token from local C# settings ({settings_path}): {token[:8]}...")
+                            return token
+                except Exception:
+                    pass
     except Exception as e:
         print(f"Could not load Telegram Bot Token from local C# settings: {e}")
     return None

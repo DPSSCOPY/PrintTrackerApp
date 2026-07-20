@@ -25,8 +25,7 @@ namespace PrintTrackerApp.Services
                     return;
                 }
 
-                string appDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
-                string credentialsPath = Path.Combine(appDataFolder, "google_credentials.json");
+                string credentialsPath = GetGoogleCredentialsPath();
                 if (!File.Exists(credentialsPath))
                 {
                     System.Diagnostics.Debug.WriteLine("Google Sheets Sync: google_credentials.json not found.");
@@ -120,8 +119,7 @@ namespace PrintTrackerApp.Services
                     : settings.GoogleSpreadsheetId;
                 if (string.IsNullOrWhiteSpace(spreadsheetId)) return;
 
-                string appDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
-                string credentialsPath = Path.Combine(appDataFolder, "google_credentials.json");
+                string credentialsPath = GetGoogleCredentialsPath();
                 if (!File.Exists(credentialsPath)) return;
 
                 var service = new GoogleSheetsService(spreadsheetId, credentialsPath);
@@ -147,6 +145,20 @@ namespace PrintTrackerApp.Services
             {
                 System.Diagnostics.Debug.WriteLine("Google Sheets BotConfig Sync Error: " + ex.Message);
             }
+        }
+
+        private static string GetGoogleCredentialsPath()
+        {
+            string userAppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp", "google_credentials.json");
+            if (File.Exists(userAppData)) return userAppData;
+
+            string commonAppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PrintTrackerApp", "google_credentials.json");
+            if (File.Exists(commonAppData)) return commonAppData;
+
+            string baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "google_credentials.json");
+            if (File.Exists(baseDir)) return baseDir;
+
+            return userAppData;
         }
     }
 }
