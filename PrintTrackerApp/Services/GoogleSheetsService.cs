@@ -590,13 +590,17 @@ namespace PrintTrackerApp.Services
                 }
             }
 
-            // Batch clear main tabs prior to copying to clear previous content
+            // Batch clear main tabs prior to copying to clear previous content (from startCell row downwards to preserve header rows above)
+            int startRowNumber = ParseStartRow(normStart);
+            var colMatchStr = System.Text.RegularExpressions.Regex.Match(normStart, @"[A-Z]+");
+            string colLetterStr = colMatchStr.Success ? colMatchStr.Value : "A";
+
             var clearRanges = new List<string>();
             foreach (var mainTab in new[] { "FT", "PT", "KH" })
             {
                 if (_sheetCache.ContainsKey(mainTab))
                 {
-                    clearRanges.Add($"'{mainTab}'!A1:Z1000");
+                    clearRanges.Add($"'{mainTab}'!{colLetterStr}{startRowNumber}:Z1000");
                 }
             }
 
