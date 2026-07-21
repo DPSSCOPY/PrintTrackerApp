@@ -52,7 +52,8 @@ namespace PrintTrackerApp
     {
         ErrorFiles,
         SentToPrinter,
-        PrintComplete
+        PrintComplete,
+        Processing
     }
 
     public partial class ErrorFilesWindow : Window
@@ -80,6 +81,13 @@ namespace PrintTrackerApp
             {
                 this.Title = "Print Complete Files Manager";
                 txtTitle.Text = "Manage Print Complete Files";
+                btnMoveSelected.Visibility = Visibility.Collapsed;
+                if (colSelect != null) colSelect.Visibility = Visibility.Collapsed;
+            }
+            else if (_mode == ErrorWindowMode.Processing)
+            {
+                this.Title = "Processing Files Manager";
+                txtTitle.Text = "Manage Processing Files";
             }
 
             dataGridFiles.ItemsSource = _errorFiles;
@@ -109,15 +117,32 @@ namespace PrintTrackerApp
             }
         }
 
+        private void ChkSelectAll_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.CheckBox chk)
+            {
+                bool isChecked = chk.IsChecked ?? false;
+                foreach (var file in _errorFiles)
+                {
+                    file.IsSelected = isChecked;
+                }
+            }
+        }
+
         private void LoadFiles()
         {
             _errorFiles.Clear();
+            if (chkSelectAll != null)
+            {
+                chkSelectAll.IsChecked = false;
+            }
+
             if (string.IsNullOrEmpty(_sourceFolderPath) || !Directory.Exists(_sourceFolderPath))
                 return;
 
-            if (_mode == ErrorWindowMode.SentToPrinter || _mode == ErrorWindowMode.PrintComplete)
+            if (_mode == ErrorWindowMode.SentToPrinter || _mode == ErrorWindowMode.PrintComplete || _mode == ErrorWindowMode.Processing)
             {
-                string targetSubfolder = _mode == ErrorWindowMode.SentToPrinter ? "Sent to Printer" : "Print Complete";
+                string targetSubfolder = _mode == ErrorWindowMode.SentToPrinter ? "Sent to Printer" : (_mode == ErrorWindowMode.Processing ? "Processing" : "Print Complete");
                 string folderPath = Path.Combine(_sourceFolderPath, targetSubfolder);
                 if (Directory.Exists(folderPath))
                 {

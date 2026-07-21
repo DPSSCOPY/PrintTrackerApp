@@ -70,7 +70,10 @@
                       BorderThickness="0" Background="Transparent" RowBackground="White" AlternatingRowBackground="#F9FAFB"
                       HeadersVisibility="Column" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#E5E7EB">
                 <DataGrid.Columns>
-                    <DataGridTemplateColumn Header="Select" Width="60">
+                    <DataGridTemplateColumn x:Name="colSelect" Width="60">
+                        <DataGridTemplateColumn.Header>
+                            <CheckBox x:Name="chkSelectAll" HorizontalAlignment="Center" VerticalAlignment="Center" Click="ChkSelectAll_Click" ToolTip="Select All / Deselect All"/>
+                        </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -86,7 +89,7 @@
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Refresh" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0" Click="BtnRefresh_Click"/>
-            <Button Content="Move Selected to Main Folder" Style="{StaticResource PrimaryButton}" Click="BtnMoveSelected_Click"/>
+            <Button x:Name="btnMoveSelected" Content="Move Selected to Main Folder" Style="{StaticResource PrimaryButton}" Click="BtnMoveSelected_Click"/>
         </StackPanel>
     </Grid>
 </Window>

@@ -895,6 +895,7 @@ namespace PrintTrackerApp
                     txtDuplicateCount.Text = duplicateCount.ToString();
 
                     txtSentToPrinterCount.Text = _historicalPrintJobs.Count(j => (j.Status ?? "").Contains("Sent to Printer", StringComparison.OrdinalIgnoreCase)).ToString();
+                    txtProcessingCount.Text = _historicalPrintJobs.Count(j => (j.Status ?? "").Contains("Processing", StringComparison.OrdinalIgnoreCase)).ToString();
                     txtPrintCompleteCount.Text = _historicalPrintJobs.Count(j => (j.Status ?? "").Contains("Print Complete", StringComparison.OrdinalIgnoreCase) || (j.Status ?? "").Contains("Successfully Printed", StringComparison.OrdinalIgnoreCase)).ToString();
 
                     var errorJobs = _historicalPrintJobs.Where(j => 
@@ -919,6 +920,7 @@ namespace PrintTrackerApp
                     txtPendingCount.Text = "0";
                     txtSubfolderCount.Text = "0";
                     txtSentToPrinterCount.Text = "0";
+                    txtProcessingCount.Text = "0";
                     txtDuplicateCount.Text = "0";
                     txtErrorFilesCount.Text = "0";
                     txtPrintCompleteCount.Text = "0";
@@ -1000,6 +1002,19 @@ namespace PrintTrackerApp
                         catch { }
                     }
                     txtSentToPrinterCount.Text = sentToPrinterCount.ToString();
+
+                    // Count Processing files
+                    int processingCount = 0;
+                    string processingDir = System.IO.Path.Combine(_appSettings.SourceFolderPath, "Processing");
+                    if (System.IO.Directory.Exists(processingDir))
+                    {
+                        try
+                        {
+                            processingCount = System.IO.Directory.GetFiles(processingDir, "*.pdf").Length;
+                        }
+                        catch { }
+                    }
+                    txtProcessingCount.Text = processingCount.ToString();
 
                     // Count Print Complete files
                     int printCompleteCount = 0;
@@ -2951,6 +2966,15 @@ private void BtnInspectUI_Click(object sender, RoutedEventArgs e)
         private void BtnShowSentToPrinter_Click(object sender, RoutedEventArgs e)
         {
             var window = new ErrorFilesWindow(_appSettings.SourceFolderPath, ErrorWindowMode.SentToPrinter, RemoveJobsBeforeMove);
+            window.Owner = this;
+            window.ShowDialog();
+            
+            UpdateVerificationPanel();
+        }
+
+        private void BtnShowProcessing_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new ErrorFilesWindow(_appSettings.SourceFolderPath, ErrorWindowMode.Processing, RemoveJobsBeforeMove);
             window.Owner = this;
             window.ShowDialog();
             
