@@ -321,13 +321,33 @@ namespace PrintTrackerApp
                 txtCredentialsStatus.Text = "❌ Not Loaded";
                 txtCredentialsStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 53, 69)); // #DC3545
             }
+
+            string dashCredPath = System.IO.Path.Combine(appDataFolder, "google_credentials_dashboard.json");
+            if (System.IO.File.Exists(dashCredPath))
+            {
+                txtDashboardCredentialsStatus.Text = "✅ Loaded";
+                txtDashboardCredentialsStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(25, 135, 84)); // #198754
+            }
+            else
+            {
+                if (System.IO.File.Exists(credPath))
+                {
+                    txtDashboardCredentialsStatus.Text = "ℹ️ Using Main JSON";
+                    txtDashboardCredentialsStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(13, 110, 253)); // #0D6EFD
+                }
+                else
+                {
+                    txtDashboardCredentialsStatus.Text = "❌ Not Loaded";
+                    txtDashboardCredentialsStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 53, 69)); // #DC3545
+                }
+            }
         }
 
         private void BtnUploadCredentials_Click(object sender, RoutedEventArgs e)
         {
             Microsoft.Win32.OpenFileDialog openFileDialog = new Microsoft.Win32.OpenFileDialog();
             openFileDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*";
-            openFileDialog.Title = "Select google_credentials.json";
+            openFileDialog.Title = "Select Print Log / Bot google_credentials.json";
             
             if (openFileDialog.ShowDialog() == true)
             {
@@ -343,11 +363,40 @@ namespace PrintTrackerApp
                     System.IO.File.Copy(openFileDialog.FileName, destPath, true);
                     
                     UpdateCredentialsStatus();
-                    System.Windows.MessageBox.Show("Credentials uploaded and stored securely in AppData.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                    System.Windows.MessageBox.Show("Print Log / Bot Credentials uploaded and stored securely in AppData.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 catch (Exception ex)
                 {
                     System.Windows.MessageBox.Show($"Error uploading credentials: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void BtnUploadDashboardCredentials_Click(object sender, RoutedEventArgs e)
+        {
+            Microsoft.Win32.OpenFileDialog openFileDialog = new Microsoft.Win32.OpenFileDialog();
+            openFileDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*";
+            openFileDialog.Title = "Select Dashboard Credentials JSON (google_credentials_dashboard.json)";
+            
+            if (openFileDialog.ShowDialog() == true)
+            {
+                try
+                {
+                    string appDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
+                    if (!System.IO.Directory.Exists(appDataFolder))
+                    {
+                        System.IO.Directory.CreateDirectory(appDataFolder);
+                    }
+                    
+                    string destPath = System.IO.Path.Combine(appDataFolder, "google_credentials_dashboard.json");
+                    System.IO.File.Copy(openFileDialog.FileName, destPath, true);
+                    
+                    UpdateCredentialsStatus();
+                    System.Windows.MessageBox.Show("Dashboard Export Credentials uploaded and stored securely in AppData.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    System.Windows.MessageBox.Show($"Error uploading dashboard credentials: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }

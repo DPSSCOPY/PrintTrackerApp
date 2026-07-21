@@ -1,5 +1,5 @@
-Update Version 1.0.39 Features:
-- Fixed Google Sheets Export rate limit (HTTP 429 TooManyRequests) by optimizing API request payloads and adding jittered exponential backoff retries.
-- Added Processing Status counter to main toolbar for real-time tracking of files currently being printed/processed.
-- Implemented Processing Details Window allowing users to view, manage, and reprint processing files.
+Update Version 1.0.40 Features:
+- Added support for separate Google Credentials JSON files in Settings (Print Log / Bot JSON vs Dashboard Export JSON).
+- Solved Google Sheets API rate limiting & quota throttling by allowing dedicated Service Account credentials for Dashboard Export.
+- Enhanced credentials status tracking and automatic fallback resolution in settings.
 

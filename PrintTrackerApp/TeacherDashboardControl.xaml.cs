@@ -1927,8 +1927,7 @@ namespace PrintTrackerApp
             string spreadsheetId = settings.TeacherDataSpreadsheetId;
             if (string.IsNullOrWhiteSpace(spreadsheetId)) return;
 
-            string appDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
-            string credentialsPath = System.IO.Path.Combine(appDataFolder, "google_credentials.json");
+            string credentialsPath = GetDashboardCredentialsPath();
             if (!System.IO.File.Exists(credentialsPath)) return;
 
             var service = new PrintTrackerApp.Services.GoogleSheetsService(spreadsheetId, credentialsPath);
@@ -3415,11 +3414,10 @@ namespace PrintTrackerApp
                 return;
             }
 
-            string appDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
-            string credentialsPath = System.IO.Path.Combine(appDataFolder, "google_credentials.json");
+            string credentialsPath = GetDashboardCredentialsPath();
             if (!System.IO.File.Exists(credentialsPath))
             {
-                System.Windows.MessageBox.Show($"Could not find 'google_credentials.json' at {credentialsPath}.", "Credentials Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show($"Could not find Google credentials JSON file at {credentialsPath}.", "Credentials Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -3639,11 +3637,10 @@ namespace PrintTrackerApp
                 return;
             }
 
-            string appDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
-            string credentialsPath = System.IO.Path.Combine(appDataFolder, "google_credentials.json");
+            string credentialsPath = GetDashboardCredentialsPath();
             if (!System.IO.File.Exists(credentialsPath))
             {
-                System.Windows.MessageBox.Show($"Could not find 'google_credentials.json' at {credentialsPath}.", "Credentials Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
+                System.Windows.MessageBox.Show($"Could not find Google credentials JSON file at {credentialsPath}.", "Credentials Missing", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -3692,6 +3689,15 @@ namespace PrintTrackerApp
                 var btn = sender as System.Windows.Controls.Button;
                 if (btn != null) btn.IsEnabled = true;
             }
+        }
+
+        private string GetDashboardCredentialsPath()
+        {
+            string appDataFolder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PrintTrackerApp");
+            string dashPath = System.IO.Path.Combine(appDataFolder, "google_credentials_dashboard.json");
+            if (System.IO.File.Exists(dashPath)) return dashPath;
+
+            return System.IO.Path.Combine(appDataFolder, "google_credentials.json");
         }
 
         private class PrintGroupData

@@ -219,10 +219,36 @@
                             <TextBlock Text="Dropdown Cell (e.g., A2):" FontWeight="SemiBold" Foreground="#374151" Margin="0,0,0,5"/>
                             <TextBox x:Name="txtGoogleSheetDropdownCell" Padding="6" BorderBrush="#D1D5DB" ToolTip="e.g. A2 (dropdown cell for selecting week/monthly)"/>
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,5,0,0" VerticalAlignment="Center">
-                            <Button Content="Upload Credentials JSON" Padding="10,5" Background="#0D6EFD" Foreground="White" BorderThickness="0" Click="BtnUploadCredentials_Click"/>
-                            <TextBlock x:Name="txtCredentialsStatus" Text="❌ Not Loaded" Margin="10,0,0,0" VerticalAlignment="Center" FontWeight="Bold" Foreground="#DC3545"/>
-                        </StackPanel>
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Box 1: Print Log / Telegram Bot Credentials -->
+                            <Border Grid.Column="0" Margin="0,0,5,0" Padding="10" Background="#F9FAFB" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="6">
+                                <StackPanel>
+                                    <TextBlock Text="Print Log / Bot JSON" FontWeight="Bold" Foreground="#374151" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Used for Telegram Bot &amp; Print Log sync." FontSize="11" Foreground="#6B7280" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Content="Upload JSON" Padding="8,4" Background="#0D6EFD" Foreground="White" BorderThickness="0" Click="BtnUploadCredentials_Click"/>
+                                        <TextBlock x:Name="txtCredentialsStatus" Text="❌ Not Loaded" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="Bold" Foreground="#DC3545"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Box 2: Dashboard Export Credentials -->
+                            <Border Grid.Column="1" Margin="5,0,0,0" Padding="10" Background="#F9FAFB" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="6">
+                                <StackPanel>
+                                    <TextBlock Text="Dashboard Export JSON" FontWeight="Bold" Foreground="#374151" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Dedicated for Dashboard Export." FontSize="11" Foreground="#6B7280" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Content="Upload JSON" Padding="8,4" Background="#107C41" Foreground="White" BorderThickness="0" Click="BtnUploadDashboardCredentials_Click"/>
+                                        <TextBlock x:Name="txtDashboardCredentialsStatus" Text="❌ Not Loaded" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="Bold" Foreground="#DC3545"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
                     </StackPanel>
                 </GroupBox>
 
