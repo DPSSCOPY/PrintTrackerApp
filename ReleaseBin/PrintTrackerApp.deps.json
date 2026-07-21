@@ -6,7 +6,7 @@
   "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v8.0": {
-      "PrintTrackerApp/1.0.38.0": {
+      "PrintTrackerApp/1.0.39.0": {
         "dependencies": {
           "Autoupdater.NET.Official": "1.9.2",
           "ExcelDataReader": "3.9.0",
@@ -416,7 +416,7 @@
     }
   },
   "libraries": {
-    "PrintTrackerApp/1.0.38.0": {
+    "PrintTrackerApp/1.0.39.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

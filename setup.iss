@@ -1,11 +1,16 @@
+#define MyAppVersion "1.0.39"
+#define MyAppName "Print Tracker App"
+#define MyAppExeName "PrintTrackerApp.exe"
+
 [Setup]
-AppName=Print Tracker App
-AppVersion=1.0.38
+AppId={{D3776C55-481F-438B-8D52-94429E2F9C7D}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
 Publisher=DPSS
-DefaultDirName={autopf}\PrintTrackerApp
-DefaultGroupName=PrintTrackerApp
-UninstallDisplayIcon={app}\PrintTrackerApp.exe
-OutputBaseFilename=PrintTrackerApp_Setup_v1.0.38
+DefaultDirName={autopf}\{#MyAppName}
+DefaultGroupName={#MyAppName}
+UninstallDisplayIcon={app}\{#MyAppExeName}
+OutputBaseFilename=PrintTrackerApp_Setup_v1.0.39
 Compression=lzma
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
