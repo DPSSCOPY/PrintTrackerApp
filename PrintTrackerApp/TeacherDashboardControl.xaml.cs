@@ -3608,7 +3608,19 @@ namespace PrintTrackerApp
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show($"Error exporting to Google Sheets: {ex.Message}", "Export Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                if (ex.Message.Contains("TooManyRequests") || ex.Message.Contains("429") || ex.Message.Contains("Quota exceeded"))
+                {
+                    System.Windows.MessageBox.Show(
+                        "ការ Export ត្រូវបានផ្អាកដោយសារតែ Google Sheets ដែនកំណត់ (Quota Exceeded / 429 Too Many Requests)។\n" +
+                        "សូមរង់ចាំប្រហែល ១ នាទី រួចព្យាយាម Export ម្តងទៀត។\n\n" +
+                        "Google Sheets export was paused because Google API quota limit was exceeded.\n" +
+                        "Please wait about 1 minute and try exporting again.",
+                        "Quota Exceeded / ដែនកំណត់ទិន្នន័យ", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                else
+                {
+                    System.Windows.MessageBox.Show($"Error exporting to Google Sheets: {ex.Message}", "Export Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
             finally
             {

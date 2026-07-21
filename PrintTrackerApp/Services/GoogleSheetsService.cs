@@ -54,7 +54,9 @@ namespace PrintTrackerApp.Services
             });
         }
 
-        private static async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> apiCall, int maxRetries = 6, int initialDelayMs = 1000)
+        private static readonly Random _jitterRandom = new Random();
+
+        private static async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> apiCall, int maxRetries = 8, int initialDelayMs = 2000)
         {
             int delay = initialDelayMs;
             for (int i = 0; i < maxRetries; i++)
@@ -65,27 +67,38 @@ namespace PrintTrackerApp.Services
                 }
                 catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.TooManyRequests ||
                                                           (int)ex.HttpStatusCode == 429 ||
+                                                          (ex.Message != null && (ex.Message.Contains("429") || ex.Message.Contains("Quota exceeded"))) ||
                                                           ex.HttpStatusCode == System.Net.HttpStatusCode.ServiceUnavailable ||
                                                           ex.HttpStatusCode == System.Net.HttpStatusCode.InternalServerError ||
                                                           ex.HttpStatusCode == System.Net.HttpStatusCode.BadGateway)
                 {
                     if (i == maxRetries - 1) throw;
-                    System.Diagnostics.Debug.WriteLine($"Google Sheets API Transient Error ({ex.HttpStatusCode}). Retrying in {delay}ms... Attempt {i + 1}/{maxRetries}");
-                    await Task.Delay(delay);
-                    delay *= 2;
+                    
+                    int jitter;
+                    lock (_jitterRandom) { jitter = _jitterRandom.Next(500, 2500); }
+                    int currentDelay = delay + jitter;
+
+                    System.Diagnostics.Debug.WriteLine($"Google Sheets API Transient Error ({ex.HttpStatusCode}). Retrying in {currentDelay}ms... Attempt {i + 1}/{maxRetries}");
+                    await Task.Delay(currentDelay);
+                    delay = Math.Min(delay * 2, 30000);
                 }
                 catch (System.Net.Http.HttpRequestException ex)
                 {
                     if (i == maxRetries - 1) throw;
-                    System.Diagnostics.Debug.WriteLine($"Google Sheets Network Exception ({ex.Message}). Retrying in {delay}ms... Attempt {i + 1}/{maxRetries}");
-                    await Task.Delay(delay);
-                    delay *= 2;
+                    
+                    int jitter;
+                    lock (_jitterRandom) { jitter = _jitterRandom.Next(500, 1500); }
+                    int currentDelay = delay + jitter;
+
+                    System.Diagnostics.Debug.WriteLine($"Google Sheets Network Exception ({ex.Message}). Retrying in {currentDelay}ms... Attempt {i + 1}/{maxRetries}");
+                    await Task.Delay(currentDelay);
+                    delay = Math.Min(delay * 2, 30000);
                 }
             }
             return await apiCall();
         }
 
-        private static async Task ExecuteWithRetryAsync(Func<Task> apiCall, int maxRetries = 6, int initialDelayMs = 1000)
+        private static async Task ExecuteWithRetryAsync(Func<Task> apiCall, int maxRetries = 8, int initialDelayMs = 2000)
         {
             int delay = initialDelayMs;
             for (int i = 0; i < maxRetries; i++)
@@ -97,21 +110,32 @@ namespace PrintTrackerApp.Services
                 }
                 catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.TooManyRequests ||
                                                           (int)ex.HttpStatusCode == 429 ||
+                                                          (ex.Message != null && (ex.Message.Contains("429") || ex.Message.Contains("Quota exceeded"))) ||
                                                           ex.HttpStatusCode == System.Net.HttpStatusCode.ServiceUnavailable ||
                                                           ex.HttpStatusCode == System.Net.HttpStatusCode.InternalServerError ||
                                                           ex.HttpStatusCode == System.Net.HttpStatusCode.BadGateway)
                 {
                     if (i == maxRetries - 1) throw;
-                    System.Diagnostics.Debug.WriteLine($"Google Sheets API Transient Error ({ex.HttpStatusCode}). Retrying in {delay}ms... Attempt {i + 1}/{maxRetries}");
-                    await Task.Delay(delay);
-                    delay *= 2;
+                    
+                    int jitter;
+                    lock (_jitterRandom) { jitter = _jitterRandom.Next(500, 2500); }
+                    int currentDelay = delay + jitter;
+
+                    System.Diagnostics.Debug.WriteLine($"Google Sheets API Transient Error ({ex.HttpStatusCode}). Retrying in {currentDelay}ms... Attempt {i + 1}/{maxRetries}");
+                    await Task.Delay(currentDelay);
+                    delay = Math.Min(delay * 2, 30000);
                 }
                 catch (System.Net.Http.HttpRequestException ex)
                 {
                     if (i == maxRetries - 1) throw;
-                    System.Diagnostics.Debug.WriteLine($"Google Sheets Network Exception ({ex.Message}). Retrying in {delay}ms... Attempt {i + 1}/{maxRetries}");
-                    await Task.Delay(delay);
-                    delay *= 2;
+                    
+                    int jitter;
+                    lock (_jitterRandom) { jitter = _jitterRandom.Next(500, 1500); }
+                    int currentDelay = delay + jitter;
+
+                    System.Diagnostics.Debug.WriteLine($"Google Sheets Network Exception ({ex.Message}). Retrying in {currentDelay}ms... Attempt {i + 1}/{maxRetries}");
+                    await Task.Delay(currentDelay);
+                    delay = Math.Min(delay * 2, 30000);
                 }
             }
             await apiCall();
@@ -224,15 +248,7 @@ namespace PrintTrackerApp.Services
 
             int sheetId = await EnsureSheetExistsAsync(sheetName);
 
-            string normalizedStart = NormalizeStartCell(startCell);
-
-            // 1. Write text values
-            var valueRange = new ValueRange { Values = data };
-            var updateRequest = _service.Spreadsheets.Values.Update(valueRange, _spreadsheetId, $"{sheetName}!{normalizedStart}");
-            updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
-            await ExecuteWithRetryAsync(() => updateRequest.ExecuteAsync());
-
-            // 2. Build formatting requests & execute
+            // Build formatting requests & execute (values, formatting, and notes are included in UpdateCellsRequest)
             var requests = BuildDashboardFormattingRequests(sheetId, sheetName, data, notes, startCell);
             var batchUpdate = new BatchUpdateSpreadsheetRequest { Requests = requests };
             await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(batchUpdate, _spreadsheetId).ExecuteAsync());
@@ -249,7 +265,7 @@ namespace PrintTrackerApp.Services
             int colOffset = colMatch.Success ? ColumnLetterToColumnIndex(colMatch.Value) : 0;
             int rowOffset = startRow - 1;
 
-            // Clear old formatting and notes
+            // Clear old formatting and notes for the sheet
             requests.Add(new Request
             {
                 RepeatCell = new RepeatCellRequest
@@ -277,172 +293,126 @@ namespace PrintTrackerApp.Services
             int colsPerTable = (sheetName.Equals("PT", StringComparison.OrdinalIgnoreCase) || sheetName.Contains("_PT_")) ? 4 : 3;
             int totalCols = (colsPerTable + 1) * tables - 1; // 19 for PT, 15 for FT/KH
 
-            // Format Header Row (Row 0)
-            for (int t = 0; t < tables; t++)
-            {
-                int startCol = t * (colsPerTable + 1);
-                int endCol = startCol + colsPerTable;
+            var rowsData = new List<RowData>();
 
-                requests.Add(new Request
+            for (int r = 0; r < data.Count; r++)
+            {
+                var rowObj = new RowData { Values = new List<CellData>() };
+                var rowDataValues = data[r];
+                var rowNoteValues = (notes != null && r < notes.Count) ? notes[r] : null;
+
+                bool isHeader = (r == 0);
+
+                for (int c = 0; c < totalCols; c++)
                 {
-                    RepeatCell = new RepeatCellRequest
+                    var cellData = new CellData();
+
+                    // Value
+                    if (rowDataValues != null && c < rowDataValues.Count && rowDataValues[c] != null)
                     {
-                        Range = new GridRange { 
-                            SheetId = sheetId, 
-                            StartRowIndex = rowOffset, 
-                            EndRowIndex = rowOffset + 1, 
-                            StartColumnIndex = colOffset + startCol, 
-                            EndColumnIndex = colOffset + endCol 
-                        },
-                        Cell = new CellData
+                        string valStr = rowDataValues[c].ToString();
+                        cellData.UserEnteredValue = new ExtendedValue { StringValue = valStr };
+                    }
+                    else
+                    {
+                        cellData.UserEnteredValue = new ExtendedValue { StringValue = "" };
+                    }
+
+                    // Note
+                    if (rowNoteValues != null && c < rowNoteValues.Count && !string.IsNullOrWhiteSpace(rowNoteValues[c]))
+                    {
+                        cellData.Note = rowNoteValues[c];
+                    }
+
+                    // Formatting
+                    int colInTable = c % (colsPerTable + 1);
+                    bool isSpacerCol = (colInTable == colsPerTable);
+
+                    if (!isSpacerCol)
+                    {
+                        if (isHeader)
                         {
-                            UserEnteredFormat = new CellFormat
+                            cellData.UserEnteredFormat = new CellFormat
                             {
                                 BackgroundColor = new SheetColor { Red = 0.169f, Green = 0.341f, Blue = 0.604f }, // Excel Blue
                                 TextFormat = new TextFormat { Bold = true, ForegroundColor = new SheetColor { Red = 1f, Green = 1f, Blue = 1f }, FontSize = 10 },
                                 HorizontalAlignment = "CENTER",
                                 VerticalAlignment = "MIDDLE",
                                 Borders = borders
-                            }
-                        },
-                        Fields = "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,borders)"
-                    }
-                });
-            }
-
-            // Format Data Rows (Row 1 to data.Count)
-            if (data.Count > 1)
-            {
-                for (int t = 0; t < tables; t++)
-                {
-                    int startCol = t * (colsPerTable + 1);
-                    int gradeCol = startCol + colsPerTable - 1;
-
-                    // Format non-Grade columns (Teacher)
-                    requests.Add(new Request
-                    {
-                        RepeatCell = new RepeatCellRequest
+                            };
+                        }
+                        else
                         {
-                            Range = new GridRange { 
-                                SheetId = sheetId, 
-                                StartRowIndex = rowOffset + 1, 
-                                EndRowIndex = rowOffset + data.Count, 
-                                StartColumnIndex = colOffset + startCol, 
-                                EndColumnIndex = colOffset + startCol + 1 
-                            },
-                            Cell = new CellData
+                            // Data row
+                            bool isTeacherCol = (colInTable == 0);
+                            bool isGradeCol = (colInTable == colsPerTable - 1);
+
+                            if (isTeacherCol)
                             {
-                                UserEnteredFormat = new CellFormat
+                                cellData.UserEnteredFormat = new CellFormat
                                 {
                                     TextFormat = new TextFormat { FontSize = 10 },
                                     HorizontalAlignment = "LEFT",
                                     VerticalAlignment = "MIDDLE",
                                     Borders = borders
-                                }
-                            },
-                            Fields = "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment,borders)"
-                        }
-                    });
-
-                    if (colsPerTable > 2) // Middle columns (Level, Session)
-                    {
-                        requests.Add(new Request
-                        {
-                            RepeatCell = new RepeatCellRequest
+                                };
+                            }
+                            else if (isGradeCol)
                             {
-                                Range = new GridRange { 
-                                    SheetId = sheetId, 
-                                    StartRowIndex = rowOffset + 1, 
-                                    EndRowIndex = rowOffset + data.Count, 
-                                    StartColumnIndex = colOffset + startCol + 1, 
-                                    EndColumnIndex = colOffset + startCol + colsPerTable - 1 
-                                },
-                                Cell = new CellData
+                                string gradeVal = rowDataValues != null && c < rowDataValues.Count ? (rowDataValues[c]?.ToString() ?? "") : "";
+                                var bgColor = GetGradeBackgroundColor(gradeVal);
+                                if (bgColor != null)
                                 {
-                                    UserEnteredFormat = new CellFormat
+                                    cellData.UserEnteredFormat = new CellFormat
+                                    {
+                                        BackgroundColor = bgColor,
+                                        TextFormat = new TextFormat { Bold = true, ForegroundColor = new SheetColor { Red = 1f, Green = 1f, Blue = 1f }, FontSize = 10 },
+                                        HorizontalAlignment = "CENTER",
+                                        VerticalAlignment = "MIDDLE",
+                                        Borders = borders
+                                    };
+                                }
+                                else
+                                {
+                                    cellData.UserEnteredFormat = new CellFormat
                                     {
                                         TextFormat = new TextFormat { FontSize = 10 },
                                         HorizontalAlignment = "CENTER",
                                         VerticalAlignment = "MIDDLE",
                                         Borders = borders
-                                    }
-                                },
-                                Fields = "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment,borders)"
+                                    };
+                                }
                             }
-                        });
-                    }
-
-                    // Default formatting for Grade column
-                    requests.Add(new Request
-                    {
-                        RepeatCell = new RepeatCellRequest
-                        {
-                            Range = new GridRange { 
-                                SheetId = sheetId, 
-                                StartRowIndex = rowOffset + 1, 
-                                EndRowIndex = rowOffset + data.Count, 
-                                StartColumnIndex = colOffset + gradeCol, 
-                                EndColumnIndex = colOffset + gradeCol + 1 
-                            },
-                            Cell = new CellData
+                            else
                             {
-                                UserEnteredFormat = new CellFormat
+                                // Middle columns (Level, Session)
+                                cellData.UserEnteredFormat = new CellFormat
                                 {
                                     TextFormat = new TextFormat { FontSize = 10 },
                                     HorizontalAlignment = "CENTER",
                                     VerticalAlignment = "MIDDLE",
                                     Borders = borders
-                                }
-                            },
-                            Fields = "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment,borders)"
-                        }
-                    });
-                }
-
-                // Apply specific colors to Grade cells
-                for (int r = 1; r < data.Count; r++)
-                {
-                    for (int t = 0; t < tables; t++)
-                    {
-                        int startCol = t * (colsPerTable + 1);
-                        int gradeCol = startCol + colsPerTable - 1;
-
-                        if (gradeCol < data[r].Count)
-                        {
-                            string gradeVal = data[r][gradeCol]?.ToString() ?? "";
-                            var bgColor = GetGradeBackgroundColor(gradeVal);
-                            if (bgColor != null)
-                            {
-                                requests.Add(new Request
-                                {
-                                    RepeatCell = new RepeatCellRequest
-                                    {
-                                        Range = new GridRange { 
-                                            SheetId = sheetId, 
-                                            StartRowIndex = rowOffset + r, 
-                                            EndRowIndex = rowOffset + r + 1, 
-                                            StartColumnIndex = colOffset + gradeCol, 
-                                            EndColumnIndex = colOffset + gradeCol + 1 
-                                        },
-                                        Cell = new CellData
-                                        {
-                                            UserEnteredFormat = new CellFormat
-                                            {
-                                                BackgroundColor = bgColor,
-                                                TextFormat = new TextFormat { Bold = true, ForegroundColor = new SheetColor { Red = 1f, Green = 1f, Blue = 1f }, FontSize = 10 },
-                                                HorizontalAlignment = "CENTER",
-                                                VerticalAlignment = "MIDDLE",
-                                                Borders = borders
-                                            }
-                                        },
-                                        Fields = "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,borders)"
-                                    }
-                                });
+                                };
                             }
                         }
                     }
+
+                    rowObj.Values.Add(cellData);
                 }
+
+                rowsData.Add(rowObj);
             }
+
+            // Single UpdateCells request per sheet for values, format, and notes
+            requests.Add(new Request
+            {
+                UpdateCells = new UpdateCellsRequest
+                {
+                    Start = new GridCoordinate { SheetId = sheetId, RowIndex = rowOffset, ColumnIndex = colOffset },
+                    Rows = rowsData,
+                    Fields = "userEnteredValue,userEnteredFormat,note"
+                }
+            });
 
             // Auto-resize columns
             requests.Add(new Request
@@ -476,33 +446,6 @@ namespace PrintTrackerApp.Services
                         },
                         Properties = new DimensionProperties { PixelSize = 25 },
                         Fields = "pixelSize"
-                    }
-                });
-            }
-
-            if (notes != null && notes.Count > 0)
-            {
-                var rowsData = new List<RowData>();
-                foreach (var noteRow in notes)
-                {
-                    var rowData = new RowData { Values = new List<CellData>() };
-                    if (noteRow != null)
-                    {
-                        foreach (var noteText in noteRow)
-                        {
-                            rowData.Values.Add(new CellData { Note = string.IsNullOrWhiteSpace(noteText) ? null : noteText });
-                        }
-                    }
-                    rowsData.Add(rowData);
-                }
-
-                requests.Add(new Request
-                {
-                    UpdateCells = new UpdateCellsRequest
-                    {
-                        Start = new GridCoordinate { SheetId = sheetId, RowIndex = rowOffset, ColumnIndex = colOffset },
-                        Rows = rowsData,
-                        Fields = "note"
                     }
                 });
             }
@@ -549,11 +492,20 @@ namespace PrintTrackerApp.Services
             if (addRequests.Count > 0)
             {
                 var addBatch = new BatchUpdateSpreadsheetRequest { Requests = addRequests };
-                await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(addBatch, _spreadsheetId).ExecuteAsync());
-                await EnsureSheetCacheAsync(forceRefresh: true);
+                var addResponse = await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(addBatch, _spreadsheetId).ExecuteAsync());
+                if (addResponse?.Replies != null)
+                {
+                    foreach (var reply in addResponse.Replies)
+                    {
+                        if (reply.AddSheet?.Properties != null)
+                        {
+                            _sheetCache[reply.AddSheet.Properties.Title] = reply.AddSheet.Properties;
+                        }
+                    }
+                }
             }
 
-            // Step 2: Batch write all values to all sheets in ONE Values.BatchUpdate call
+            // Step 2: Batch write values for BotConfig & dropdown choices on FT/PT/KH
             var valueRanges = new List<ValueRange>();
 
             if (botConfigData != null && botConfigData.Count > 0)
@@ -564,16 +516,6 @@ namespace PrintTrackerApp.Services
                     botRows.Add(new List<object> { kvp.Key, kvp.Value });
                 }
                 valueRanges.Add(new ValueRange { Range = "'BotConfig'!A1", Values = botRows });
-            }
-
-            string normStart = NormalizeStartCell(startCell);
-            foreach (var item in tabDataList)
-            {
-                string hiddenSheetName = $"_Data_{item.TabName}_{item.PeriodName}";
-                if (item.Data != null && item.Data.Count > 0)
-                {
-                    valueRanges.Add(new ValueRange { Range = $"'{hiddenSheetName}'!{normStart}", Values = item.Data });
-                }
             }
 
             string firstPeriod = selectedPeriods.FirstOrDefault() ?? "";
@@ -590,7 +532,8 @@ namespace PrintTrackerApp.Services
                 }
             }
 
-            // Batch clear main tabs prior to copying to clear previous content (from startCell row downwards to preserve header rows above)
+            // Batch clear main tabs prior to copying to clear previous content (from startCell row downwards)
+            string normStart = NormalizeStartCell(startCell);
             int startRowNumber = ParseStartRow(normStart);
             var colMatchStr = System.Text.RegularExpressions.Regex.Match(normStart, @"[A-Z]+");
             string colLetterStr = colMatchStr.Success ? colMatchStr.Value : "A";
@@ -620,7 +563,7 @@ namespace PrintTrackerApp.Services
                 await ExecuteWithRetryAsync(() => _service.Spreadsheets.Values.BatchUpdate(batchValuesReq, _spreadsheetId).ExecuteAsync());
             }
 
-            // Step 3: Batch update formatting, notes, hiding, dropdown validation, and copying in ONE master BatchUpdate call
+            // Step 3: Batch update formatting, data values, notes, hiding, dropdown validation, and copying in master BatchUpdate calls
             var masterRequests = new List<Request>();
 
             foreach (var item in tabDataList)
@@ -714,8 +657,17 @@ namespace PrintTrackerApp.Services
 
             if (masterRequests.Count > 0)
             {
-                var masterBatch = new BatchUpdateSpreadsheetRequest { Requests = masterRequests };
-                await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(masterBatch, _spreadsheetId).ExecuteAsync());
+                int chunkSize = 400;
+                for (int i = 0; i < masterRequests.Count; i += chunkSize)
+                {
+                    var chunk = masterRequests.Skip(i).Take(chunkSize).ToList();
+                    var masterBatch = new BatchUpdateSpreadsheetRequest { Requests = chunk };
+                    await ExecuteWithRetryAsync(() => _service.Spreadsheets.BatchUpdate(masterBatch, _spreadsheetId).ExecuteAsync());
+                    if (i + chunkSize < masterRequests.Count)
+                    {
+                        await Task.Delay(300);
+                    }
+                }
             }
         }
 
