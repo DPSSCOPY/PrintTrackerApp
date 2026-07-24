@@ -24,20 +24,20 @@ namespace PrintTrackerApp.Services
                     {
                         var page = document.GetPage(i);
                         
-                        // Define the body area (ignoring top 15% and bottom 15% for headers/footers)
-                        double margin = page.Height * 0.15;
+                        // Define the body area (ignoring top 10% and bottom 10% for headers/footers)
+                        double margin = page.Height * 0.10;
                         double bodyTop = page.Height - margin;
                         double bodyBottom = margin;
 
                         bool hasBodyContent = false;
 
-                        // Check if there is any visible text in the body area
+                        // 1. Check if there is any visible text in the body area
                         foreach (var letter in page.Letters)
                         {
                             if (!string.IsNullOrWhiteSpace(letter.Value))
                             {
                                 // PdfPig coordinates: (0,0) is bottom-left
-                                if (letter.Location.Y > bodyBottom && letter.Location.Y < bodyTop)
+                                if (letter.Location.Y >= bodyBottom && letter.Location.Y <= bodyTop)
                                 {
                                     hasBodyContent = true;
                                     break;
@@ -45,18 +45,28 @@ namespace PrintTrackerApp.Services
                             }
                         }
 
-                        // Check if there are any images in the body area
+                        // 2. Check if there are any images overlapping the body area
                         if (!hasBodyContent)
                         {
-                            foreach (var image in page.GetImages())
+                            try
                             {
-                                double centerY = image.Bounds.Bottom + (image.Bounds.Height / 2);
-                                if (centerY > bodyBottom && centerY < bodyTop)
+                                foreach (var image in page.GetImages())
                                 {
-                                    hasBodyContent = true;
-                                    break;
+                                    // Check if image overlaps body area or is a large image (covers > 25% height)
+                                    double imgTop = image.Bounds.Top;
+                                    double imgBottom = image.Bounds.Bottom;
+                                    double imgHeight = image.Bounds.Height;
+
+                                    if ((imgTop >= bodyBottom && imgBottom <= bodyTop) ||
+                                        (imgBottom < bodyTop && imgTop > bodyBottom) ||
+                                        imgHeight > (page.Height * 0.25))
+                                    {
+                                        hasBodyContent = true;
+                                        break;
+                                    }
                                 }
                             }
+                            catch { }
                         }
 
                         // If it has content in the body, we will print it
@@ -66,21 +76,25 @@ namespace PrintTrackerApp.Services
                         }
                     }
                     
-                    if (pagesToPrint.Count == document.NumberOfPages)
+                    // Safety Net: If ALL pages were detected as "blank", but total pages > 0,
+                    // fallback to printing all pages so legitimate image/unrecognized documents are never lost.
+                    if (pagesToPrint.Count == 0 && document.NumberOfPages > 0)
+                    {
+                        for (int i = 1; i <= document.NumberOfPages; i++) pagesToPrint.Add(i);
+                        isAllPages = true;
+                    }
+                    else if (pagesToPrint.Count == document.NumberOfPages)
                     {
                         isAllPages = true;
                     }
+                    
                     actualPageCount = pagesToPrint.Count;
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error reading PDF with PdfPig: {ex.Message}");
-                // Fallback: If error, return empty string or null, but we'll return empty to indicate failure or no pages.
-                // Alternatively, return "1" to print at least the first page. Let's return empty to skip safely, or better, 
-                // just return a format that prints all pages. If we want to be safe and print all pages on failure, we'd do:
-                // return ""; 
-                // Wait, if we return empty, we might skip the whole document. Let's just return empty on error and let the caller handle it.
+                isAllPages = true;
             }
 
             return FormatPageRange(pagesToPrint);

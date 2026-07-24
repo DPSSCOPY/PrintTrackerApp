@@ -1,4 +1,4 @@
-#define MyAppVersion "1.0.40"
+#define MyAppVersion "1.0.41"
 #define MyAppName "Print Tracker App"
 #define MyAppExeName "PrintTrackerApp.exe"
 
@@ -10,7 +10,7 @@ Publisher=DPSS
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
-OutputBaseFilename=PrintTrackerApp_Setup_v1.0.40
+OutputBaseFilename=PrintTrackerApp_Setup_v1.0.41
 Compression=lzma
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64

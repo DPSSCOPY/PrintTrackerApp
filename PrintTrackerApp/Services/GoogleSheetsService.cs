@@ -265,14 +265,26 @@ namespace PrintTrackerApp.Services
             int colOffset = colMatch.Success ? ColumnLetterToColumnIndex(colMatch.Value) : 0;
             int rowOffset = startRow - 1;
 
-            // Clear old formatting and notes for the sheet
+            // Clear all old values, formatting, and notes for the sheet from rowOffset down to 1000
             requests.Add(new Request
             {
                 RepeatCell = new RepeatCellRequest
                 {
-                    Range = new GridRange { SheetId = sheetId, StartRowIndex = 0, StartColumnIndex = 0 },
-                    Cell = new CellData { UserEnteredFormat = new CellFormat(), Note = "" },
-                    Fields = "userEnteredFormat,note"
+                    Range = new GridRange
+                    {
+                        SheetId = sheetId,
+                        StartRowIndex = rowOffset,
+                        EndRowIndex = 1000,
+                        StartColumnIndex = 0,
+                        EndColumnIndex = 30
+                    },
+                    Cell = new CellData
+                    {
+                        UserEnteredValue = new ExtendedValue { StringValue = "" },
+                        UserEnteredFormat = new CellFormat(),
+                        Note = ""
+                    },
+                    Fields = "userEnteredValue,userEnteredFormat,note"
                 }
             });
 
@@ -290,8 +302,8 @@ namespace PrintTrackerApp.Services
             };
 
             int tables = 4;
-            int colsPerTable = (sheetName.Equals("PT", StringComparison.OrdinalIgnoreCase) || sheetName.Contains("_PT_")) ? 4 : 3;
-            int totalCols = (colsPerTable + 1) * tables - 1; // 19 for PT, 15 for FT/KH
+            int colsPerTable = (sheetName.Equals("PT", StringComparison.OrdinalIgnoreCase) || sheetName.Contains("_PT_")) ? 5 : 4;
+            int totalCols = colsPerTable * tables; // 20 for PT, 16 for FT/KH
 
             var rowsData = new List<RowData>();
 
@@ -325,67 +337,63 @@ namespace PrintTrackerApp.Services
                     }
 
                     // Formatting
-                    int colInTable = c % (colsPerTable + 1);
-                    bool isSpacerCol = (colInTable == colsPerTable);
+                    int colInTable = c % colsPerTable;
 
-                    if (!isSpacerCol)
+                    if (isHeader)
                     {
-                        if (isHeader)
+                        cellData.UserEnteredFormat = new CellFormat
+                        {
+                            BackgroundColor = new SheetColor { Red = 0.169f, Green = 0.341f, Blue = 0.604f }, // Excel Blue
+                            TextFormat = new TextFormat { Bold = true, ForegroundColor = new SheetColor { Red = 1f, Green = 1f, Blue = 1f }, FontSize = 10 },
+                            HorizontalAlignment = "CENTER",
+                            VerticalAlignment = "MIDDLE",
+                            Borders = borders
+                        };
+                    }
+                    else
+                    {
+                        // Data row
+                        bool isNoCol = (colInTable == 0);
+                        bool isTeacherCol = (colInTable == 1);
+                        bool isGradeCol = (colInTable == colsPerTable - 1);
+
+                        if (isNoCol)
                         {
                             cellData.UserEnteredFormat = new CellFormat
                             {
-                                BackgroundColor = new SheetColor { Red = 0.169f, Green = 0.341f, Blue = 0.604f }, // Excel Blue
-                                TextFormat = new TextFormat { Bold = true, ForegroundColor = new SheetColor { Red = 1f, Green = 1f, Blue = 1f }, FontSize = 10 },
+                                TextFormat = new TextFormat { FontSize = 10, ForegroundColor = new SheetColor { Red = 0.35f, Green = 0.35f, Blue = 0.35f } },
                                 HorizontalAlignment = "CENTER",
                                 VerticalAlignment = "MIDDLE",
                                 Borders = borders
                             };
                         }
-                        else
+                        else if (isTeacherCol)
                         {
-                            // Data row
-                            bool isTeacherCol = (colInTable == 0);
-                            bool isGradeCol = (colInTable == colsPerTable - 1);
-
-                            if (isTeacherCol)
+                            cellData.UserEnteredFormat = new CellFormat
+                            {
+                                TextFormat = new TextFormat { FontSize = 10 },
+                                HorizontalAlignment = "LEFT",
+                                VerticalAlignment = "MIDDLE",
+                                Borders = borders
+                            };
+                        }
+                        else if (isGradeCol)
+                        {
+                            string gradeVal = rowDataValues != null && c < rowDataValues.Count ? (rowDataValues[c]?.ToString() ?? "") : "";
+                            var bgColor = GetGradeBackgroundColor(gradeVal);
+                            if (bgColor != null)
                             {
                                 cellData.UserEnteredFormat = new CellFormat
                                 {
-                                    TextFormat = new TextFormat { FontSize = 10 },
-                                    HorizontalAlignment = "LEFT",
+                                    BackgroundColor = bgColor,
+                                    TextFormat = new TextFormat { Bold = true, ForegroundColor = new SheetColor { Red = 1f, Green = 1f, Blue = 1f }, FontSize = 10 },
+                                    HorizontalAlignment = "CENTER",
                                     VerticalAlignment = "MIDDLE",
                                     Borders = borders
                                 };
                             }
-                            else if (isGradeCol)
-                            {
-                                string gradeVal = rowDataValues != null && c < rowDataValues.Count ? (rowDataValues[c]?.ToString() ?? "") : "";
-                                var bgColor = GetGradeBackgroundColor(gradeVal);
-                                if (bgColor != null)
-                                {
-                                    cellData.UserEnteredFormat = new CellFormat
-                                    {
-                                        BackgroundColor = bgColor,
-                                        TextFormat = new TextFormat { Bold = true, ForegroundColor = new SheetColor { Red = 1f, Green = 1f, Blue = 1f }, FontSize = 10 },
-                                        HorizontalAlignment = "CENTER",
-                                        VerticalAlignment = "MIDDLE",
-                                        Borders = borders
-                                    };
-                                }
-                                else
-                                {
-                                    cellData.UserEnteredFormat = new CellFormat
-                                    {
-                                        TextFormat = new TextFormat { FontSize = 10 },
-                                        HorizontalAlignment = "CENTER",
-                                        VerticalAlignment = "MIDDLE",
-                                        Borders = borders
-                                    };
-                                }
-                            }
                             else
                             {
-                                // Middle columns (Level, Session)
                                 cellData.UserEnteredFormat = new CellFormat
                                 {
                                     TextFormat = new TextFormat { FontSize = 10 },
@@ -394,6 +402,17 @@ namespace PrintTrackerApp.Services
                                     Borders = borders
                                 };
                             }
+                        }
+                        else
+                        {
+                            // Middle columns (Level, Session)
+                            cellData.UserEnteredFormat = new CellFormat
+                            {
+                                TextFormat = new TextFormat { FontSize = 10 },
+                                HorizontalAlignment = "CENTER",
+                                VerticalAlignment = "MIDDLE",
+                                Borders = borders
+                            };
                         }
                     }
 
@@ -413,42 +432,6 @@ namespace PrintTrackerApp.Services
                     Fields = "userEnteredValue,userEnteredFormat,note"
                 }
             });
-
-            // Auto-resize columns
-            requests.Add(new Request
-            {
-                AutoResizeDimensions = new AutoResizeDimensionsRequest
-                {
-                    Dimensions = new DimensionRange
-                    {
-                        SheetId = sheetId,
-                        Dimension = "COLUMNS",
-                        StartIndex = colOffset,
-                        EndIndex = colOffset + totalCols
-                    }
-                }
-            });
-
-            // Set spacer column widths
-            int[] spacers = new[] { colsPerTable, 2 * colsPerTable + 1, 3 * colsPerTable + 2 };
-            foreach (int sp in spacers)
-            {
-                requests.Add(new Request
-                {
-                    UpdateDimensionProperties = new UpdateDimensionPropertiesRequest
-                    {
-                        Range = new DimensionRange
-                        {
-                            SheetId = sheetId,
-                            Dimension = "COLUMNS",
-                            StartIndex = colOffset + sp,
-                            EndIndex = colOffset + sp + 1
-                        },
-                        Properties = new DimensionProperties { PixelSize = 25 },
-                        Fields = "pixelSize"
-                    }
-                });
-            }
 
             return requests;
         }
@@ -532,18 +515,22 @@ namespace PrintTrackerApp.Services
                 }
             }
 
-            // Batch clear main tabs prior to copying to clear previous content (from startCell row downwards)
+            // Batch clear main tabs prior to copying to clear previous content (from min(startCell, dropdownCell) row downwards)
             string normStart = NormalizeStartCell(startCell);
             int startRowNumber = ParseStartRow(normStart);
-            var colMatchStr = System.Text.RegularExpressions.Regex.Match(normStart, @"[A-Z]+");
-            string colLetterStr = colMatchStr.Success ? colMatchStr.Value : "A";
+
+            normDropdown = NormalizeStartCell(dropdownCell);
+            int dropRowNumber = ParseStartRow(normDropdown);
+
+            int minClearRowNumber = Math.Min(startRowNumber, dropRowNumber);
+            int minClearRowIndex = minClearRowNumber - 1;
 
             var clearRanges = new List<string>();
             foreach (var mainTab in new[] { "FT", "PT", "KH" })
             {
                 if (_sheetCache.ContainsKey(mainTab))
                 {
-                    clearRanges.Add($"'{mainTab}'!{colLetterStr}{startRowNumber}:Z1000");
+                    clearRanges.Add($"'{mainTab}'!A{minClearRowNumber}:Z1000");
                 }
             }
 
@@ -591,6 +578,30 @@ namespace PrintTrackerApp.Services
                 if (_sheetCache.TryGetValue(mainTab, out var mainProps) && mainProps.SheetId.HasValue)
                 {
                     int mainSheetId = mainProps.SheetId.Value;
+
+                    // Clear old formatting and values from minClearRowIndex down to 1000 on main tab
+                    masterRequests.Add(new Request
+                    {
+                        RepeatCell = new RepeatCellRequest
+                        {
+                            Range = new GridRange
+                            {
+                                SheetId = mainSheetId,
+                                StartRowIndex = minClearRowIndex,
+                                EndRowIndex = 1000,
+                                StartColumnIndex = 0,
+                                EndColumnIndex = 30
+                            },
+                            Cell = new CellData
+                            {
+                                UserEnteredValue = new ExtendedValue { StringValue = "" },
+                                UserEnteredFormat = new CellFormat(),
+                                Note = ""
+                            },
+                            Fields = "userEnteredValue,userEnteredFormat,note"
+                        }
+                    });
+
                     int dropCol = ColumnLetterToColumnIndex(normDropdown);
                     int dropRow = ParseStartRow(normDropdown) - 1;
 

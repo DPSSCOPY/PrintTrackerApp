@@ -101,11 +101,12 @@ def get_sheet_data_cached(spreadsheet_id, range_name, date_str):
             spreadsheetId=spreadsheet_id, 
             range=range_name
         ).execute()
-    rows = result.get('values', [])
-    
-    # Store in cache
-    sheet_cache[date_str] = (now, rows)
-    print(f"Cache updated for date: {date_str}")
+    # Store in cache ONLY if valid data rows exist (> 1 row including header)
+    if len(rows) > 1:
+        sheet_cache[date_str] = (now, rows)
+        print(f"Cache updated for date: {date_str} ({len(rows)} rows)")
+    else:
+        print(f"Sheet returned empty or header only for date: {date_str}, skipping cache.")
     return rows
 
 def get_sheets_service():

@@ -1,5 +1,4 @@
-Update Version 1.0.40 Features:
-- Added support for separate Google Credentials JSON files in Settings (Print Log / Bot JSON vs Dashboard Export JSON).
-- Solved Google Sheets API rate limiting & quota throttling by allowing dedicated Service Account credentials for Dashboard Export.
-- Enhanced credentials status tracking and automatic fallback resolution in settings.
-
+Update Version 1.0.41 Features:
+- Fixed Telegram Bot search returning no data during app startup and print log refresh.
+- Updated Google Sheets sync logic to write updated print log data first before clearing trailing rows.
+- Prevented Telegram Bot caching of empty 0-row sheet responses.

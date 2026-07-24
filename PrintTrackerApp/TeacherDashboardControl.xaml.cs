@@ -840,6 +840,11 @@ namespace PrintTrackerApp
 
         private void PopulateExcelGridDirect(Grid container, List<TeacherExcelRecord> records, string tabType)
         {
+            for (int idx = 0; idx < records.Count; idx++)
+            {
+                records[idx].No = (idx + 1).ToString();
+            }
+
             int columns = 4;
             int itemsPerColumn = (int)Math.Ceiling(records.Count / (double)columns);
 
@@ -862,6 +867,21 @@ namespace PrintTrackerApp
                         RowHeight = 25
                     };
                     grid.MouseDoubleClick += DataGrid_MouseDoubleClick_AutoFit;
+
+                    var noStyle = new System.Windows.Style(typeof(System.Windows.Controls.TextBlock));
+                    noStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.TextAlignmentProperty, System.Windows.TextAlignment.Center));
+                    noStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.VerticalAlignmentProperty, System.Windows.VerticalAlignment.Center));
+                    noStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.PaddingProperty, new System.Windows.Thickness(5, 0, 5, 0)));
+                    noStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.ForegroundProperty, new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#555555"))));
+
+                    grid.Columns.Add(new DataGridTextColumn 
+                    { 
+                        Header = "", 
+                        Binding = new System.Windows.Data.Binding("No"), 
+                        Width = DataGridLength.Auto, 
+                        ElementStyle = noStyle, 
+                        IsReadOnly = true 
+                    });
 
                     var textStyle = new System.Windows.Style(typeof(System.Windows.Controls.TextBlock));
                     textStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.ToolTipProperty, new System.Windows.Data.Binding("JobsTooltip")));
@@ -2006,6 +2026,11 @@ namespace PrintTrackerApp
         {
             var records = GetRecordsForTab(table, tabType, false);
 
+            for (int idx = 0; idx < records.Count; idx++)
+            {
+                records[idx].No = (idx + 1).ToString();
+            }
+
             int columns = 4;
             int itemsPerColumn = (int)Math.Ceiling(records.Count / (double)columns);
 
@@ -2027,6 +2052,21 @@ namespace PrintTrackerApp
                         HeadersVisibility = DataGridHeadersVisibility.Column,
                         RowHeight = 25
                     };
+
+                    var noStyle = new System.Windows.Style(typeof(System.Windows.Controls.TextBlock));
+                    noStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.TextAlignmentProperty, System.Windows.TextAlignment.Center));
+                    noStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.VerticalAlignmentProperty, System.Windows.VerticalAlignment.Center));
+                    noStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.PaddingProperty, new System.Windows.Thickness(5, 0, 5, 0)));
+                    noStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.ForegroundProperty, new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#555555"))));
+
+                    grid.Columns.Add(new DataGridTextColumn 
+                    { 
+                        Header = "", 
+                        Binding = new System.Windows.Data.Binding("No"), 
+                        Width = DataGridLength.Auto, 
+                        ElementStyle = noStyle, 
+                        IsReadOnly = true 
+                    });
 
                     var textStyle = new System.Windows.Style(typeof(System.Windows.Controls.TextBlock));
                     textStyle.Setters.Add(new System.Windows.Setter(System.Windows.Controls.TextBlock.ToolTipProperty, new System.Windows.Data.Binding("JobsTooltip")));
@@ -3502,6 +3542,10 @@ namespace PrintTrackerApp
                                     : tabName == "PT" ? result.PtRecords
                                     : result.KhRecords;
                         records = ApplySortToRecords(records, sortKey);
+                        for (int idx = 0; idx < records.Count; idx++)
+                        {
+                            records[idx].No = (idx + 1).ToString();
+                        }
 
                         int itemsPerColumn = (int)Math.Ceiling(records.Count / (double)columns);
                         var sheetData = new List<IList<object>>();
@@ -3514,6 +3558,7 @@ namespace PrintTrackerApp
                         {
                             if (tabName == "PT")
                             {
+                                headerRow.Add(""); headerNotes.Add(""); // No column header
                                 headerRow.Add("Teacher"); headerNotes.Add("");
                                 headerRow.Add("Level"); headerNotes.Add("");
                                 headerRow.Add("Session"); headerNotes.Add("");
@@ -3521,14 +3566,10 @@ namespace PrintTrackerApp
                             }
                             else
                             {
+                                headerRow.Add(""); headerNotes.Add(""); // No column header
                                 headerRow.Add("Teacher"); headerNotes.Add("");
                                 headerRow.Add("Level / Class"); headerNotes.Add("");
                                 headerRow.Add("Grade"); headerNotes.Add("");
-                            }
-                            if (c < columns - 1)
-                            {
-                                headerRow.Add(""); // spacer column
-                                headerNotes.Add("");
                             }
                         }
                         sheetData.Add(headerRow);
@@ -3548,6 +3589,7 @@ namespace PrintTrackerApp
                                     string teacherNote = !string.IsNullOrWhiteSpace(rec.JobsTooltip) ? rec.JobsTooltip.TrimEnd('\r', '\n') : "";
                                     if (tabName == "PT")
                                     {
+                                        row.Add(rec.No); noteRow.Add("");
                                         row.Add(rec.TeacherName); noteRow.Add(teacherNote);
                                         row.Add(rec.Level); noteRow.Add("");
                                         row.Add(rec.Session); noteRow.Add("");
@@ -3555,6 +3597,7 @@ namespace PrintTrackerApp
                                     }
                                     else
                                     {
+                                        row.Add(rec.No); noteRow.Add("");
                                         row.Add(rec.TeacherName); noteRow.Add(teacherNote);
                                         row.Add(rec.Level); noteRow.Add("");
                                         row.Add(rec.Grade); noteRow.Add("");
@@ -3568,18 +3611,15 @@ namespace PrintTrackerApp
                                         row.Add(""); noteRow.Add("");
                                         row.Add(""); noteRow.Add("");
                                         row.Add(""); noteRow.Add("");
+                                        row.Add(""); noteRow.Add("");
                                     }
                                     else
                                     {
                                         row.Add(""); noteRow.Add("");
                                         row.Add(""); noteRow.Add("");
                                         row.Add(""); noteRow.Add("");
+                                        row.Add(""); noteRow.Add("");
                                     }
-                                }
-                                if (c < columns - 1)
-                                {
-                                    row.Add(""); // spacer column
-                                    noteRow.Add("");
                                 }
                             }
                             sheetData.Add(row);

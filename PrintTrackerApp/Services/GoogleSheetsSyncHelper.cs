@@ -38,9 +38,6 @@ namespace PrintTrackerApp.Services
                 // Ensure the sheet exists
                 await service.EnsureSheetExistsAsync(sheetName);
 
-                // Clear the sheet first to avoid leftover rows
-                await service.ClearSheetAsync(sheetName);
-
                 // Discover dynamic keys from the jobs list (just like CsvLogger does)
                 var jobsList = jobs.Reverse().ToList();
                 var dynamicKeys = new List<string>();
@@ -96,8 +93,13 @@ namespace PrintTrackerApp.Services
                     sheetData.Add(row);
                 }
 
-                // Write data to Google Sheets starting at A1
+                // Write data to Google Sheets starting at A1 first (so sheet is never left empty to readers)
                 await service.WriteDataAsync(sheetName, sheetData);
+
+                // Clear any leftover trailing rows below the newly written dataset
+                int startClearRow = sheetData.Count + 1;
+                await service.ClearSheetAsync(sheetName, $"A{startClearRow}");
+
                 System.Diagnostics.Debug.WriteLine($"Google Sheets Sync: Successfully synced {jobsList.Count} jobs to '{sheetName}'.");
 
                 // Clean up old print log sheet tabs older than 7 days (1 week)

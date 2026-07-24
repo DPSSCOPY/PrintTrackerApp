@@ -29,26 +29,22 @@ function onEdit(e) {
   const isDropdownValue = (val.indexOf("Week ") === 0 || val === "Monthly");
   if (!isDropdownValue) return;
   
-  // 3. Locate the table start row dynamically by searching for the "Teacher" header down column A
-  let startRow = -1;
+  // 3. Locate the table header row dynamically by searching for the "Teacher" header down column A
+  let headerRow = -1;
   const colIndex = range.getColumn(); // Column A is 1
   const maxRowsSearch = sheet.getLastRow();
   
-  // Look up to 5 rows below the edited dropdown cell
   for (let r = range.getRow() + 1; r <= Math.min(range.getRow() + 5, maxRowsSearch); r++) {
     const valAtCell = sheet.getRange(r, colIndex).getValue();
     if (valAtCell && valAtCell.toString().trim() === "Teacher") {
-      startRow = r;
+      headerRow = r;
       break;
     }
   }
   
-  // Fallback to 1 row below the dropdown if the "Teacher" header wasn't found
-  if (startRow === -1) {
-    startRow = range.getRow() + 1;
+  if (headerRow === -1) {
+    headerRow = range.getRow() + 1;
   }
-  
-  const startCol = colIndex;
   
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sourceSheetName = "_Data_" + sheetName + "_" + val;
@@ -58,23 +54,26 @@ function onEdit(e) {
     return;
   }
   
-  // 4. Copy data (values, notes/comments, formatting) from hidden sheet to viewport sheet
+  const dataStartRow = headerRow + 1; // Start clearing and copying BELOW the "Teacher" header row
+  const maxRows = sheet.getMaxRows();
+  const maxCols = sheet.getMaxColumns();
+  
+  // 4. CLEAR ONLY data rows below the header (headerRow + 1 down to maxRows)
+  // This clears all text values, cell colors, formatting, AND cell notes (black triangles)!
+  if (maxRows >= dataStartRow) {
+    const clearRange = sheet.getRange(dataStartRow, 1, maxRows - dataStartRow + 1, maxCols);
+    clearRange.clear();
+    clearRange.clearNote();
+  }
+  
+  // 5. Copy data rows from hidden source sheet to viewport sheet
   const lastRow = sourceSheet.getLastRow();
   const lastCol = sourceSheet.getLastColumn();
   
-  const destLastRow = sheet.getLastRow();
-  const destLastCol = sheet.getLastColumn();
-  
-  // Clear old destination viewport area completely (below the dropdown cell)
-  if (destLastRow >= startRow && destLastCol >= startCol) {
-    sheet.getRange(startRow, startCol, destLastRow - startRow + 1, destLastCol - startCol + 1).clear();
-  }
-  
-  if (lastRow >= startRow && lastCol >= startCol) {
-    const sourceRange = sourceSheet.getRange(startRow, startCol, lastRow - startRow + 1, lastCol - startCol + 1);
-    const destRange = sheet.getRange(startRow, startCol, lastRow - startRow + 1, lastCol - startCol + 1);
+  if (lastRow >= dataStartRow && lastCol >= 1) {
+    const sourceRange = sourceSheet.getRange(dataStartRow, 1, lastRow - dataStartRow + 1, lastCol);
+    const destRange = sheet.getRange(dataStartRow, 1, lastRow - dataStartRow + 1, lastCol);
     
-    // Copy NORMAL (values, formatting, notes/comments)
     sourceRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
   }
 }

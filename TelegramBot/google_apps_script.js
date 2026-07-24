@@ -288,11 +288,13 @@ function searchPrintLog(dateStr, searchTerm) {
     // Read only columns A to J (10 columns) up to lastRow to avoid fetching empty rows/columns
     data = sheet.getRange(1, 1, lastRow, 10).getValues();
     
-    // Cache the sheet data for 30 seconds (safe for size limits if rows < 1500)
-    try {
-      cache.put(cacheKey, JSON.stringify(data), 30);
-    } catch (e) {
-      Logger.log("Could not cache sheet data: " + e);
+    // Cache the sheet data for 30 seconds only if valid data rows exist (> 1 row including header)
+    if (data && data.length > 1) {
+      try {
+        cache.put(cacheKey, JSON.stringify(data), 30);
+      } catch (e) {
+        Logger.log("Could not cache sheet data: " + e);
+      }
     }
   }
   
